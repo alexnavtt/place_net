@@ -34,9 +34,9 @@ class PointNetEncoder(torch.nn.Module):
         # x is size (batch_size, 128, num_points)
         x = self.bn3(self.conv4(x))
         # x is size (batch_size, 1024, num_points)
-        x = torch.max(x, 2, keepdim=True)
+        x = torch.max(x, 2, keepdim=True)[0]
         # x is size (batch_size, 1024, 1)
-        x = x.view(-1, 1024)
+        x = x.view(batch_size, 1024)
 
         return x
     
