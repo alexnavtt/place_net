@@ -21,12 +21,10 @@ class PointNetEncoder(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         batch_size, point_dim, num_points = x.size()
-        assert(point_dim==6, "Points must be structured as xyz, normal-xyz tuples")
+        assert point_dim==6, "Points must be structured as xyz, normal-xyz tuples"
 
         # x is size (batch_size, 6, num_points)
-        print(x)
         x = relu(self.bn1(self.conv1(x)))
-        print(x)
         # x is size (batch_size, 64, num_points)
         x = relu(self.bn1(self.conv2(x)))
         # x is size (batch_size, 64, num_points)
