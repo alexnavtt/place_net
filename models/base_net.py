@@ -1,31 +1,28 @@
 import copy
 from typing import Type, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
-from torch.nn.functional import relu
+from torch.nn.functional import relu, pad
 from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 
 @dataclass
 class BaseNetConfig:
-    # The x,y,z dimensions of the workspace to consider
-    workspace_dim: torch.Tensor
-
-    # The x, y, z, qw, qx, qy, qz center of the workspace
-    workspace_center: torch.Tensor = torch.Tensor([0, 0, 0, 1, 0, 0, 0]).cuda()
+    # The radial dimension of the workspace to consider from the task pose
+    workspace_radius: float
 
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
 
     # The grid cell size of the output x,y grid on the floor
-    output_position_resolution: float = 0.05
+    output_position_resolution: float = 0.10
 
     # The number of discretized orientations to use in the output distribution
     output_orientation_discretization: int = 20 
 
     # The sizes of the hidden layers to use between the encoded input and the start
     # of the deconvolution step
-    hidden_layer_sizes: list[int] = [1024 + 512]
+    hidden_layer_sizes: list[int] = field(default_factory=lambda: [1024 + 512])
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
@@ -44,15 +41,32 @@ class BaseNet(torch.nn.Module):
         self.dconv1 = torch.nn.ConvTranspose3d(in_channels=1, out_channels=1, kernel_size=3)
         # self.dconv2 = torch.nn.ConvTranspose3d
 
-    def forward(self, points: torch.Tensor, task: torch.Tensor):
-        # TODO: Add droupout
+    def forward(self, pointclouds: list[torch.Tensor], tasks: torch.Tensor, already_processed: bool = False):
+        """
+        Perform the forward pass on a model with batch size B. The pointclouds and task poses must be 
+        defined in the same frame
+
+        Inputs: 
+            - pointcloud: list of B tensors of size (N_i, 6) where N_i is the number of points in the
+                          i'th pointcloud and the points contains 6 scalar values of x, y, z and nx, ny, nz (normals).
+            - task: tensor of size (B, 7) arranged as x, y, z, qw, qx, qy, qz
+            - already_processed: whether or not the preprocessing step has already been performed
+                                 on these pointcloud-task pairs (typically True when training and
+                                 False during deployment) 
+        """
+
+        # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
+        if not already_processed:
+            self.preprocess_inputs(pointclouds, tasks)
+
+        return
 
         # Encode the points into a feature vector
-        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(points)
+        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointclouds)
 
         # TODO: Fix this after changing workspace origin to workspace center
-        task_points, task_orientations = task.split([3, 4], dim=1)
-        task_points = (task_points - self.config.workspace_center) / self.config.workspace_dim
+        task_points, task_orientations = tasks.split([3, 4], dim=1)
+        # task_points = (task_points - self.config.workspace_center) / self.config.workspace_dim
 
         # Make sure all quaternions have a positive w value since negative quaternions represent
         # identical rotations to their positive valued counterparts
@@ -71,3 +85,92 @@ class BaseNet(torch.nn.Module):
 
         # Deconvolution step to the desired final resolution
         x = self.dconv1(x)
+
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_pose: torch.Tensor) -> torch.Tensor:
+        batch_size = task_pose.size()[0]
+
+        # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
+        pointcloud_tensor = self.pad_pointclouds_to_same_size(pointclouds)
+        non_padded_indices = torch.sum(pointcloud_tensor[:, :, 3:], dim=-1) != 0
+
+        # Note that the task pose is also the transform world_tform_task
+        task_positions, task_orientations = task_pose.split([3, 4], dim=1)
+
+        # Step 2: subtract the task position from all points to get the relative displacement
+        pointcloud_tensor[:, :, :3] = pointcloud_tensor[:, :, :3] - task_positions[:, None, :]
+
+        # Step 3: Filter out all points too far from the task pose in an xy sense and pad these again
+        squared_distance = torch.sum(pointcloud_tensor[:, :, :2]**2, dim=-1)
+        indices_in_range = squared_distance < (self.config.workspace_radius**2)
+
+        valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
+        filtered_pointclouds = [pointcloud_tensor[idx, valid_indices] for idx, valid_indices in enumerate(valid_indices)]
+        filtered_pointclouds_tensor = self.pad_pointclouds_to_same_size(filtered_pointclouds)
+
+        # Step 4: Rotate the points to a frame such that the task pose lies at the origin with the x-axis in the XZ plane
+        euler_angles_rpy = self.quaternion_to_euler_tensor(task_orientations)
+        roll_angles = euler_angles_rpy[:, 0]
+        pitch_angles = euler_angles_rpy[:, 1]
+        yaw_angles = euler_angles_rpy[:, 2]
+
+        cos_yaw = torch.cos(-yaw_angles)
+        sin_yaw = torch.sin(-yaw_angles)
+        Rz = torch.zeros((batch_size, 3, 3))
+        Rz[:, 0, 0] = cos_yaw
+        Rz[:, 0, 1] = -sin_yaw
+        Rz[:, 1, 0] = sin_yaw
+        Rz[:, 1, 1] = cos_yaw
+        Rz[:, 2, 2] = 1
+
+        # We take the transpose since our points are row vectors
+        Rz_T = Rz.transpose(1, 2)
+        rotated_points  = torch.matmul(filtered_pointclouds_tensor[:, :, :3], Rz_T)
+        rotated_normals = torch.matmul(filtered_pointclouds_tensor[:, :, 3:], Rz_T)
+
+        # Step 5: Define a reduced version of the task pose for this new frame
+        task_tensor = torch.stack([task_positions[:, 2], pitch_angles, roll_angles], dim=1)
+
+        pointcloud_tensor = torch.concatenate([rotated_points, rotated_normals], dim=2)
+        return pointcloud_tensor, task_tensor
+
+    def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
+        pointcloud_counts = [pc.size()[0] for pc in pointclouds]
+        max_point_count = max(pointcloud_counts)
+        pointcloud_tensor = torch.Tensor(size=(len(pointclouds), max_point_count, 6))
+        for pointcloud_idx, point_count in enumerate(pointcloud_counts):
+            if point_count < max_point_count:
+                pointclouds[pointcloud_idx] = pad(input=pointclouds[pointcloud_idx], pad=(0, 0, 0, max_point_count - point_count), value=0)
+            pointcloud_tensor[pointcloud_idx, :, :] = pointclouds[pointcloud_idx]
+        
+        return pointcloud_tensor
+    
+    def quaternion_to_euler_tensor(self, quaternions) -> torch.Tensor:
+        qw, qx, qy, qz = quaternions[:, 0], quaternions[:, 1], quaternions[:, 2], quaternions[:, 3]
+
+        # Precompute terms for efficiency
+        qwx = qw*qx
+        qwy = qw*qy
+        qwz = qw*qz
+        qxy = qx*qy
+        qxz = qx*qz
+        qyz = qy*qz
+        qxx = qx*qx
+        qyy = qy*qy
+        qzz = qz*qz
+
+        # Yaw calculation
+        sin_yaw_cos_pitch = 2*(qwz + qxy)
+        cos_yaw_cos_pitch = 1 - 2*(qyy + qzz)
+        yaw = torch.atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
+
+        # Pitch calculation
+        sin_pitch = 2*(qwy - qxz)
+        sin_pitch = sin_pitch.clamp(-1.0, 1.0) # avoid numerical errors
+        pitch = torch.asin(sin_pitch)
+
+        # Roll calculation
+        sin_roll_cos_pitch = 2*(qwx + qyz)
+        cos_roll_cos_pitch = 1 - 2*(qxx + qyy)
+        roll = torch.atan2(sin_roll_cos_pitch, cos_roll_cos_pitch)
+
+        return torch.stack((roll, pitch, yaw), dim=1)
