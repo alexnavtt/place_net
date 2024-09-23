@@ -1,4 +1,5 @@
 import copy
+import time
 from typing import Type, Union
 from dataclasses import dataclass, field
 
@@ -10,6 +11,9 @@ from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 class BaseNetConfig:
     # The radial dimension of the workspace to consider from the task pose
     workspace_radius: float
+
+    # The maximum height to consider for points in the input pointclouds
+    workspace_height: float
 
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
@@ -24,11 +28,14 @@ class BaseNetConfig:
     # of the deconvolution step
     hidden_layer_sizes: list[int] = field(default_factory=lambda: [1024 + 512])
 
+    # Whether to run on the gpu
+    device: str = "cuda"
+
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config)
-        self.pointcloud_encoder = self.config.encoder_type()
+        self.pointcloud_encoder = self.config.encoder_type(device=self.config.device)
 
         # Define the fully connected layer between encoded input and deconvolution of the output
         layer_sizes = [1024 + 7, *self.config.hidden_layer_sizes, 2048]
@@ -41,7 +48,7 @@ class BaseNet(torch.nn.Module):
         self.dconv1 = torch.nn.ConvTranspose3d(in_channels=1, out_channels=1, kernel_size=3)
         # self.dconv2 = torch.nn.ConvTranspose3d
 
-    def forward(self, pointclouds: list[torch.Tensor], tasks: torch.Tensor, already_processed: bool = False):
+    def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor, already_processed: bool = False):
         """
         Perform the forward pass on a model with batch size B. The pointclouds and task poses must be 
         defined in the same frame
@@ -57,12 +64,18 @@ class BaseNet(torch.nn.Module):
 
         # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
         if not already_processed:
-            self.preprocess_inputs(pointclouds, tasks)
-
-        return
+            t1 = time.perf_counter()
+            pointclouds, tasks = self.preprocess_inputs(pointclouds, tasks)
+            t2 = time.perf_counter()
 
         # Encode the points into a feature vector
         encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointclouds)
+        t3 = time.perf_counter()
+
+        print(f"Pointcloud processing: {(t2 -t1)*1000}ms")
+        print(f"Pointcloud encoding: {(t3 -t2)*1000}ms")
+
+        return
 
         # TODO: Fix this after changing workspace origin to workspace center
         task_points, task_orientations = tasks.split([3, 4], dim=1)
@@ -99,9 +112,10 @@ class BaseNet(torch.nn.Module):
         # Step 2: subtract the task position from all points to get the relative displacement
         pointcloud_tensor[:, :, :3] = pointcloud_tensor[:, :, :3] - task_positions[:, None, :]
 
-        # Step 3: Filter out all points too far from the task pose in an xy sense and pad these again
-        squared_distance = torch.sum(pointcloud_tensor[:, :, :2]**2, dim=-1)
-        indices_in_range = squared_distance < (self.config.workspace_radius**2)
+        # Step 3: Filter out all points too far from the task pose and pad these again
+        squared_distances = torch.sum(pointcloud_tensor[:, :, :2]**2, dim=-1)
+        elevations = pointcloud_tensor[:, :, 2]
+        indices_in_range = torch.logical_and(squared_distances < (self.config.workspace_radius**2), elevations < self.config.workspace_height)
 
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
         filtered_pointclouds = [pointcloud_tensor[idx, valid_indices] for idx, valid_indices in enumerate(valid_indices)]
@@ -115,7 +129,7 @@ class BaseNet(torch.nn.Module):
 
         cos_yaw = torch.cos(-yaw_angles)
         sin_yaw = torch.sin(-yaw_angles)
-        Rz = torch.zeros((batch_size, 3, 3))
+        Rz = torch.zeros((batch_size, 3, 3), device=self.config.device)
         Rz[:, 0, 0] = cos_yaw
         Rz[:, 0, 1] = -sin_yaw
         Rz[:, 1, 0] = sin_yaw
@@ -136,7 +150,7 @@ class BaseNet(torch.nn.Module):
     def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
         pointcloud_counts = [pc.size()[0] for pc in pointclouds]
         max_point_count = max(pointcloud_counts)
-        pointcloud_tensor = torch.Tensor(size=(len(pointclouds), max_point_count, 6))
+        pointcloud_tensor = torch.empty(size=(len(pointclouds), max_point_count, 6), device=self.config.device)
         for pointcloud_idx, point_count in enumerate(pointcloud_counts):
             if point_count < max_point_count:
                 pointclouds[pointcloud_idx] = pad(input=pointclouds[pointcloud_idx], pad=(0, 0, 0, max_point_count - point_count), value=0)

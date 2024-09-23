@@ -18,7 +18,7 @@ def load_pointcloud_batch():
         pc.estimate_normals()
         pc = np.concatenate([np.asarray(pc.points), np.asarray(pc.normals)], axis=1)
         # pc = np.concatenate([np.asarray(pc.points)[:3, :], np.asarray(pc.normals)[:3, :]], axis=1)
-        pointclouds[idx] = torch.Tensor(pc)
+        pointclouds[idx] = torch.Tensor(pc).cuda()
 
     return pointclouds
 
@@ -35,19 +35,21 @@ def main():
     # tasks = load_test_tasks()
 
     # Define a set of test task definitions
-    task_points = torch.Tensor([[0, 1, 0], [0, 0, 0.5]])
-    orientations = torch.rand([2, 4])
+    batch_size = len(pointclouds)
+    task_points = torch.rand([batch_size, 3])
+    orientations = torch.rand([batch_size, 4])
     orientations[:,1] /= orientations.norm(dim=1)
 
     orientations[0, :] = torch.Tensor([1, 0, 0, 0])
-    tasks = torch.concatenate([task_points, orientations], dim=1)
+    tasks = torch.concatenate([task_points, orientations], dim=1).cuda()
 
     base_net_config = BaseNetConfig(
         encoder_type=PointNetEncoder,
         hidden_layer_sizes=[1024 + 512],
         output_orientation_discretization=20,
         output_position_resolution=0.10,
-        workspace_radius=2.0
+        workspace_radius=2.0,
+        workspace_height=1.5
     )
     
     base_net_model = BaseNet(base_net_config)
