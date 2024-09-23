@@ -1,27 +1,57 @@
+#!/bin/python
+
 import torch
+import numpy as np
+import open3d as o3d
+
 from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
-from models.base_net import BaseNet
+from models.base_net import BaseNet, BaseNetConfig
+
+def load_pointcloud_batch():
+    files = [
+        "test_data/room_scan1.pcd",
+        "test_data/room_scan2.pcd",
+    ]   
+
+    pointclouds = [o3d.io.read_point_cloud(file) for file in files]
+    for idx, pc in enumerate(pointclouds): 
+        pc.estimate_normals()
+        pc = np.concatenate([np.asarray(pc.points), np.asarray(pc.normals)], axis=1)
+        # pc = np.concatenate([np.asarray(pc.points)[:3, :], np.asarray(pc.normals)[:3, :]], axis=1)
+        pointclouds[idx] = torch.Tensor(pc)
+
+    return pointclouds
+
+def load_test_pointcloud() -> list[torch.Tensor]:
+    test_pointcloud = torch.Tensor([[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]]])
+    return [test_pointcloud]
+
+def load_test_tasks() -> torch.Tensor:
+    return torch.Tensor([[0.0, 0.0, 0.0, 0.4217103, 0.5662352, 0.4180669, -0.5716277]])
 
 def main():
-    point = torch.Tensor([1, 2, 3])
-    normal = torch.rand(3)
-    normal /= normal.norm()
-    orientation = torch.rand(4)
-    orientation /= orientation.norm()
+    pointclouds = load_pointcloud_batch()
+    # pointclouds = load_test_pointcloud()
+    # tasks = load_test_tasks()
 
-    point1 = torch.cat([torch.Tensor([4, 5, 6]), normal])
-    point2 = torch.cat([torch.Tensor([7, 8, 9]), normal])
+    # Define a set of test task definitions
+    task_points = torch.Tensor([[0, 1, 0], [0, 0, 0.5]])
+    orientations = torch.rand([2, 4])
+    orientations[:,1] /= orientations.norm(dim=1)
 
-    pointcloud = torch.cat([point1, point2]).reshape([1, 6, 2])
-    print(pointcloud, pointcloud.size())
+    orientations[0, :] = torch.Tensor([1, 0, 0, 0])
+    tasks = torch.concatenate([task_points, orientations], dim=1)
 
-    base_net_model = BaseNet(
-        workspace_origin=torch.Tensor([0, 0, 0]),
-        workspace_dim=torch.Tensor([1.9, 1.9, 1.9]),
-        encoder_type=PointNetEncoder
+    base_net_config = BaseNetConfig(
+        encoder_type=PointNetEncoder,
+        hidden_layer_sizes=[1024 + 512],
+        output_orientation_discretization=20,
+        output_position_resolution=0.10,
+        workspace_radius=2.0
     )
-
-    base_net_model.forward(pointcloud, torch.cat([point, orientation]))
+    
+    base_net_model = BaseNet(base_net_config)
+    base_net_model(pointclouds, tasks)
 
 if __name__ == "__main__":
     main()
