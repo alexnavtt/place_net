@@ -4,6 +4,7 @@ import argparse
 
 # 3rd party minor
 import scipy
+import xacro
 import open3d
 import numpy as np
 
@@ -25,11 +26,12 @@ def load_arguments():
         prog="calculate_ground_truth.py",
         description="Script to calculate the ground truth reachability values for BaseNet",
     )
-    parser.add_argument('--pointcloud_path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
-    parser.add_argument('--task_path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
-    parser.add_argument('--robot_config_file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
-    parser.add_argument('--urdf_file', help='Path to a urdf or xacro file to load as the robot\'s URDF')
-    parser.add_argument('--xacro_args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
+    parser.add_argument('--pointcloud-path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
+    parser.add_argument('--task-path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
+    parser.add_argument('--robot-config_file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
+    parser.add_argument('--urdf-file', help='Path to a urdf or xacro file to load as the robot\'s URDF')
+    parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
+    # parser.add_argument('--xacro_args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
     return parser.parse_args()
 
 def load_pointclouds(folder_path: str) -> dict[str: torch.Tensor]:
@@ -70,8 +72,31 @@ def load_tasks(folder_path: str) -> list[tuple[str, torch.Tensor]]:
     
     return tasks
                 
-def load_robot_config(args):
-    config_file: str = args.robot_config_file
+def load_robot_config(args) -> RobotConfig:
+    robot_config_extension = os.path.splitext(args.robot_config_file)[1]
+    robot_config = load_yaml(args.robot_config_file)
+    if robot_config_extension == '.xrdf':
+        ee_link = robot_config['tools_frames'][0]
+    elif robot_config_extension == '.yaml':
+        ee_link = robot_config['robot_cfg']['kinematics']['ee_link']
+    else:
+        raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{robot_config_extension}"')
+
+    urdf_file_extension = os.path.splitext(args.urdf_file)[1]
+    if urdf_file_extension == ".xacro":
+        xacro_args  = dict(arg.split(":=") for arg in args.xacro_args.split(" ") if arg)
+        urdf_string = xacro.process_file(args.urdf_file, mappings=xacro_args).toprettyxml(indent='  ')
+        args.urdf_file = '/tmp/base_net_urdf.urdf'
+        with open(args.urdf_file, 'w') as urdf_file:
+            urdf_file.write(urdf_string)
+    elif urdf_file_extension != '.urdf':
+        raise RuntimeError(f'Received URDF config file with unsupported extension: "{urdf_file_extension}"')
+
+    return RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
+        file_path=args.robot_config_file,
+        ee_link=ee_link,
+        urdf_path=args.urdf_file)
+    )
 
 def visualize_task(task, pointclouds):
     pointcloud_name, task_pose = task
@@ -104,6 +129,8 @@ def main():
     print(pointclouds)
     tasks = load_tasks(args.task_path)
     print(tasks)
+    robot_config = load_robot_config(args)
+    print(robot_config)
     visualize_task(tasks[1], pointclouds)
 
 if __name__ == "__main__":
