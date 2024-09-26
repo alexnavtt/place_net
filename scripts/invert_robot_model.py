@@ -116,14 +116,13 @@ def invert_dynamic_joint(joint: Joint) -> list:
     return rev_inv_joint, intermediary_link, static_transform_joint
 
 
-def main():
-    args = load_arguments()
-    prepare_urdf_file(args.urdf_path, args.xacro_args)
+def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str):
+    prepare_urdf_file(urdf_path, xacro_args)
     robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
 
     # Get the relevant chains
-    arm_joints = robot.get_chain(robot.get_root(), args.manipulation_end_effector, joints=True, links=False)
-    arm_links  = robot.get_chain(robot.get_root(), args.manipulation_end_effector, joints=False, links=True)
+    arm_joints = robot.get_chain(robot.get_root(), end_effector, joints=True, links=False)
+    arm_links  = robot.get_chain(robot.get_root(), end_effector, joints=False, links=True)
 
     inverted_robot = Robot(name="inverted_robot")
     inverted_robot.add_link(robot.link_map[arm_links[-1]])
@@ -156,8 +155,9 @@ def main():
 
     print("Finished adding manipulator chain")
 
-    with open(args.output_path, 'w') as f:
+    with open(output_path, 'w') as f:
         f.write(inverted_robot.to_xml_string())
 
 if __name__ == '__main__':
-    main()
+    args = load_arguments()
+    main(args.urdf_path, args.xacro_args, args.manipulation_end_effector, args.output_path)
