@@ -57,11 +57,8 @@ def invert_pose(pose: urdf.Pose) -> urdf.Pose | None:
 
     return urdf.Pose(xyz=inverted_translation.tolist(), rpy=list(reversed(inverted_rpy)))
 
-def invert_axis(axis, rotation: urdf.Pose = None) -> list:
+def invert_axis(axis) -> list:
     return (-np.array(axis)).tolist()
-    # axis = np.array(axis)
-    # rot_mat = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(rotation.rpy)), degrees=False).as_matrix()
-    # return (-rot_mat @ axis).tolist()
 
 def add_extra_link_chain(robot: Robot, new_robot: Robot, root_name: str, known_children: list[str]) -> None:
     if root_name not in robot.child_map:
