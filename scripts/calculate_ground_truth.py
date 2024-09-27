@@ -23,7 +23,7 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.util_file import load_yaml
 from curobo.types.base import TensorDeviceType
-from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
+from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig, CudaRobotModel
 from curobo.wrap.reacher.ik_solver import IKSolver, IKSolverConfig, IKResult
 from curobo.geom.types import WorldConfig, Mesh
 
@@ -187,12 +187,12 @@ def visualize_task(task_pose, pointcloud):
 
     open3d.visualization.draw(geometry=[pointcloud, task_arrow])
 
-def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution: IKResult, goal_poses: cuRoboPose):
+def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
     geometries = [pointcloud_in_task]
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-    print(goal_poses)
-    for position, rotation, success in zip(goal_poses.position, goal_poses.quaternion, solution.success):
+    robot_rendered = False
+    for position, rotation, success, joint_state in zip(goal_poses.position, goal_poses.quaternion, solution.success, solution.solution):
         new_arrow = open3d.geometry.TriangleMesh.create_arrow(
             cylinder_radius=0.005,
             cone_radius=0.01,
@@ -204,6 +204,14 @@ def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution:
         new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
         new_arrow.translate(position.cpu().numpy())
         geometries.append(new_arrow)
+
+        if not robot_rendered and success.item():
+            robot_spheres = robot_model.get_robot_as_spheres(q=joint_state)[0]
+            robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
+            for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
+                robot_sphere_o3d.translate(robot_sphere.position)
+                geometries.append(robot_sphere_o3d)
+            robot_rendered = True
 
     task_arrow = open3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=0.015,
@@ -226,16 +234,20 @@ def main():
     robot_config = load_robot_config(args)
     print(robot_config)
 
-    base_poses_in_flattened_task_frame = load_base_pose_array(extent=1.0, num_pos=5, num_yaws=5)
+    robot_model = CudaRobotModel(config=robot_config.kinematics)
+
+    base_poses_in_flattened_task_frame = load_base_pose_array(extent=2.4, num_pos=20, num_yaws=10)
     num_poses = base_poses_in_flattened_task_frame.batch
 
     for task in tasks:
         task_pointcloud_name, task_pose = task
 
-        # Transform the pointcloud from the world frame to the task frame
+        # Align the pointcloud to floor level (assuming min point as at floor level)
         task_pointcloud = copy.deepcopy(pointclouds[task_pointcloud_name])
+        task_pointcloud.translate([0, 0, -np.min(np.asarray(task_pointcloud.points)[:, 2])])
         visualize_task(task_pose, task_pointcloud)
 
+        # Transform the pointcloud from the world frame to the task frame
         R = scipy.spatial.transform.Rotation.from_quat(quat=task_pose[3:], scalar_first=True).as_matrix()
         task_pointcloud = task_pointcloud.rotate(R.T)
         task_pointcloud = task_pointcloud.translate(-R.T@task_pose[:3])
@@ -246,7 +258,9 @@ def main():
         world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_frame[:3]).cuda(), Tensor(flattened_task_frame[3:]).cuda())
         world_tform_task = cuRoboTransform(Tensor(task_pose[:3]).cuda(), Tensor(task_pose[3:]).cuda())
 
+        # TODO: There's something fishy going on here with the base pose transform
         base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
+        base_poses_in_world.position[:,2] = 0
         base_poses_in_task  = world_tform_task.inverse().repeat(num_poses).multiply(base_poses_in_world)
 
         ik_solver = load_ik_solver(robot_config, task_pointcloud)
@@ -254,7 +268,7 @@ def main():
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
         end = time.perf_counter()
         print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {end-start} seconds')
-        visualize_solution(task_pointcloud, solutions, base_poses_in_task)
+        visualize_solution(task_pointcloud, solutions, base_poses_in_task, robot_model)
 
 if __name__ == "__main__":
     main()
