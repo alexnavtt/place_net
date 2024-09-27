@@ -40,8 +40,9 @@ def load_arguments():
     parser.add_argument('--pointcloud-path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
     parser.add_argument('--task-path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
     parser.add_argument('--robot-config-file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
-    parser.add_argument('--urdf-file', help='Path to a urdf or xacro file to load as the robot\'s URDF')
+    parser.add_argument('--urdf-file', help='path to a urdf or xacro file to load as the robot\'s URDF')
     parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
+    parser.add_argument('--device-index', default='0', help='numerical index of GPU device to use')
     return parser.parse_args()
 
 def load_pointclouds(folder_path: str) -> dict[str: open3d.geometry.PointCloud]:
@@ -150,9 +151,7 @@ def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -
     return curobo_pose
 
 def flatten_task(task: np.ndarray):
-    print(f"{task=}")
     position, quaternion, _ = np.split(task, [3, 7])
-    print(quaternion)
     qw, qx, qy, qz = quaternion
 
     # Yaw calculation
@@ -170,7 +169,7 @@ def flatten_task(task: np.ndarray):
 
     return np.concatenate([position, flattened_quaternion])
 
-def visualize_task(task_pose, pointcloud):
+def visualize_task(task_pose, pointcloud, base_poses: cuRoboPose):
     task_arrow = open3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=0.03,
         cone_radius=0.05,
@@ -178,14 +177,29 @@ def visualize_task(task_pose, pointcloud):
         cone_height=0.1
     )
 
-    rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True)
+    rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
     rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_pose[3:], scalar_first=True)
-    task_arrow.rotate(rotation_to_x.as_matrix(), center=[0, 0, 0])
+    task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
     task_arrow.rotate(rotation.as_matrix(), center=[0, 0, 0])
     task_arrow.translate(task_pose[:3])
     task_arrow.paint_uniform_color([1, 0, 0])
 
-    open3d.visualization.draw(geometry=[pointcloud, task_arrow])
+    geometries = [task_arrow, pointcloud]
+
+    for position, rotation in zip(base_poses.position, base_poses.quaternion):
+        new_arrow = open3d.geometry.TriangleMesh.create_arrow(
+            cylinder_radius=0.005,
+            cone_radius=0.01,
+            cylinder_height=0.03,
+            cone_height=0.015,
+        )
+        new_arrow.paint_uniform_color([0, 0, 1])
+        new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
+        new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
+        new_arrow.translate(position.cpu().numpy())
+        geometries.append(new_arrow)
+
+    open3d.visualization.draw(geometry=geometries)
 
 def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
     geometries = [pointcloud_in_task]
@@ -236,39 +250,44 @@ def main():
 
     robot_model = CudaRobotModel(config=robot_config.kinematics)
 
-    base_poses_in_flattened_task_frame = load_base_pose_array(extent=2.4, num_pos=20, num_yaws=10)
+    base_poses_in_flattened_task_frame = load_base_pose_array(extent=2.4, num_pos=20, num_yaws=5)
     num_poses = base_poses_in_flattened_task_frame.batch
 
     for task in tasks:
-        task_pointcloud_name, task_pose = task
+        task_pointcloud_name, task_pose_in_world = task
 
         # Align the pointcloud to floor level (assuming min point as at floor level)
-        task_pointcloud = copy.deepcopy(pointclouds[task_pointcloud_name])
-        task_pointcloud.translate([0, 0, -np.min(np.asarray(task_pointcloud.points)[:, 2])])
-        visualize_task(task_pose, task_pointcloud)
-
-        # Transform the pointcloud from the world frame to the task frame
-        R = scipy.spatial.transform.Rotation.from_quat(quat=task_pose[3:], scalar_first=True).as_matrix()
-        task_pointcloud = task_pointcloud.rotate(R.T)
-        task_pointcloud = task_pointcloud.translate(-R.T@task_pose[:3])
+        pointcloud_in_world = copy.deepcopy(pointclouds[task_pointcloud_name])
+        pointcloud_in_world.translate([0, 0, -np.min(np.asarray(pointcloud_in_world.points)[:, 2])])
 
         # Transform the base poses from the flattened task frame to the task frame
-        flattened_task_frame = flatten_task(task_pose)
+        flattened_task_pose = flatten_task(task_pose_in_world)
 
-        world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_frame[:3]).cuda(), Tensor(flattened_task_frame[3:]).cuda())
-        world_tform_task = cuRoboTransform(Tensor(task_pose[:3]).cuda(), Tensor(task_pose[3:]).cuda())
+        world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_pose[:3]).cuda(), Tensor(flattened_task_pose[3:]).cuda())
+        world_tform_task = cuRoboTransform(Tensor(task_pose_in_world[:3]).cuda(), Tensor(task_pose_in_world[3:]).cuda())
+        task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
         # TODO: There's something fishy going on here with the base pose transform
-        base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
+        base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(copy.deepcopy(base_poses_in_flattened_task_frame))
         base_poses_in_world.position[:,2] = 0
-        base_poses_in_task  = world_tform_task.inverse().repeat(num_poses).multiply(base_poses_in_world)
+        visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
 
-        ik_solver = load_ik_solver(robot_config, task_pointcloud)
+        # Transform the pointcloud from the world frame to the task frame
+        task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
+        task_tform_world_mat = np.eye(4)
+        task_tform_world_mat[:3, :3] = task_R_world
+        task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
+        pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
+
+        base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
+
+        ik_solver = load_ik_solver(robot_config, pointcloud_in_task)
         start = time.perf_counter()
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
         end = time.perf_counter()
+        print(f"There are {torch.sum(solutions.success)} successful poses")
         print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {end-start} seconds')
-        visualize_solution(task_pointcloud, solutions, base_poses_in_task, robot_model)
+        visualize_solution(pointcloud_in_task, solutions, base_poses_in_task, robot_model)
 
 if __name__ == "__main__":
     main()
