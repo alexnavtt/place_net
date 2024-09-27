@@ -31,8 +31,10 @@ cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
 from invert_robot_model import main as invert_urdf
+DEVICE = torch.device('cuda', 0)
 
 def load_arguments():
+    global DEVICE
     parser = argparse.ArgumentParser(
         prog="calculate_ground_truth.py",
         description="Script to calculate the ground truth reachability values for BaseNet",
@@ -43,7 +45,10 @@ def load_arguments():
     parser.add_argument('--urdf-file', help='path to a urdf or xacro file to load as the robot\'s URDF')
     parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
     parser.add_argument('--device-index', default='0', help='numerical index of GPU device to use')
-    return parser.parse_args()
+    args = parser.parse_args()
+    DEVICE = torch.device('cuda', int(args.device_index))
+
+    return args
 
 def load_pointclouds(folder_path: str) -> dict[str: open3d.geometry.PointCloud]:
     pointclouds = {}
@@ -101,12 +106,13 @@ def load_robot_config(args) -> RobotConfig:
     return RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
         file_path=robot_config,
         ee_link=base_link,
-        urdf_path="/tmp/inverted_urdf.urdf")
+        urdf_path="/tmp/inverted_urdf.urdf",
+        tensor_args=TensorDeviceType(device=DEVICE))
     )
 
 def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor):
     start = time.perf_counter()
-    tensor_args = TensorDeviceType(device=torch.device('cuda', 0))
+    tensor_args = TensorDeviceType(device=DEVICE)
 
     world_config = WorldConfig(
         mesh=[Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.05)]
@@ -146,7 +152,7 @@ def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -
     pos_grid_arranged = pos_grid.repeat_interleave(num_yaws, dim=0)
     yaw_grid_arranged = quats.repeat([num_pos**2, 1])
 
-    curobo_pose = cuRoboPose(position=pos_grid_arranged.cuda(), quaternion=yaw_grid_arranged.cuda())
+    curobo_pose = cuRoboPose(position=pos_grid_arranged.cuda(DEVICE), quaternion=yaw_grid_arranged.cuda(DEVICE))
 
     return curobo_pose
 
@@ -242,11 +248,8 @@ def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution:
 def main():
     args = load_arguments()
     pointclouds = load_pointclouds(args.pointcloud_path)
-    print(pointclouds)
     tasks = load_tasks(args.task_path)
-    print(tasks)
     robot_config = load_robot_config(args)
-    print(robot_config)
 
     robot_model = CudaRobotModel(config=robot_config.kinematics)
 
@@ -263,8 +266,8 @@ def main():
         # Transform the base poses from the flattened task frame to the task frame
         flattened_task_pose = flatten_task(task_pose_in_world)
 
-        world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_pose[:3]).cuda(), Tensor(flattened_task_pose[3:]).cuda())
-        world_tform_task = cuRoboTransform(Tensor(task_pose_in_world[:3]).cuda(), Tensor(task_pose_in_world[3:]).cuda())
+        world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_pose[:3]).cuda(DEVICE), Tensor(flattened_task_pose[3:]).cuda(DEVICE))
+        world_tform_task = cuRoboTransform(Tensor(task_pose_in_world[:3]).cuda(DEVICE), Tensor(task_pose_in_world[3:]).cuda(DEVICE))
         task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
         # TODO: There's something fishy going on here with the base pose transform
