@@ -1,9 +1,9 @@
 pointclouds:
-  - {path: "../test_data/room_scan1.pcd", elevation: -1.35}
-  - {path: "../test_data/room_scan2.pcd", elevation: -1.35}
+  - {path: "../test_data/room_scan1.pcd", elevation: -1.25}
+  - {path: "../test_data/room_scan2.pcd", elevation: -1.25}
 
 tasks: 
-  - {pointcloud: "room_scan1", position: [20.0, 0.0, 0.6], orientation: [1, 0, 0, 0]}
+  - {pointcloud: "room_scan1", position: [20.0, 0.0, 1.0], orientation: [1, 0, 0, 0]}
   - {pointcloud: "room_scan2", position: [1.0, 0.5, 1.0], orientation: [-0.8535534, -0.1464466, 0.3535534, 0.3535534]}
 
 curobo_config_file:
@@ -16,3 +16,8 @@ urdf_file:
   xacro_args: 'has_eap:=True has_arm:=True'
 
 cuda_device: 0
+end_effector_elevation: 0.709
+robot_reach_radius: 0.9
+obstacle_inclusion_radius: 2.0
+position_count: 15
+yaw_count: 15

@@ -13,7 +13,12 @@ from typing_extensions import TypeAlias
 import scipy.spatial
 import open3d
 import numpy as np
-from ament_index_python import get_package_share_directory
+
+# Allow running even without ROS
+try:
+    from ament_index_python import get_package_share_directory
+except ModuleNotFoundError:
+    pass
 
 # pytorch
 import torch
@@ -40,12 +45,6 @@ def load_config():
         prog="calculate_ground_truth.py",
         description="Script to calculate the ground truth reachability values for BaseNet",
     )
-    # parser.add_argument('--pointcloud-path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
-    # parser.add_argument('--task-path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
-    # parser.add_argument('--robot-config-file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
-    # parser.add_argument('--urdf-file', help='path to a urdf or xacro file to load as the robot\'s URDF')
-    # parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
-    # parser.add_argument('--device-index', default='0', help='numerical index of GPU device to use')
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     args = parser.parse_args()
 
@@ -60,6 +59,10 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
         return {}
     
     pointclouds = {}
+    height_filter = open3d.geometry.AxisAlignedBoundingBox(
+        min_bound=[-1e10, -1e10, 0.05], 
+        max_bound=[1e10, 1e10, config['end_effector_elevation'] + config['robot_reach_radius'] + 0.2]
+    )
 
     for item in config['pointclouds']:
         file_path, elevation = item['path'], item['elevation']
@@ -75,7 +78,7 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
                 pointcloud_o3d.estimate_normals()
                 # raise RuntimeError("Cannot operate on pointclouds without normals")
             pointcloud_o3d.translate([0, 0, -elevation])
-            pointclouds[name] = pointcloud_o3d
+            pointclouds[name] = pointcloud_o3d.crop(height_filter)
 
     return pointclouds
                 
@@ -121,19 +124,32 @@ def load_robot_config(config: dict) -> RobotConfig:
         tensor_args=TensorDeviceType(device=DEVICE))
     )
 
-def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor):
+def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: float):
     start = time.perf_counter()
     tensor_args = TensorDeviceType(device=DEVICE)
 
-    world_config = WorldConfig(
-        mesh=[Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.05)]
-    )
+    bound = np.array([crop_radius]*3)
+    crop_box = open3d.geometry.AxisAlignedBoundingBox(min_bound=-bound, max_bound=bound)
+    pointcloud = pointcloud.crop(crop_box)
+
+    open3d_mesh = open3d.geometry.TriangleMesh()
+    if len(pointcloud.points) > 0:
+        world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.01)
+        world_config = WorldConfig(
+            mesh=[world_mesh]
+        )
+        trimesh = world_mesh.get_trimesh_mesh()
+        open3d_mesh.vertices.extend(trimesh.vertices)
+        open3d_mesh.triangles.extend(trimesh.faces)
+        open3d_mesh.vertex_colors.extend(np.random.rand(len(trimesh.vertices), 3))
+    else:
+        world_config = None
 
     ik_config = IKSolverConfig.load_from_robot_config(
         robot_config,
         world_config,
-        rotation_threshold=0.05,
-        position_threshold=0.005,
+        rotation_threshold=0.1,
+        position_threshold=0.01,
         num_seeds=10,
         self_collision_check=True,
         self_collision_opt=True,
@@ -143,7 +159,7 @@ def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor):
 
     end = time.perf_counter()
     print(f"Loaded solver in {end-start} seconds")
-    return IKSolver(ik_config)
+    return IKSolver(ik_config), open3d_mesh
 
 def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -> cuRoboPose:
     yaw_angles = torch.arange(0, 2*math.pi - 1e-4, 2*math.pi/num_yaws)
@@ -192,7 +208,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
         cylinder_radius=0.03,
         cone_radius=0.05,
         cylinder_height=0.2,
-        cone_height=0.1
+        cone_height=0.1,
     )
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
@@ -210,6 +226,8 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
             cone_radius=0.01,
             cylinder_height=0.03,
             cone_height=0.015,
+            cylinder_split=1,
+            resolution=4
         )
         new_arrow.paint_uniform_color([0, 0, 1])
         new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
@@ -219,17 +237,18 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
 
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
-    geometries = [pointcloud_in_task]
+def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
+    geometries = [world_mesh] if len(world_mesh.vertices) > 0 else []
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-    robot_rendered = False
-    for position, rotation, success, joint_state in zip(goal_poses.position, goal_poses.quaternion, solution.success, solution.solution):
+    for position, rotation, success in zip(goal_poses.position, goal_poses.quaternion, solution.success):
         new_arrow = open3d.geometry.TriangleMesh.create_arrow(
             cylinder_radius=0.005,
             cone_radius=0.01,
             cylinder_height=0.03,
             cone_height=0.015,
+            cylinder_split=1,
+            resolution=4
         )
         new_arrow.paint_uniform_color([float(1-success.item()), success.item(), 0])
         new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
@@ -237,13 +256,15 @@ def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution:
         new_arrow.translate(position.cpu().numpy())
         geometries.append(new_arrow)
 
-        if not robot_rendered and success.item():
-            robot_spheres = robot_model.get_robot_as_spheres(q=joint_state)[0]
-            robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
-            for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
-                robot_sphere_o3d.translate(robot_sphere.position)
-                geometries.append(robot_sphere_o3d)
-            robot_rendered = True
+    # Render one of the successful poses randomly
+    if torch.sum(solution.success) > 0:
+        solution_idx = int(np.random.rand() * torch.sum(solution.success))
+        robot_spheres = robot_model.get_robot_as_spheres(q=solution.solution[solution.success, :][solution_idx, :])[0]
+        robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
+        for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
+            robot_sphere_o3d.translate(robot_sphere.position)
+            robot_sphere_o3d.vertex_colors.extend(np.random.rand(len(robot_sphere_o3d.vertices), 1).repeat(3, axis=1))
+            geometries.append(robot_sphere_o3d)
 
     task_arrow = open3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=0.015,
@@ -264,12 +285,18 @@ def main():
 
     robot_model = CudaRobotModel(config=robot_config.kinematics)
 
-    base_poses_in_flattened_task_frame = load_base_pose_array(extent=2.4, num_pos=20, num_yaws=5)
+    base_poses_in_flattened_task_frame = load_base_pose_array(
+        extent=2*config['robot_reach_radius'], 
+        num_pos=config['position_count'], 
+        num_yaws=config['yaw_count']
+    )
     num_poses = base_poses_in_flattened_task_frame.batch
 
     for task in config['tasks']:
         task_pointcloud_name = task['pointcloud']
         task_pose_in_world = cuRoboPose(position=Tensor(task['position']).to(DEVICE), quaternion=Tensor(task['orientation']).to(DEVICE))
+        task_pose_in_world.quaternion[0,:] = torch.rand([1, 4])
+        task_pose_in_world.quaternion[0,:] /= torch.norm(task_pose_in_world.quaternion.squeeze())
 
         # Align the pointcloud to floor level (assuming min point as at floor level)
         pointcloud_in_world = pointclouds[task_pointcloud_name]
@@ -284,8 +311,8 @@ def main():
 
         # TODO: There's something fishy going on here with the base pose transform
         base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(copy.deepcopy(base_poses_in_flattened_task_frame))
-        base_poses_in_world.position[:,2] = 0
-        visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
+        base_poses_in_world.position[:,2] = config['end_effector_elevation']
+        # visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
 
         # Transform the pointcloud from the world frame to the task frame
         task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
@@ -296,13 +323,13 @@ def main():
 
         base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
-        ik_solver = load_ik_solver(robot_config, pointcloud_in_task)
+        ik_solver, world_mesh = load_ik_solver(robot_config, pointcloud_in_task, config['obstacle_inclusion_radius'])
         start = time.perf_counter()
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
         end = time.perf_counter()
         print(f"There are {torch.sum(solutions.success)} successful poses")
         print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {end-start} seconds')
-        visualize_solution(pointcloud_in_task, solutions, base_poses_in_task, robot_model)
+        visualize_solution(world_mesh, solutions, base_poses_in_task, robot_model)
 
 if __name__ == "__main__":
     main()
