@@ -13,6 +13,7 @@ from typing_extensions import TypeAlias
 import scipy.spatial
 import open3d
 import numpy as np
+from ament_index_python import get_package_share_directory
 
 # pytorch
 import torch
@@ -33,75 +34,85 @@ cuRoboTransform: TypeAlias = cuRoboPose
 from invert_robot_model import main as invert_urdf
 DEVICE = torch.device('cuda', 0)
 
-def load_arguments():
+def load_config():
     global DEVICE
     parser = argparse.ArgumentParser(
         prog="calculate_ground_truth.py",
         description="Script to calculate the ground truth reachability values for BaseNet",
     )
-    parser.add_argument('--pointcloud-path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
-    parser.add_argument('--task-path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
-    parser.add_argument('--robot-config-file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
-    parser.add_argument('--urdf-file', help='path to a urdf or xacro file to load as the robot\'s URDF')
-    parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
-    parser.add_argument('--device-index', default='0', help='numerical index of GPU device to use')
+    # parser.add_argument('--pointcloud-path', '-p', default='test_data', help='path to a folder containing training/testing pointclouds stored as .pcd files. Pointclouds must have a normal field')
+    # parser.add_argument('--task-path', '-t', default='test_data', help='path to a folder containing training/testing 3D poses stored as a text file with a newline separated list of space separated [pointcloud_name x y z qw qx qy qz] fields')
+    # parser.add_argument('--robot-config-file', '-r', help='path to a curobo robot config file. Both yaml and xrdf files are acceptable')
+    # parser.add_argument('--urdf-file', help='path to a urdf or xacro file to load as the robot\'s URDF')
+    # parser.add_argument('--xacro-args', '-x', help='space separated string of xacro args in the format "arg1:=val1 arg2:=val2 ..."')
+    # parser.add_argument('--device-index', default='0', help='numerical index of GPU device to use')
+    parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     args = parser.parse_args()
-    DEVICE = torch.device('cuda', int(args.device_index))
 
-    return args
+    config = load_yaml(args.config_file)
+    if 'cuda_device' in config.keys() and config['cuda_device'] is not None:
+        DEVICE = torch.device('cuda', int(config['cuda_device']))
 
-def load_pointclouds(folder_path: str) -> dict[str: open3d.geometry.PointCloud]:
+    return config
+
+def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
+    if 'pointclouds' not in config:
+        return {}
+    
     pointclouds = {}
 
-    all_items = os.listdir(folder_path)
-    print(f"{all_items=}")
-    for item in all_items:
-        path = os.path.join(folder_path, item)
-        name, extension = os.path.splitext(item)
-        if os.path.isfile(path) and extension == '.pcd':
+    for item in config['pointclouds']:
+        file_path, elevation = item['path'], item['elevation']
+
+        _, filename = os.path.split(file_path)
+        name, extension = os.path.splitext(filename)
+
+        if os.path.isfile(file_path) and extension == '.pcd':
             if ' ' in name:
                 raise RuntimeError(f'File name "{name}" contains spaces, which is incompatible with this script')
-            pointcloud_o3d = open3d.io.read_point_cloud(path)
+            pointcloud_o3d = open3d.io.read_point_cloud(file_path)
             if not pointcloud_o3d.has_normals():
                 pointcloud_o3d.estimate_normals()
                 # raise RuntimeError("Cannot operate on pointclouds without normals")
+            pointcloud_o3d.translate([0, 0, -elevation])
             pointclouds[name] = pointcloud_o3d
 
     return pointclouds
-
-def load_tasks(folder_path: str) -> list[tuple[str, np.ndarray]]:
-    tasks = []
-
-    all_items = os.listdir(folder_path)
-    for item in all_items:
-        path = os.path.join(folder_path, item)
-        _, extension = os.path.splitext(item)
-        if not os.path.isfile(path) or extension != '.txt':
-            continue
-                    
-        for line in open(path):
-            vals = line.split(' ')
-            if len(vals) != 8:
-                raise RuntimeError(f'Received line "{line}" with {len(vals)} entries instead of the expected 8: name, x, y, z, qw, qx, qy, qz')
-            tasks.append((vals[0], np.array([float(val) for val in vals[1:]])))
-    
-    return tasks
                 
-def load_robot_config(args) -> RobotConfig:
-    robot_config_extension = os.path.splitext(args.robot_config_file)[1]
-    robot_config = load_yaml(args.robot_config_file)
-    if robot_config_extension == '.xrdf':
+def load_robot_config(config: dict) -> RobotConfig:
+    # Resolve ros package paths if necessary
+    if 'ros_package' in config['curobo_config_file']:
+        curobo_file = os.path.join(
+            get_package_share_directory(config['curobo_config_file']['ros_package']),
+            config['curobo_config_file']['path']
+        )
+    else:
+        curobo_file = config['curobo_config_file']['path']
+
+    urdf_config = config['urdf_file']
+    if 'ros_package' in urdf_config:
+        urdf_file = os.path.join(
+            get_package_share_directory(urdf_config['ros_package']),
+            urdf_config['path']
+        )
+    else:
+        urdf_file = urdf_config['path']
+    
+    # Load and process the cuRobo config file
+    curobo_config_extension = os.path.splitext(curobo_file)[1]
+    robot_config = load_yaml(curobo_file)
+    if curobo_config_extension == '.xrdf':
         ee_link = robot_config['tools_frames'][0]
-    elif robot_config_extension == '.yaml':
+    elif curobo_config_extension == '.yaml':
         ee_link = robot_config['robot_cfg']['kinematics']['ee_link']
         base_link = robot_config['robot_cfg']['kinematics']['base_link']
     else:
-        raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{robot_config_extension}"')
-
-    invert_urdf(args.urdf_file, args.xacro_args, ee_link, "/tmp/inverted_urdf.urdf")
-
+        raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{curobo_config_extension}"')
     robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
     robot_config['robot_cfg']['kinematics']['base_link'] = ee_link
+
+    # Load and process the URDF file
+    invert_urdf(urdf_file, urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', ee_link, "/tmp/inverted_urdf.urdf")
 
     return RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
         file_path=robot_config,
@@ -156,9 +167,8 @@ def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -
 
     return curobo_pose
 
-def flatten_task(task: np.ndarray):
-    position, quaternion, _ = np.split(task, [3, 7])
-    qw, qx, qy, qz = quaternion
+def flatten_task(task: cuRoboPose):
+    qw, qx, qy, qz = task.quaternion.squeeze().cpu().numpy()
 
     # Yaw calculation
     qwz = qw*qz
@@ -173,9 +183,11 @@ def flatten_task(task: np.ndarray):
     # Reconstruct the quaternion with only the yaw component
     flattened_quaternion = np.array([math.cos(yaw/2), 0, 0, math.sin(yaw/2)])
 
-    return np.concatenate([position, flattened_quaternion])
+    flattened_task = copy.deepcopy(task)
+    flattened_task.quaternion[0,:] = Tensor(flattened_quaternion) 
+    return flattened_task
 
-def visualize_task(task_pose, pointcloud, base_poses: cuRoboPose):
+def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose):
     task_arrow = open3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=0.03,
         cone_radius=0.05,
@@ -184,10 +196,10 @@ def visualize_task(task_pose, pointcloud, base_poses: cuRoboPose):
     )
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-    rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_pose[3:], scalar_first=True)
+    rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_pose.quaternion.squeeze().cpu().numpy(), scalar_first=True)
     task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
     task_arrow.rotate(rotation.as_matrix(), center=[0, 0, 0])
-    task_arrow.translate(task_pose[:3])
+    task_arrow.translate(task_pose.position.squeeze().cpu().numpy())
     task_arrow.paint_uniform_color([1, 0, 0])
 
     geometries = [task_arrow, pointcloud]
@@ -246,28 +258,28 @@ def visualize_solution(pointcloud_in_task: open3d.geometry.PointCloud, solution:
     open3d.visualization.draw(geometry=geometries)
 
 def main():
-    args = load_arguments()
-    pointclouds = load_pointclouds(args.pointcloud_path)
-    tasks = load_tasks(args.task_path)
-    robot_config = load_robot_config(args)
+    config = load_config()
+    pointclouds = load_pointclouds(config)
+    robot_config = load_robot_config(config)
 
     robot_model = CudaRobotModel(config=robot_config.kinematics)
 
     base_poses_in_flattened_task_frame = load_base_pose_array(extent=2.4, num_pos=20, num_yaws=5)
     num_poses = base_poses_in_flattened_task_frame.batch
 
-    for task in tasks:
-        task_pointcloud_name, task_pose_in_world = task
+    for task in config['tasks']:
+        task_pointcloud_name = task['pointcloud']
+        task_pose_in_world = cuRoboPose(position=Tensor(task['position']).to(DEVICE), quaternion=Tensor(task['orientation']).to(DEVICE))
 
         # Align the pointcloud to floor level (assuming min point as at floor level)
-        pointcloud_in_world = copy.deepcopy(pointclouds[task_pointcloud_name])
-        pointcloud_in_world.translate([0, 0, -np.min(np.asarray(pointcloud_in_world.points)[:, 2])])
+        pointcloud_in_world = pointclouds[task_pointcloud_name]
 
         # Transform the base poses from the flattened task frame to the task frame
         flattened_task_pose = flatten_task(task_pose_in_world)
 
-        world_tform_flattened_task = cuRoboTransform(Tensor(flattened_task_pose[:3]).cuda(DEVICE), Tensor(flattened_task_pose[3:]).cuda(DEVICE))
-        world_tform_task = cuRoboTransform(Tensor(task_pose_in_world[:3]).cuda(DEVICE), Tensor(task_pose_in_world[3:]).cuda(DEVICE))
+        # Assign transform names for clarity of calculations
+        world_tform_flattened_task = flattened_task_pose
+        world_tform_task = task_pose_in_world
         task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
         # TODO: There's something fishy going on here with the base pose transform
