@@ -361,7 +361,7 @@ def main():
         world_tform_task = task_pose_in_world
         task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
-        base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(copy.deepcopy(base_poses_in_flattened_task_frame))
+        base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
         base_poses_in_world.position[:,2] = config['end_effector_elevation']
         # visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
 
