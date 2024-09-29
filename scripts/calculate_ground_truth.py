@@ -10,6 +10,7 @@ import open3d.visualization
 from typing_extensions import TypeAlias
 
 # 3rd party minor
+import yaml
 import scipy.spatial
 import open3d
 import numpy as np
@@ -40,6 +41,10 @@ from invert_robot_model import main as invert_urdf
 DEVICE = torch.device('cuda', 0)
 
 def load_config():
+    """
+    Load the path to the config file from runtime arguments and load the config as a dictionary
+    """
+
     global DEVICE
     parser = argparse.ArgumentParser(
         prog="calculate_ground_truth.py",
@@ -55,10 +60,15 @@ def load_config():
     return config
 
 def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
+    """
+    Load the pointclouds to be used in calculations from the file paths specified in 
+    the config file. One extra pointcloud with key 'empty' is also added with no points
+    """
+
+    pointclouds = {'empty': open3d.geometry.PointCloud()}
     if 'pointclouds' not in config:
-        return {}
+        return pointclouds
     
-    pointclouds = {}
     height_filter = open3d.geometry.AxisAlignedBoundingBox(
         min_bound=[-1e10, -1e10, 0.05], 
         max_bound=[1e10, 1e10, config['end_effector_elevation'] + config['robot_reach_radius'] + 0.2]
@@ -83,6 +93,13 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
     return pointclouds
                 
 def load_robot_config(config: dict) -> RobotConfig:
+    """
+    Load the cuRobo config from the config yaml/XRDF file and the urdf specified in the config.
+    This function inverts the loaded URDF such that the end effector becomes the base link 
+    and the base link becomes the end effector. No modifications are needed from the user
+    to either the URDF or the cuRobot config file.
+    """
+    
     # Resolve ros package paths if necessary
     if 'ros_package' in config['curobo_config_file']:
         curobo_file = os.path.join(
@@ -105,14 +122,26 @@ def load_robot_config(config: dict) -> RobotConfig:
     curobo_config_extension = os.path.splitext(curobo_file)[1]
     robot_config = load_yaml(curobo_file)
     if curobo_config_extension == '.xrdf':
-        ee_link = robot_config['tools_frames'][0]
+        ee_link = robot_config['tool_frames'][0]
+        for config_item in robot_config['modifiers']:
+            if 'set_base_frame' in config_item:
+                base_link = config_item['set_base_frame']
+                config_item['set_base_frame'] = ee_link
+                robot_config['tool_frames'][0] = base_link
+                break
+
+        # Temporary workaround because cuRobo doesn't properly process an XRDF dict
+        with open('/tmp/robot_xrdf.xrdf', 'w') as f:
+            yaml.dump(robot_config, f)
+        robot_config = '/tmp/robot_xrdf.xrdf'
+
     elif curobo_config_extension == '.yaml':
         ee_link = robot_config['robot_cfg']['kinematics']['ee_link']
         base_link = robot_config['robot_cfg']['kinematics']['base_link']
+        robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
+        robot_config['robot_cfg']['kinematics']['base_link'] = ee_link
     else:
         raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{curobo_config_extension}"')
-    robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
-    robot_config['robot_cfg']['kinematics']['base_link'] = ee_link
 
     # Load and process the URDF file
     invert_urdf(urdf_file, urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', ee_link, "/tmp/inverted_urdf.urdf")
@@ -125,6 +154,12 @@ def load_robot_config(config: dict) -> RobotConfig:
     )
 
 def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: float):
+    """
+    Consolidate the robot config and environment data to create a collision-aware IK
+    solver for this particular environment. For efficiency, the pointcloud is cropped
+    to only those points which are reachable from the task pose by the robot collision 
+    bodies
+    """
     start = time.perf_counter()
     tensor_args = TensorDeviceType(device=DEVICE)
 
@@ -134,7 +169,7 @@ def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: f
 
     open3d_mesh = open3d.geometry.TriangleMesh()
     if len(pointcloud.points) > 0:
-        world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.01)
+        world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.05)
         world_config = WorldConfig(
             mesh=[world_mesh]
         )
@@ -162,6 +197,11 @@ def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: f
     return IKSolver(ik_config), open3d_mesh
 
 def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -> cuRoboPose:
+    """
+    Define the array of manipulator base-link poses for which we are trying to solve the
+    reachability problem. The resulting array is defined centered around the origin and 
+    aligned with the gravity-aligned task frame
+    """
     yaw_angles = torch.arange(0, 2*math.pi - 1e-4, 2*math.pi/num_yaws)
     quats = torch.zeros([num_yaws, 4])
     quats[:, 0] = torch.cos(yaw_angles/2)
@@ -184,6 +224,10 @@ def load_base_pose_array(extent: float, num_pos: int = 20, num_yaws: int = 20) -
     return curobo_pose
 
 def flatten_task(task: cuRoboPose):
+    """
+    Given a pose in 3D space, return a pose at the same position with roll and 
+    pitch components of the orientation removed
+    """
     qw, qx, qy, qz = task.quaternion.squeeze().cpu().numpy()
 
     # Yaw calculation
@@ -204,6 +248,11 @@ def flatten_task(task: cuRoboPose):
     return flattened_task
 
 def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose):
+    """
+    Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
+    base poses that we are solving for. All input must be defined in the world frame
+    """
+
     task_arrow = open3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=0.03,
         cone_radius=0.05,
@@ -238,6 +287,12 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     open3d.visualization.draw(geometry=geometries)
 
 def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
+    """
+    Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
+    base poses that we are solving for. Reachable base link poses will be colored green, 
+    and unreachable ones will be colored red. If one exists, a random valid robot configuration
+    will also be rendered. All input must be defined in the task frame
+    """
     geometries = [world_mesh] if len(world_mesh.vertices) > 0 else []
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
@@ -298,9 +353,6 @@ def main():
         task_pose_in_world.quaternion[0,:] = torch.rand([1, 4])
         task_pose_in_world.quaternion[0,:] /= torch.norm(task_pose_in_world.quaternion.squeeze())
 
-        # Align the pointcloud to floor level (assuming min point as at floor level)
-        pointcloud_in_world = pointclouds[task_pointcloud_name]
-
         # Transform the base poses from the flattened task frame to the task frame
         flattened_task_pose = flatten_task(task_pose_in_world)
 
@@ -309,7 +361,6 @@ def main():
         world_tform_task = task_pose_in_world
         task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
-        # TODO: There's something fishy going on here with the base pose transform
         base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(copy.deepcopy(base_poses_in_flattened_task_frame))
         base_poses_in_world.position[:,2] = config['end_effector_elevation']
         # visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
@@ -319,16 +370,16 @@ def main():
         task_tform_world_mat = np.eye(4)
         task_tform_world_mat[:3, :3] = task_R_world
         task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
+
+        pointcloud_in_world = pointclouds[task_pointcloud_name]
         pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
 
         base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
         ik_solver, world_mesh = load_ik_solver(robot_config, pointcloud_in_task, config['obstacle_inclusion_radius'])
-        start = time.perf_counter()
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
-        end = time.perf_counter()
         print(f"There are {torch.sum(solutions.success)} successful poses")
-        print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {end-start} seconds')
+        print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {solutions.solve_time} seconds')
         visualize_solution(world_mesh, solutions, base_poses_in_task, robot_model)
 
 if __name__ == "__main__":
