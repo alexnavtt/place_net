@@ -38,6 +38,7 @@ cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
 from invert_robot_model import main as invert_urdf
+import task_visualization
 DEVICE = torch.device('cuda', 0)
 
 def load_config():
@@ -89,7 +90,7 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
                 # raise RuntimeError("Cannot operate on pointclouds without normals")
             pointcloud_o3d.translate([0, 0, -elevation])
             pointcloud_o3d = pointcloud_o3d.crop(height_filter)
-            pointcloud_o3d = pointcloud_o3d.voxel_down_sample(0.10)
+            pointcloud_o3d = pointcloud_o3d.voxel_down_sample(0.05)
             pointclouds[name] = pointcloud_o3d
 
     return pointclouds
@@ -146,14 +147,24 @@ def load_robot_config(config: dict) -> RobotConfig:
         raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{curobo_config_extension}"')
 
     # Load and process the URDF file
-    invert_urdf(urdf_file, urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', ee_link, "/tmp/inverted_urdf.urdf")
+    robot_urdf, inverted_robot_urdf = invert_urdf(
+        urdf_path    = urdf_file, 
+        xacro_args   = urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', 
+        end_effector = ee_link, 
+        output_path  = "/tmp/inverted_urdf.urdf"
+    )
 
-    return RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
+    curobo_config = RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
         file_path=robot_config,
         ee_link=base_link,
         urdf_path="/tmp/inverted_urdf.urdf",
         tensor_args=TensorDeviceType(device=DEVICE))
     )
+
+    # Make the URDF structure available later
+    curobo_config.kinematics.kinematics_config.debug = (robot_urdf, inverted_robot_urdf)
+
+    return curobo_config
 
 def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: float):
     """
@@ -255,37 +266,9 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     base poses that we are solving for. All input must be defined in the world frame
     """
 
-    task_arrow = open3d.geometry.TriangleMesh.create_arrow(
-        cylinder_radius=0.03,
-        cone_radius=0.05,
-        cylinder_height=0.2,
-        cone_height=0.1,
-    )
-
-    rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-    rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_pose.quaternion.squeeze().cpu().numpy(), scalar_first=True)
-    task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
-    task_arrow.rotate(rotation.as_matrix(), center=[0, 0, 0])
-    task_arrow.translate(task_pose.position.squeeze().cpu().numpy())
-    task_arrow.paint_uniform_color([1, 0, 0])
-
-    geometries = [task_arrow, pointcloud]
-
-    for position, rotation in zip(base_poses.position, base_poses.quaternion):
-        new_arrow = open3d.geometry.TriangleMesh.create_arrow(
-            cylinder_radius=0.005,
-            cone_radius=0.01,
-            cylinder_height=0.03,
-            cone_height=0.015,
-            cylinder_split=1,
-            resolution=4
-        )
-        new_arrow.paint_uniform_color([0, 0, 1])
-        new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
-        new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
-        new_arrow.translate(position.cpu().numpy())
-        geometries.append(new_arrow)
-
+    geometries = [pointcloud]
+    geometries = geometries + task_visualization.get_task_arrows(task_pose)
+    geometries = geometries + task_visualization.get_base_arrows(base_poses)
     open3d.visualization.draw(geometry=geometries)
 
 def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel, pointcloud):
@@ -299,41 +282,22 @@ def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKRes
     if len(world_mesh.vertices) > 0: geometries.append(world_mesh)
     if (len(pointcloud.points)) > 0: geometries.append(pointcloud)
 
-    rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-    for position, rotation, success in zip(goal_poses.position, goal_poses.quaternion, solution.success):
-        new_arrow = open3d.geometry.TriangleMesh.create_arrow(
-            cylinder_radius=0.005,
-            cone_radius=0.01,
-            cylinder_height=0.03,
-            cone_height=0.015,
-            cylinder_split=1,
-            resolution=4
-        )
-        new_arrow.paint_uniform_color([float(1-success.item()), success.item(), 0])
-        new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
-        new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
-        new_arrow.translate(position.cpu().numpy())
-        geometries.append(new_arrow)
+    # Render the base poses
+    geometries = geometries + task_visualization.get_base_arrows(goal_poses, solution.success)
 
     # Render one of the successful poses randomly
     if torch.sum(solution.success) > 0:
         solution_idx = int(np.random.rand() * torch.sum(solution.success))
-        robot_spheres = robot_model.get_robot_as_spheres(q=solution.solution[solution.success, :][solution_idx, :])[0]
-        robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
-        for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
-            robot_sphere_o3d.translate(robot_sphere.position)
-            robot_sphere_o3d.vertex_colors.extend(np.random.rand(len(robot_sphere_o3d.vertices), 1).repeat(3, axis=1))
-            geometries.append(robot_sphere_o3d)
+        robot_spheres = task_visualization.get_robot_at_joint_state(
+            robot_config=robot_model, 
+            joint_state=solution.solution[solution.success, :][solution_idx, :], 
+            as_spheres=True, inverted=True, 
+            base_link_pose=np.eye(4)
+        )
+        geometries = geometries + robot_spheres
 
-    task_arrow = open3d.geometry.TriangleMesh.create_arrow(
-        cylinder_radius=0.015,
-        cone_radius=0.03,
-        cylinder_height=0.15,
-        cone_height=0.07
-    )
-    task_arrow.paint_uniform_color([0, 0, 1])
-    task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
-    geometries.append(task_arrow)
+    # Render the task arrow
+    geometries = geometries + task_visualization.get_task_arrows(task_poses=cuRoboPose(torch.zeros(3).cuda(), torch.Tensor([1, 0, 0, 0]).cuda()))
 
     open3d.visualization.draw(geometry=geometries)
 
@@ -384,7 +348,7 @@ def main():
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
         print(f"There are {torch.sum(solutions.success)} successful poses")
         print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {solutions.solve_time} seconds')
-        visualize_solution(world_mesh, solutions, base_poses_in_task, robot_model, pointcloud_in_task)
+        visualize_solution(world_mesh, solutions, base_poses_in_task, robot_config, pointcloud_in_task)
 
 if __name__ == "__main__":
     main()

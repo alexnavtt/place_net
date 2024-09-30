@@ -116,7 +116,7 @@ def invert_dynamic_joint(joint: Joint) -> list:
     return rev_inv_joint, intermediary_link, static_transform_joint
 
 
-def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str):
+def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str) -> tuple[Robot, Robot]:
     prepare_urdf_file(urdf_path, xacro_args)
     robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
 
@@ -157,6 +157,8 @@ def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str):
 
     with open(output_path, 'w') as f:
         f.write(inverted_robot.to_xml_string())
+
+    return robot, inverted_robot
 
 if __name__ == '__main__':
     args = load_arguments()
