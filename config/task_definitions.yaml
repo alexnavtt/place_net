@@ -23,3 +23,4 @@ robot_reach_radius: 0.9
 obstacle_inclusion_radius: 2.0
 position_count: 15
 yaw_count: 15
+close_point_offset: 0.05
