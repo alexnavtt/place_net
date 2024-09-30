@@ -88,7 +88,9 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
                 pointcloud_o3d.estimate_normals()
                 # raise RuntimeError("Cannot operate on pointclouds without normals")
             pointcloud_o3d.translate([0, 0, -elevation])
-            pointclouds[name] = pointcloud_o3d.crop(height_filter)
+            pointcloud_o3d = pointcloud_o3d.crop(height_filter)
+            pointcloud_o3d = pointcloud_o3d.voxel_down_sample(0.10)
+            pointclouds[name] = pointcloud_o3d
 
     return pointclouds
                 
@@ -169,7 +171,7 @@ def load_ik_solver(robot_config: RobotConfig, pointcloud: Tensor, crop_radius: f
 
     open3d_mesh = open3d.geometry.TriangleMesh()
     if len(pointcloud.points) > 0:
-        world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.05)
+        world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.01)
         world_config = WorldConfig(
             mesh=[world_mesh]
         )
@@ -286,14 +288,16 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
 
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel):
+def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel, pointcloud):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. Reachable base link poses will be colored green, 
     and unreachable ones will be colored red. If one exists, a random valid robot configuration
     will also be rendered. All input must be defined in the task frame
     """
-    geometries = [world_mesh] if len(world_mesh.vertices) > 0 else []
+    geometries = []
+    if len(world_mesh.vertices) > 0: geometries.append(world_mesh)
+    if (len(pointcloud.points)) > 0: geometries.append(pointcloud)
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
     for position, rotation, success in zip(goal_poses.position, goal_poses.quaternion, solution.success):
@@ -350,8 +354,8 @@ def main():
     for task in config['tasks']:
         task_pointcloud_name = task['pointcloud']
         task_pose_in_world = cuRoboPose(position=Tensor(task['position']).to(DEVICE), quaternion=Tensor(task['orientation']).to(DEVICE))
-        task_pose_in_world.quaternion[0,:] = torch.rand([1, 4])
-        task_pose_in_world.quaternion[0,:] /= torch.norm(task_pose_in_world.quaternion.squeeze())
+        # task_pose_in_world.quaternion[0,:] = torch.rand([1, 4])
+        # task_pose_in_world.quaternion[0,:] /= torch.norm(task_pose_in_world.quaternion.squeeze())
 
         # Transform the base poses from the flattened task frame to the task frame
         flattened_task_pose = flatten_task(task_pose_in_world)
@@ -363,7 +367,6 @@ def main():
 
         base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
         base_poses_in_world.position[:,2] = config['end_effector_elevation']
-        # visualize_task(task_pose_in_world, pointcloud_in_world, base_poses_in_world)
 
         # Transform the pointcloud from the world frame to the task frame
         task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
@@ -371,16 +374,17 @@ def main():
         task_tform_world_mat[:3, :3] = task_R_world
         task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
 
-        pointcloud_in_world = pointclouds[task_pointcloud_name]
+        pointcloud_in_world = copy.deepcopy(pointclouds[task_pointcloud_name])
         pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
 
         base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
+        visualize_task(task_pose_in_world, pointclouds[task_pointcloud_name], base_poses_in_world)
         ik_solver, world_mesh = load_ik_solver(robot_config, pointcloud_in_task, config['obstacle_inclusion_radius'])
         solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
         print(f"There are {torch.sum(solutions.success)} successful poses")
         print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {solutions.solve_time} seconds')
-        visualize_solution(world_mesh, solutions, base_poses_in_task, robot_model)
+        visualize_solution(world_mesh, solutions, base_poses_in_task, robot_model, pointcloud_in_task)
 
 if __name__ == "__main__":
     main()
