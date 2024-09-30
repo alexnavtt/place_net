@@ -1,12 +1,8 @@
 pointclouds:
-  - {path: "../data/URSA_sample_valves.pcd", elevation: -1.0}
-  - {path: "../test_data/room_scan1.pcd", elevation: -1.25}
-  - {path: "../test_data/room_scan2.pcd", elevation: -1.25}
+  - {path: "../data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
 
-tasks: 
-  - {pointcloud: "URSA_sample_valves", position: [1.5, 0.5, 1.2], orientation: [0, 0, 0, 1]}
-  - {pointcloud: "room_scan1", position: [20.0, 0.0, 1.0], orientation: [1, 0, 0, 0]}
-  - {pointcloud: "room_scan2", position: [1.0, 0.5, 1.0], orientation: [-0.8535534, -0.1464466, 0.3535534, 0.3535534]}
+
+task_path: "../data/tasks/"
 
 curobo_config_file:
   ros_package: spot_curobo_config
@@ -23,4 +19,4 @@ robot_reach_radius: 0.9
 obstacle_inclusion_radius: 2.0
 position_count: 15
 yaw_count: 15
-close_point_offset: 0.05
+close_point_offset: 0.15

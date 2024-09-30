@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import open3d.visualization
+import os
 import yaml
 import torch
 import random
@@ -195,8 +195,16 @@ def main():
     # Load the robot model
     robot_config = load_robot_config(config)
 
+    pointcloud_name = 'URSA_sample_valves'
     test_pointcloud = pointclouds['URSA_sample_valves']
     sample_poses = sample_surface_poses(test_pointcloud, 300, robot_config, config)
+
+    with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
+        tasks = []
+        for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
+            tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
+        yaml.dump(tasks, f)
+    
     visualize_task_poses(test_pointcloud, sample_poses, robot_config)
 
 if __name__ == "__main__":
