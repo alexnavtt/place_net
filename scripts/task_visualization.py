@@ -85,7 +85,7 @@ def get_robot_at_joint_state(
     geometries = []
     
     if as_spheres:
-        robot_spheres = robot_model.get_robot_as_spheres(q=joint_state)[0]
+        robot_spheres = robot_model.get_robot_as_spheres(q=joint_state.cuda(robot_model.tensor_args.device))[0]
         robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
         for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
             robot_sphere_o3d.translate(robot_sphere.position)
@@ -97,10 +97,8 @@ def get_robot_at_joint_state(
         robot_urdf: Robot = robot_config.kinematics.kinematics_config.debug[urdf_idx]
         chain_links = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=True, joints=False)
         chain_joints = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=False, joints=True)
-        print(chain_links)
 
         def get_children_if_fixed(child_tuple):
-            print(f"{child_tuple=}")
             links = []
             joints = []
             child_joint_name, child_link_name = child_tuple
