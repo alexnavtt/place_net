@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import torch
 from torch.nn.functional import relu, pad
 from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
+from models.pose_encoder import PoseEncoder
 
 @dataclass
 class BaseNetConfig:
@@ -29,13 +30,14 @@ class BaseNetConfig:
     hidden_layer_sizes: list[int] = field(default_factory=lambda: [1024 + 512])
 
     # Whether to run on the gpu
-    device: str = "cuda"
+    device: str = "cuda:0"
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config)
         self.pointcloud_encoder = self.config.encoder_type(device=self.config.device)
+        self.pose_encoder = PoseEncoder(config.device)
 
         # Define the fully connected layer between encoded input and deconvolution of the output
         layer_sizes = [1024 + 7, *self.config.hidden_layer_sizes, 2048]
@@ -62,18 +64,24 @@ class BaseNet(torch.nn.Module):
                                  False during deployment) 
         """
 
+        # Embed the task poses and get the transforms needed for the pointclouds
+        t1 = time.perf_counter()
+        tasks = tasks.to(self.config.device)
+        task_transform, pose_embeddings = self.pose_encoder(tasks, self.config.workspace_height)
+        t2 = time.perf_counter()
+
         # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
         if not already_processed:
-            t1 = time.perf_counter()
-            pointclouds, tasks = self.preprocess_inputs(pointclouds, tasks)
-            t2 = time.perf_counter()
+            pointcloud_tensor = self.preprocess_inputs(pointclouds, task_transform)
+            t3 = time.perf_counter()
 
         # Encode the points into a feature vector
-        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointclouds)
-        t3 = time.perf_counter()
+        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
+        t4 = time.perf_counter()
 
-        print(f"Pointcloud processing: {(t2 -t1)*1000}ms")
-        print(f"Pointcloud encoding: {(t3 -t2)*1000}ms")
+        print(f"Pose encoding: {(t2 -t1)*1000}ms")
+        print(f"Pointcloud processing: {(t3 -t2)*1000}ms")
+        print(f"Pointcloud encoding: {(t4 -t3)*1000}ms")
 
         return
 
@@ -99,53 +107,30 @@ class BaseNet(torch.nn.Module):
         # Deconvolution step to the desired final resolution
         x = self.dconv1(x)
 
-    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_pose: torch.Tensor) -> torch.Tensor:
-        batch_size = task_pose.size()[0]
-
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_transform: torch.Tensor) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
         pointcloud_tensor = self.pad_pointclouds_to_same_size(pointclouds)
         non_padded_indices = torch.sum(pointcloud_tensor[:, :, 3:], dim=-1) != 0
 
-        # Note that the task pose is also the transform world_tform_task
-        task_positions, task_orientations = task_pose.split([3, 4], dim=1)
+        # Step 2: Transform the pointclouds to the task invariant frame
+        pointcloud_points, pointcloud_normals = pointcloud_tensor.split([3, 3], dim=-1)
+        task_rotation    = task_transform[:, :3, :3]
+        task_translation = task_transform[:, :3,  3]
 
-        # Step 2: subtract the task position from all points to get the relative displacement
-        pointcloud_tensor[:, :, :3] = pointcloud_tensor[:, :, :3] - task_positions[:, None, :]
+        pointcloud_points  = torch.matmul(pointcloud_points , task_rotation)
+        pointcloud_normals = torch.matmul(pointcloud_normals, task_rotation)
+        pointcloud_points += task_translation[:, None, :]
 
         # Step 3: Filter out all points too far from the task pose and pad these again
-        squared_distances = torch.sum(pointcloud_tensor[:, :, :2]**2, dim=-1)
-        elevations = pointcloud_tensor[:, :, 2]
+        squared_distances = torch.sum(pointcloud_points[:, :, :2]**2, dim=-1)
+        elevations = pointcloud_points[:, :, 2]
         indices_in_range = torch.logical_and(squared_distances < (self.config.workspace_radius**2), elevations < self.config.workspace_height)
 
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
         filtered_pointclouds = [pointcloud_tensor[idx, valid_indices] for idx, valid_indices in enumerate(valid_indices)]
         filtered_pointclouds_tensor = self.pad_pointclouds_to_same_size(filtered_pointclouds)
 
-        # Step 4: Rotate the points to a frame such that the task pose lies at the origin with the x-axis in the XZ plane
-        euler_angles_rpy = self.quaternion_to_euler_tensor(task_orientations)
-        roll_angles = euler_angles_rpy[:, 0]
-        pitch_angles = euler_angles_rpy[:, 1]
-        yaw_angles = euler_angles_rpy[:, 2]
-
-        cos_yaw = torch.cos(-yaw_angles)
-        sin_yaw = torch.sin(-yaw_angles)
-        Rz = torch.zeros((batch_size, 3, 3), device=self.config.device)
-        Rz[:, 0, 0] = cos_yaw
-        Rz[:, 0, 1] = -sin_yaw
-        Rz[:, 1, 0] = sin_yaw
-        Rz[:, 1, 1] = cos_yaw
-        Rz[:, 2, 2] = 1
-
-        # We take the transpose since our points are row vectors
-        Rz_T = Rz.transpose(1, 2)
-        rotated_points  = torch.matmul(filtered_pointclouds_tensor[:, :, :3], Rz_T)
-        rotated_normals = torch.matmul(filtered_pointclouds_tensor[:, :, 3:], Rz_T)
-
-        # Step 5: Define a reduced version of the task pose for this new frame
-        task_tensor = torch.stack([task_positions[:, 2], pitch_angles, roll_angles], dim=1)
-
-        pointcloud_tensor = torch.concatenate([rotated_points, rotated_normals], dim=2)
-        return pointcloud_tensor, task_tensor
+        return filtered_pointclouds_tensor
 
     def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
         pointcloud_counts = [pc.size()[0] for pc in pointclouds]
