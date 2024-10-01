@@ -32,40 +32,12 @@ def get_end_effector_spheres(robot_config: RobotConfig) -> torch.Tensor:
     """
 
     ee_link = robot_config.kinematics.kinematics_config.base_link
-    robot: Robot = robot_config.kinematics.kinematics_config.debug[0]
-
-    def urdf_pose_to_matrix(pose: urdfPose) -> np.ndarray:
-        matrix = np.eye(4)
-        if pose is not None:
-            matrix[:3, :3] = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(pose.rpy)), degrees=False).as_matrix()
-            matrix[:3,  3] = np.array(pose.xyz)
-        return matrix
-
-    def get_attached_child_links(link_name: str, transform_from_ee: dict) -> None:
-        if link_name not in robot.child_map:
-            return
-        for child_joint, child_link in robot.child_map[link_name]:
-            if robot.joint_map[child_joint].type == 'fixed':
-                transform_from_ee[child_link] = transform_from_ee[link_name] @ urdf_pose_to_matrix(robot.joint_map[child_joint].origin)
-                get_attached_child_links(child_link, transform_from_ee)
-
-    def get_attached_parent_links(link_name: str, transform_from_ee: dict) -> None:
-        if link_name not in robot.parent_map:
-            return
-        parent_joint, parent_link = robot.parent_map[link_name]
-        if robot.joint_map[parent_joint].type == 'fixed':
-            transform_from_ee[parent_link] = transform_from_ee[link_name] @ np.linalg.inv(urdf_pose_to_matrix(robot.joint_map[parent_joint].origin))
-            get_attached_parent_links(parent_link, transform_from_ee)
-        for _, child_link in robot.child_map[parent_link]:
-            if child_link != link_name:
-                get_attached_child_links(child_link, transform_from_ee)
-
-    transform_from_ee = {ee_link: np.eye(4)}
-    get_attached_child_links(ee_link, transform_from_ee)
-    get_attached_parent_links(ee_link, transform_from_ee) 
+    transform_from_ee: dict[str, np.ndarray] = task_visualization.get_links_attached_to(ee_link, robot_config)
     
     ee_spheres = torch.empty([0, 4]).cuda(robot_config.kinematics.tensor_args.device)
     for link_name, link_transform in transform_from_ee.items():
+        if link_name not in robot_config.kinematics.kinematics_config.link_name_to_idx_map:
+            continue
         new_spheres = robot_config.kinematics.kinematics_config.get_link_spheres(link_name)
         num_spheres = new_spheres.size()[0]
         sphere_locs = torch.concatenate([new_spheres[:, :3], torch.ones(num_spheres, 1).to(new_spheres.device)], dim=1)
