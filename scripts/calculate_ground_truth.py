@@ -66,7 +66,8 @@ def load_pointclouds(config: dict) -> dict[str: open3d.geometry.PointCloud]:
     the config file. One extra pointcloud with key 'empty' is also added with no points
     """
 
-    pointclouds = {'empty': open3d.geometry.PointCloud()}
+    # pointclouds = {'empty': open3d.geometry.PointCloud()}
+    pointclouds = {}
     if 'pointclouds' not in config:
         return pointclouds
     
@@ -277,7 +278,7 @@ def flatten_task(task: cuRoboPose):
     flattened_task.quaternion[0,:] = Tensor(flattened_quaternion) 
     return flattened_task
 
-def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose):
+def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose, valid_base_indices: Tensor | None = None):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
@@ -285,10 +286,10 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
 
     geometries = [pointcloud]
     geometries = geometries + task_visualization.get_task_arrows(task_pose)
-    geometries = geometries + task_visualization.get_base_arrows(base_poses)
+    geometries = geometries + task_visualization.get_base_arrows(base_poses, valid_base_indices)
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKResult, goal_poses: cuRoboPose, robot_model: CudaRobotModel, pointcloud):
+def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, robot_model: CudaRobotModel, pointcloud):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. Reachable base link poses will be colored green, 
@@ -300,15 +301,15 @@ def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution: IKRes
     if (len(pointcloud.points)) > 0: geometries.append(pointcloud)
 
     # Render the base poses
-    geometries = geometries + task_visualization.get_base_arrows(goal_poses, solution.success)
+    geometries = geometries + task_visualization.get_base_arrows(goal_poses, solution_success)
 
     # Render one of the successful poses randomly
-    if torch.sum(solution.success) > 0:
-        solution_idx = int(np.random.rand() * torch.sum(solution.success))
+    if torch.sum(solution_success) > 0:
+        solution_idx = int(np.random.rand() * torch.sum(solution_success))
         robot_spheres = task_visualization.get_robot_at_joint_state(
             robot_config=robot_model, 
-            joint_state=solution.solution[solution.success, :][solution_idx, :], 
-            as_spheres=False, 
+            joint_state=solution_states[solution_success, :][solution_idx, :], 
+            as_spheres=True, 
             inverted=True, 
             base_link_pose=np.eye(4)
         )
@@ -358,12 +359,24 @@ def main():
 
             base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
-            visualize_task(task_pose_in_world, pointclouds[pointcloud_name], base_poses_in_world)
+            # Filter out poses too far from the robot to have a feasible solution
+            valid_pose_indices = torch.norm(base_poses_in_task.position, dim=1) < (config['robot_reach_radius'] + 0.1)
+            print(f"{torch.sum(valid_pose_indices)} poses were reachable out of {num_poses}")
+
+            valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
+
+            visualize_task(task_pose_in_world, pointclouds[pointcloud_name], base_poses_in_world, valid_pose_indices)
             ik_solver, world_mesh = load_ik_solver(robot_config, pointcloud_in_task, config['obstacle_inclusion_radius'])
-            solutions = ik_solver.solve_batch(goal_pose=base_poses_in_task)
+            solutions = ik_solver.solve_batch(goal_pose=valid_base_poses_in_task)
             print(f"There are {torch.sum(solutions.success)} successful poses")
             print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {solutions.solve_time:.0f} seconds')
-            visualize_solution(world_mesh, solutions, base_poses_in_task, robot_config, pointcloud_in_task)
+
+            # Take the solution for the filtered base positions and expand it out to include all base positions
+            solution_states = torch.empty([num_poses, robot_config.kinematics.kinematics_config.n_dof])
+            solution_states[valid_pose_indices, :] = solutions.solution.cpu().squeeze(1)
+            solution_success = torch.zeros(num_poses, dtype=bool)
+            solution_success[valid_pose_indices] = solutions.success.cpu().squeeze(1)
+            visualize_solution(world_mesh, solution_success, solution_states, base_poses_in_task, robot_config, pointcloud_in_task)
 
 if __name__ == "__main__":
     main()
