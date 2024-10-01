@@ -8,12 +8,11 @@ import argparse
 import numpy as np
 import scipy.spatial
 
-from urdf_parser_py.urdf import Robot, Link, Joint, Pose as urdfPose
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 
-from calculate_ground_truth import load_robot_config, load_pointclouds
-import task_visualization
+from base_net.scripts.calculate_ground_truth import load_robot_config, load_pointclouds
+from base_net.utils import task_visualization
 
 def load_arguments() -> dict:
     parser = argparse.ArgumentParser(
@@ -171,11 +170,14 @@ def main():
     test_pointcloud = pointclouds['URSA_sample_valves']
     sample_poses = sample_surface_poses(test_pointcloud, 300, robot_config, config)
 
-    with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
-        tasks = []
-        for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
-            tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
-        yaml.dump(tasks, f)
+    if args.output_path is not None:
+        with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
+            tasks = []
+            for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
+                tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
+            yaml.dump(tasks, f)
+    else:
+        print("No output path provided, generated poses have not been saved")
     
     visualize_task_poses(test_pointcloud, sample_poses, robot_config)
 

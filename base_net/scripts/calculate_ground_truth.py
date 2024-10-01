@@ -37,8 +37,8 @@ from curobo.geom.types import WorldConfig, Mesh
 cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
-from invert_robot_model import main as invert_urdf
-import task_visualization
+from base_net.utils.invert_robot_model import main as invert_urdf
+from base_net.utils import task_visualization
 DEVICE = torch.device('cuda', 0)
 
 def load_config():

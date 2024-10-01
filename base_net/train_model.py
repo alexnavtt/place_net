@@ -4,8 +4,8 @@ import torch
 import numpy as np
 import open3d as o3d
 
-from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
-from models.base_net import BaseNet, BaseNetConfig
+from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
+from base_net.models.base_net import BaseNet, BaseNetConfig
 
 def load_pointcloud_batch():
     files = [

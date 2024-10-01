@@ -1,8 +1,8 @@
 pointclouds:
-  - {path: "../data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
+  - {path: "base_net/data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
 
 
-task_path: "../data/tasks/"
+task_path: "base_net/data/tasks/"
 
 curobo_config_file:
   ros_package: spot_curobo_config

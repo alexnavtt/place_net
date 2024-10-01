@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 
 import torch
 from torch.nn.functional import relu, pad
-from models.pointcloud_encoder import PointNetEncoder, CNNEncoder
-from models.pose_encoder import PoseEncoder
+from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
+from base_net.models.pose_encoder import PoseEncoder
 
 @dataclass
 class BaseNetConfig:
