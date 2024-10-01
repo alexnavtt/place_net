@@ -38,7 +38,7 @@ def main():
     batch_size = len(pointclouds)
     task_points = torch.rand([batch_size, 3])
     orientations = torch.rand([batch_size, 4])
-    orientations[:,1] /= orientations.norm(dim=1)
+    orientations /= orientations.norm(dim=1).unsqueeze(1)
 
     orientations[0, :] = torch.Tensor([1, 0, 0, 0])
     tasks = torch.concatenate([task_points, orientations], dim=1).cuda()
