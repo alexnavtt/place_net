@@ -1,21 +1,5 @@
-x-common:
-  default-build: &default-build
-    context: ./..
-    dockerfile: docker/Dockerfile
-    # platforms: 
-    #   - linux/${BUILD_ARCHITECTURE}
-    args:
-      HTTP_PROXY: $HTTP_PROXY
-      HTTPS_PROXY: $HTTPS_PROXY
-      NO_PROXY: $NO_PROXY
-      http_proxy: $http_proxy
-      https_proxy: $https_proxy
-      no_proxy: $no_proxy
-      ROS_DISTRO: $TARGET_ROS_DISTRO
-      BUILD_TARGET: $BUILD_TARGET
-      CUDA_VERSION: $TARGET_CUDA_VERSION
-
-  common-settings: &common-settings
+services:
+  base_net:
     environment:
       # pass the display variable to the container
       - DISPLAY=${DISPLAY}
@@ -25,10 +9,6 @@ x-common:
       - ROS_DISTRO=$TARGET_ROS_DISTRO
       # Get the build target
       - BUILD_TARGET=$BUILD_TARGET
-    # env_file:
-      # set environment variables via a file (robot login info, ROS domain ID, etc.)
-      # You have to create and fill out this file yourself before you can run anything
-      # - robot.env
     security_opt:
       # this is set bc of errors with RViz being denied dbus comm w/ host
       - apparmor:unconfined
@@ -36,12 +16,11 @@ x-common:
       # mount the X11 socket to enable graphics display
       - /tmp/.X11-unix:/tmp/.X11-unix
       # required for non-nvidia users, comment out for nvidia users
-      - /dev/dri:/dev/dri
+      # - /dev/dri:/dev/dri
       # add the .Xauthority file to use ssh X11 forwarding
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
-      # Add my robot config files
-      - /tmp/invert_robot_model_original.urdf:/spot.urdf
-      - /home/alex/workspaces/nrg_ros2/src/nrg_spot_manipulation/spot_curobo_config/spot_curobo.yaml:/spot_curobo.yaml
+      # The base net folder itself
+      - ${PWD}/../../base_net:/base_net
     runtime: nvidia
     # give the container access to the host's network
     ## network_mode: host
@@ -50,17 +29,25 @@ x-common:
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
     tty: true
-
-services:
-  base_net:
-    <<: *common-settings
     container_name: base_net_${BUILD_TARGET}_dev
     image: alexnavtt/base_net:${BUILD_TARGET}
     build:
-      <<: *default-build
-      target: build
-    # volumes:
-    #   - ~/colcon_ws:/root/colcon_ws
-    #   - ~/.ssh/:/root/.ssh
+      context: ./..
+      dockerfile: docker/Dockerfile
+      # platforms: 
+      #   - linux/${BUILD_ARCHITECTURE}
+      ssh:
+        - default
+      args:
+        HTTP_PROXY: $HTTP_PROXY
+        HTTPS_PROXY: $HTTPS_PROXY
+        NO_PROXY: $NO_PROXY
+        http_proxy: $http_proxy
+        https_proxy: $https_proxy
+        no_proxy: $no_proxy
+        ROS_DISTRO: $TARGET_ROS_DISTRO
+        BUILD_TARGET: $BUILD_TARGET
+        CUDA_VERSION: $TARGET_CUDA_VERSION
+
 
   

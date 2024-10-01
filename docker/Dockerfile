@@ -1,32 +1,8 @@
 ARG CUDA_VERSION
 ARG BUILD_TARGET=workstation
 
-# === Regular Desktop Workstation Install === #
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS base_workstation
-ARG DEBIAN_FRONTEND=noninteractive
+FROM alexnavtt/curobo:${BUILD_TARGET} as base_net
 
-# Install pytorch the normal way
-RUN apt update \
-    && apt install -y \
-        python3 \
-        python3-pip \
-    && pip install torch
-
-
-# === Nvidia Jetson Install === #
-# FROM nvcr.io/nvidia/l4t-cuda:12.2.12-devel AS base_jetson
-# ARG DEBIAN_FRONTEND=noninteractive
-
-# # Install pytorch the Jetson way
-# RUN apt update \
-#     && apt install -y \
-#         python3 \
-#         python3-pip \
-#         libopenblas-dev
-
-# TODO
-
-FROM base_${BUILD_TARGET} AS build
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO
 
@@ -43,25 +19,33 @@ RUN apt update && apt upgrade -y \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null \
     && apt update
 
-RUN apt install -y ros-${ROS_DISTRO}-ros-base
+RUN apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
-# Install cuRobo
-RUN apt update \
-    && apt install -y git-lfs \
-    && git clone https://github.com/NVlabs/curobo.git \
-    && cd curobo \
-    && git-lfs pull * && git-lfs pull .
-
-RUN cd curobo && pip install -e . --no-build-isolation
-
-# Install BaseNet
-RUN pip install open3d xacro urdf_parser_py
+# Install BaseNet dependencies
+RUN pip install 'numpy<2.0.0' open3d xacro urdf_parser_py
 RUN apt install -y libgl1
 
-WORKDIR /base_net
-ADD models models
-ADD scripts scripts
-ADD test_data test_data
-ADD train_model.py train_model.py
 
-RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc
+FROM base_net as base_net_nrg
+SHELL ["/bin/bash", "-l", "-c"]
+
+# Install NRG ros package dependencies
+WORKDIR /colcon_ws/src
+RUN mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
+RUN --mount=type=ssh git clone git@github.com:UTNuclearRobotics/spot_ros.git -b devel \
+    && git clone git@github.com:UTNuclearRobotics/nrg_spot_manipulation.git -b curobo
+
+WORKDIR /colcon_ws
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && rosdep init && rosdep update && rosdep install --from-paths src -i -y 
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to spot_description
+RUN cd /colcon_ws/src/nrg_spot_manipulation/spot_curobo_config/ && bash setup.bash
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to spot_curobo_config
+
+# Set up terminal and bashrc
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
+    && sed -i 's/01;32m/01;36m/g; s/01;34m/01;35m/g' "/root/.bashrc"
+
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc \
+    && echo "source /colcon_ws/install/setup.bash" >> ~/.bashrc
+
+WORKDIR /base_net/scripts
