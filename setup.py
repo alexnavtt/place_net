@@ -10,11 +10,12 @@ setup(
         'open3d==0.18.0',
         'torch',
         'xacro',
-        'urdf_parser_py'
+        'urdf_parser_py',
+        'click'
     ],
     entry_points={
         'console_scripts': [
-            'train_base_net=base_net.train_model:main'
+            'base_net=base_net.cli:main'
         ],
     },
     package_data={
