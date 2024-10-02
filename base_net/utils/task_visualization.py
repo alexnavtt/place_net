@@ -1,3 +1,4 @@
+import open3d.visualization
 import torch
 import open3d
 import numpy as np
@@ -157,3 +158,53 @@ def get_robot_at_joint_state(
 
     return geometries
 
+def visualize(*args):
+    geometries = []
+
+    for arg in args:
+        # If the input is a list, we assume it is a list of already valid geometries
+        if type(arg) == list:
+            geometries += arg
+
+        # If it's an open3d geometry we can just add it and move on
+        elif issubclass(type(arg), open3d.geometry.Geometry):
+            geometries.append(arg)
+
+        # If the input is a tensor, it could be either pointcloud(s) or task_pose(s)
+        elif type(arg) == torch.Tensor:
+            last_dim = arg.size()[-1]
+
+            # Pointcloud case
+            if last_dim == 3 or last_dim == 6:
+                has_normals = last_dim == 6
+
+                # Determine if we have a batch or just one pointcloud
+                if len(arg.size()) == 3:
+                    pointclouds = arg
+                else:
+                    pointclouds = [arg]
+
+                for pointcloud in pointclouds:
+                    points = pointcloud[:, :3].cpu().numpy()
+                    normals = pointcloud[:, 3:].cpu().numpy() if has_normals else None
+
+                    new_pointcloud = open3d.geometry.PointCloud()
+                    new_pointcloud.points.extend(points)
+                    if normals is not None:
+                        new_pointcloud.normals.extend(normals)
+                    
+                    geometries.append(new_pointcloud)
+
+            # Task pose case
+            if last_dim == 7:
+                
+                # Determine if we have a batch or just one pose
+                if len(arg.size()) == 2:
+                    poses = arg
+                else:
+                    poses = arg.unsqueeze(0)
+
+                print(poses)
+                geometries = geometries + get_task_arrows(cuRoboPose(position=poses[:, :3].cuda(), quaternion=poses[:, 3:].cuda()))
+
+    open3d.visualization.draw(geometries)
