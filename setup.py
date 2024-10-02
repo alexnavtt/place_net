@@ -11,7 +11,8 @@ setup(
         'torch',
         'xacro',
         'urdf_parser_py',
-        'click'
+        'click',
+        'scipy'
     ],
     entry_points={
         'console_scripts': [
