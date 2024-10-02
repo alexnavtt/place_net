@@ -4,6 +4,8 @@ class PoseEncoder(torch.nn.Module):
     def __init__(self, device):
         super(PoseEncoder, self).__init__()
 
+        self.device = device
+
         # Task embedding layers
         self.task_embedding = torch.nn.Sequential(
             torch.nn.Linear(in_features=3, out_features=32, device=device),
@@ -39,26 +41,19 @@ class PoseEncoder(torch.nn.Module):
         pitch_angles = euler_angles_rpy[:, 1]
         yaw_angles = euler_angles_rpy[:, 2]
 
-        cos_yaw = torch.cos(-yaw_angles)
-        sin_yaw = torch.sin(-yaw_angles)
-        task_tform_world = torch.zeros((batch_size, 4, 4), device=poses.device)
-        task_tform_world[:, 0, 0] = cos_yaw
-        task_tform_world[:, 0, 1] = -sin_yaw
-        task_tform_world[:, 1, 0] = sin_yaw
-        task_tform_world[:, 1, 1] = cos_yaw
-        task_tform_world[:, 2, 2] = 1
-        task_tform_world[:, 3, 3] = 1
+        cos_yaw = torch.cos(yaw_angles)
+        sin_yaw = torch.sin(yaw_angles)
+        task_rot_world = torch.zeros((batch_size, 2, 2), device=self.device)
+        task_rot_world[:, 0, 0] = cos_yaw
+        task_rot_world[:, 0, 1] = -sin_yaw
+        task_rot_world[:, 1, 0] = sin_yaw
+        task_rot_world[:, 1, 1] = cos_yaw
 
-        # Apply the 2D transformation to the translation component
-        rot_mat = task_tform_world[:, :2, :2]
-        xy_vector = -task_positions[:, :2].view([batch_size, 1, 2]).transpose(1, 2)
-        transformed_xy_vector = torch.matmul(rot_mat, xy_vector)
-        task_tform_world[:, :2, 3] = transformed_xy_vector.squeeze()
-
+        print(f"{pitch_angles=}\n{roll_angles=}\n{task_positions[:, 2]=}")
         task_tensor = torch.stack([task_positions[:, 2]/max_height, pitch_angles/(torch.pi/2), roll_angles/torch.pi], dim=1)
-        task_tensor = self.task_embedding(task_tensor)
+        # task_tensor = self.task_embedding(task_tensor)
 
-        return task_tform_world, task_tensor
+        return task_rot_world, task_tensor
 
     def quaternion_to_euler_tensor(self, quaternions) -> torch.Tensor:
         qw, qx, qy, qz = quaternions[:, 0], quaternions[:, 1], quaternions[:, 2], quaternions[:, 3]

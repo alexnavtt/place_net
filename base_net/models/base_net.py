@@ -2,11 +2,13 @@ import copy
 import time
 from typing import Type, Union
 from dataclasses import dataclass, field
+import scipy.spatial
 
 import torch
 from torch.nn.functional import relu, pad
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 from base_net.models.pose_encoder import PoseEncoder
+from base_net.utils import task_visualization
 
 @dataclass
 class BaseNetConfig:
@@ -32,6 +34,9 @@ class BaseNetConfig:
     # Whether to run on the gpu
     device: str = "cuda:0"
 
+    # Whether to print debug statements and show visualizations
+    debug: bool = False
+
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
@@ -50,7 +55,7 @@ class BaseNet(torch.nn.Module):
         self.dconv1 = torch.nn.ConvTranspose3d(in_channels=1, out_channels=1, kernel_size=3)
         # self.dconv2 = torch.nn.ConvTranspose3d
 
-    def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor, already_processed: bool = False):
+    def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor):
         """
         Perform the forward pass on a model with batch size B. The pointclouds and task poses must be 
         defined in the same frame
@@ -64,24 +69,41 @@ class BaseNet(torch.nn.Module):
                                  False during deployment) 
         """
 
+        if self.config.debug:
+            task_visualization.visualize(tasks[0,:], pointclouds[0])
+
         # Embed the task poses and get the transforms needed for the pointclouds
         t1 = time.perf_counter()
         tasks = tasks.to(self.config.device)
-        task_transform, pose_embeddings = self.pose_encoder(tasks, self.config.workspace_height)
+        task_rotation, pose_embeddings = self.pose_encoder(tasks, max_height=self.config.workspace_height)
         t2 = time.perf_counter()
 
         # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
-        if not already_processed:
-            pointcloud_tensor = self.preprocess_inputs(pointclouds, task_transform)
-            t3 = time.perf_counter()
-
-        # Encode the points into a feature vector
-        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
+        t3 = time.perf_counter()
+        pointcloud_tensor = self.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3])
         t4 = time.perf_counter()
 
+        if self.config.debug:
+            elevation_embedding, pitch_embedding, roll_embedding = pose_embeddings[0, :].cpu()
+            print(f"{pose_embeddings=}")
+            quat = scipy.spatial.transform.Rotation.from_euler(
+                seq='ZYX', 
+                angles=[0, pitch_embedding*torch.pi/2, roll_embedding*torch.pi], 
+                degrees=False
+            ).as_quat(scalar_first=True)
+            print(quat)
+            new_task = torch.Tensor([0, 0, elevation_embedding*self.config.workspace_height, *quat])
+
+            task_visualization.visualize(new_task, pointcloud_tensor[0, :, :])
+
+        # Encode the points into a feature vector
+        t5 = time.perf_counter()
+        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
+        t6 = time.perf_counter()
+
         print(f"Pose encoding: {(t2 -t1)*1000}ms")
-        print(f"Pointcloud processing: {(t3 -t2)*1000}ms")
-        print(f"Pointcloud encoding: {(t4 -t3)*1000}ms")
+        print(f"Pointcloud processing: {(t4 -t3)*1000}ms")
+        print(f"Pointcloud encoding: {(t6 -t5)*1000}ms")
 
         return
 
@@ -107,27 +129,27 @@ class BaseNet(torch.nn.Module):
         # Deconvolution step to the desired final resolution
         x = self.dconv1(x)
 
-    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_transform: torch.Tensor) -> torch.Tensor:
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
         pointcloud_tensor = self.pad_pointclouds_to_same_size(pointclouds)
         non_padded_indices = torch.sum(pointcloud_tensor[:, :, 3:], dim=-1) != 0
 
-        # Step 2: Transform the pointclouds to the task invariant frame
-        pointcloud_points, pointcloud_normals = pointcloud_tensor.split([3, 3], dim=-1)
-        task_rotation    = task_transform[:, :3, :3]
-        task_translation = task_transform[:, :3,  3]
+        # Step 2: Determine which ones are within the allowable elevations
+        task_xy, task_z = task_position.view([-1, 1, 3]).split([2, 1], dim=-1)
+        pointcloud_xy, pointcloud_z, pointcloud_normals_xy, pointcloud_normals_z = pointcloud_tensor.split([2, 1, 2, 1], dim=-1)
+        valid_elevations = (pointcloud_z < self.config.workspace_height).squeeze()
 
-        pointcloud_points  = torch.matmul(pointcloud_points , task_rotation)
-        pointcloud_normals = torch.matmul(pointcloud_normals, task_rotation)
-        pointcloud_points += task_translation[:, None, :]
+        # Step 3: Transform the pointclouds to the task invariant frame
+        pointcloud_xy -= task_xy
+        torch.matmul(pointcloud_xy , task_rotation, out=pointcloud_xy)
+        torch.matmul(pointcloud_normals_xy, task_rotation, out=pointcloud_normals_xy)
 
-        # Step 3: Filter out all points too far from the task pose and pad these again
-        squared_distances = torch.sum(pointcloud_points[:, :, :2]**2, dim=-1)
-        elevations = pointcloud_points[:, :, 2]
-        indices_in_range = torch.logical_and(squared_distances < (self.config.workspace_radius**2), elevations < self.config.workspace_height)
+        # Step 4: Filter out all points too far from the task pose and pad these again
+        distances_from_task = torch.norm(pointcloud_xy, dim=-1)
+        indices_in_range = torch.logical_and(distances_from_task < self.config.workspace_radius, valid_elevations)
 
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
-        filtered_pointclouds = [pointcloud_tensor[idx, valid_indices] for idx, valid_indices in enumerate(valid_indices)]
+        filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
         filtered_pointclouds_tensor = self.pad_pointclouds_to_same_size(filtered_pointclouds)
 
         return filtered_pointclouds_tensor

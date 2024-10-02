@@ -9,14 +9,15 @@ from base_net.models.base_net import BaseNet, BaseNetConfig
 
 def load_pointcloud_batch():
     files = [
-        "test_data/room_scan1.pcd",
-        "test_data/room_scan2.pcd",
+        "base_net/test_data/room_scan1.pcd",
+        "base_net/test_data/room_scan2.pcd",
     ]   
 
     pointclouds = [o3d.io.read_point_cloud(file) for file in files]
     for idx, pc in enumerate(pointclouds): 
         pc.estimate_normals()
         pc = np.concatenate([np.asarray(pc.points), np.asarray(pc.normals)], axis=1)
+        pc[:, 2] += 1.25
         # pc = np.concatenate([np.asarray(pc.points)[:3, :], np.asarray(pc.normals)[:3, :]], axis=1)
         pointclouds[idx] = torch.Tensor(pc).cuda()
 
@@ -36,11 +37,10 @@ def main():
 
     # Define a set of test task definitions
     batch_size = len(pointclouds)
-    task_points = torch.rand([batch_size, 3])
+    task_points = 2*torch.rand([batch_size, 3])
     orientations = torch.rand([batch_size, 4])
     orientations /= orientations.norm(dim=1).unsqueeze(1)
 
-    orientations[0, :] = torch.Tensor([1, 0, 0, 0])
     tasks = torch.concatenate([task_points, orientations], dim=1).cuda()
 
     base_net_config = BaseNetConfig(
@@ -49,7 +49,8 @@ def main():
         output_orientation_discretization=20,
         output_position_resolution=0.10,
         workspace_radius=2.0,
-        workspace_height=1.5
+        workspace_height=1.5,
+        debug=True
     )
     
     base_net_model = BaseNet(base_net_config)
