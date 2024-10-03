@@ -50,11 +50,12 @@ def main():
         output_position_resolution=0.10,
         workspace_radius=2.0,
         workspace_height=1.5,
-        debug=True
+        debug=False
     )
     
-    base_net_model = BaseNet(base_net_config)
-    base_net_model(pointclouds, tasks)
+    base_net_model = BaseNet(base_net_config).to(base_net_config.device)
+    output = base_net_model(pointclouds, tasks)
+    print(output.size())
 
 if __name__ == "__main__":
     main()

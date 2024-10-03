@@ -12,9 +12,9 @@ class PoseEncoder(torch.nn.Module):
             torch.nn.BatchNorm1d(num_features=32, device=device),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(in_features=32, out_features=256, device=device),
-            torch.nn.BatchNorm1d(num_features=256, device=device),
-            torch.nn.ReLU()
+            torch.nn.Linear(in_features=32, out_features=1024, device=device),
+            torch.nn.BatchNorm1d(num_features=1024, device=device),
+            torch.nn.ReLU(),
         )
 
     def forward(self, poses: torch.Tensor, max_height: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -49,11 +49,11 @@ class PoseEncoder(torch.nn.Module):
         task_rot_world[:, 1, 0] = sin_yaw
         task_rot_world[:, 1, 1] = cos_yaw
 
-        print(f"{pitch_angles=}\n{roll_angles=}\n{task_positions[:, 2]=}")
+        adjusted_pose = torch.stack([task_positions[:, 2], pitch_angles, roll_angles], dim=1) # for debug
         task_tensor = torch.stack([task_positions[:, 2]/max_height, pitch_angles/(torch.pi/2), roll_angles/torch.pi], dim=1)
-        # task_tensor = self.task_embedding(task_tensor)
+        task_tensor = self.task_embedding(task_tensor)
 
-        return task_rot_world, task_tensor
+        return task_rot_world, task_tensor, adjusted_pose
 
     def quaternion_to_euler_tensor(self, quaternions) -> torch.Tensor:
         qw, qx, qy, qz = quaternions[:, 0], quaternions[:, 1], quaternions[:, 2], quaternions[:, 3]

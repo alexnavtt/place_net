@@ -41,19 +41,58 @@ class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config)
-        self.pointcloud_encoder = self.config.encoder_type(device=self.config.device)
+
+        # These will parse the inputs, and embed them into feature vectors of length 1024
+        self.pointcloud_encoder = self.config.encoder_type()
         self.pose_encoder = PoseEncoder(config.device)
 
-        # Define the fully connected layer between encoded input and deconvolution of the output
-        layer_sizes = [1024 + 7, *self.config.hidden_layer_sizes, 2048]
-        self.fully_connected_layers = []
-        self.batch_normals = []
-        for input_size, output_size in zip(layer_sizes, layer_sizes[1:]):
-            self.fully_connected_layers.append(torch.nn.Linear(input_size, output_size))
-            self.batch_normals.append(torch.nn.BatchNorm1d(output_size))
+        # Define a cross-attention layer between the pose embedding and the pointcloud embedding
+        self.attention_layer = torch.nn.MultiheadAttention(
+            num_heads=1,
+            embed_dim=1024,
+            batch_first=True,
+            device=self.config.device
+        )
 
-        self.dconv1 = torch.nn.ConvTranspose3d(in_channels=1, out_channels=1, kernel_size=3)
-        # self.dconv2 = torch.nn.ConvTranspose3d
+        # Define a simple linear layer to process this data before deconvolution
+        self.linear_upscale = torch.nn.Sequential(
+            torch.nn.Linear(in_features=1024, out_features=512, device=self.config.device),
+            torch.nn.BatchNorm1d(num_features=512, device=self.config.device),
+            torch.nn.ReLU()
+        )
+
+        # Define a deconvolution network to upscale to the final 3D grid
+        # Note that we pad the yaw axis with circular padding to account for angle wrap-around
+        # For dilation of 1, dimensional change is as follows:
+        #       D_out​ = (D_in​ − 1)×stride − 2×padding + kernel_size + output_padding
+        self.deconvolution = torch.nn.Sequential(
+            # Size is (B, 1, 8, 8, 8)
+
+            torch.nn.CircularPad3d(padding=(2, 2, 0, 0, 0, 0)),
+            # Size is (B, 1, 8, 8, 12)
+
+            torch.nn.ConvTranspose3d(
+                in_channels=1,
+                out_channels=1,
+                kernel_size=(4, 4, 3),
+                stride=(2, 2, 1),
+                padding=(1, 1, 0)
+            ),
+            torch.nn.BatchNorm3d(num_features=1),
+            torch.nn.ReLU(),
+            # Size is (B, 1, 16, 16, 14)
+
+            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+            # Size is (B, 1, 16, 16, 16)
+
+            torch.nn.ConvTranspose3d(
+                in_channels=1,
+                out_channels=1,
+                kernel_size=5,
+                stride=1,
+            )
+            # Size is (B, 1, 20, 20, 20)
+        )
 
     def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor):
         """
@@ -98,36 +137,37 @@ class BaseNet(torch.nn.Module):
 
         # Encode the points into a feature vector
         t5 = time.perf_counter()
-        encoded_pointclouds: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
+        pointcloud_embeddings: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
         t6 = time.perf_counter()
+
+        # Attend the pose data to the pointcloud data
+        t7 = time.perf_counter()
+        output, weights = self.attention_layer(
+            query=pose_embeddings.unsqueeze(1),
+            key=pointcloud_embeddings.unsqueeze(1),
+            value=pointcloud_embeddings.unsqueeze(1)
+        )
+        t8 = time.perf_counter()
+
+        # Scale up to final value before deconvolution
+        t9 = time.perf_counter()
+        final_vector = self.linear_upscale(output.squeeze(1))
+        t10 = time.perf_counter()
+
+        # Scale up to final 20x20x20 grid
+        t11 = time.perf_counter()
+        first_3d_layer = final_vector.view([-1, 1, 8, 8, 8])
+        final_3d_grid = self.deconvolution(first_3d_layer)
+        t12 = time.perf_counter()
 
         print(f"Pose encoding: {(t2 -t1)*1000}ms")
         print(f"Pointcloud processing: {(t4 -t3)*1000}ms")
         print(f"Pointcloud encoding: {(t6 -t5)*1000}ms")
+        print(f"Attention layer: {(t8 -t7)*1000}ms")
+        print(f"Linear processing: {(t10 -t9)*1000}ms")
+        print(f"Deconvolution: {(t12 -t11)*1000}ms")
 
-        return
-
-        # TODO: Fix this after changing workspace origin to workspace center
-        task_points, task_orientations = tasks.split([3, 4], dim=1)
-        # task_points = (task_points - self.config.workspace_center) / self.config.workspace_dim
-
-        # Make sure all quaternions have a positive w value since negative quaternions represent
-        # identical rotations to their positive valued counterparts
-        negative_quaternion_mask = task_orientations[:,0] < 0
-        task_orientations[negative_quaternion_mask] = -task_orientations[negative_quaternion_mask]
-
-        # Concatenate it all together
-        x = torch.cat([encoded_pointclouds, task_points, task_orientations], dim=1)
-
-        # Pass through more fully connected layers, after which x will have length 2048 (16x16x8)
-        for fc_layer, batch_normal in zip(self.fully_connected_layers, self.batch_normals):
-            x = relu(batch_normal(fc_layer(x)))
-
-        # Reshape into BatchSize number of 3D grids of (x, y, yaw) 
-        x.reshape([-1, 16, 16, 8])
-
-        # Deconvolution step to the desired final resolution
-        x = self.dconv1(x)
+        return final_3d_grid.squeeze(1)
 
     def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
@@ -152,7 +192,7 @@ class BaseNet(torch.nn.Module):
         filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
         filtered_pointclouds_tensor = self.pad_pointclouds_to_same_size(filtered_pointclouds)
 
-        return filtered_pointclouds_tensor
+        return filtered_pointclouds_tensor.to(self.config.device)
 
     def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
         pointcloud_counts = [pc.size()[0] for pc in pointclouds]
