@@ -166,20 +166,19 @@ def main():
     # Load the robot model
     robot_config = load_robot_config(config)
 
-    pointcloud_name = 'URSA_sample_valves'
-    test_pointcloud = pointclouds['URSA_sample_valves']
-    sample_poses = sample_surface_poses(test_pointcloud, 300, robot_config, config)
+    for pointcloud_name, pointcloud in pointclouds.items():
+        sample_poses = sample_surface_poses(pointcloud, 300, robot_config, config)
 
-    if args.output_path is not None:
-        with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
-            tasks = []
-            for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
-                tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
-            yaml.dump(tasks, f)
-    else:
-        print("No output path provided, generated poses have not been saved")
+        if args.output_path is not None:
+            with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
+                tasks = []
+                for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
+                    tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
+                yaml.dump(tasks, f)
+        else:
+            print("No output path provided, generated poses have not been saved")
     
-    visualize_task_poses(test_pointcloud, sample_poses, robot_config)
+        visualize_task_poses(pointcloud, sample_poses, robot_config)
 
 if __name__ == "__main__":
     main()
