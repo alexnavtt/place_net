@@ -1,19 +1,17 @@
 import torch
 
 class PoseEncoder(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self):
         super(PoseEncoder, self).__init__()
-
-        self.device = device
 
         # Task embedding layers
         self.task_embedding = torch.nn.Sequential(
-            torch.nn.Linear(in_features=3, out_features=32, device=device),
-            torch.nn.BatchNorm1d(num_features=32, device=device),
+            torch.nn.Linear(in_features=3, out_features=32),
+            torch.nn.BatchNorm1d(num_features=32),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(in_features=32, out_features=1024, device=device),
-            torch.nn.BatchNorm1d(num_features=1024, device=device),
+            torch.nn.Linear(in_features=32, out_features=1024),
+            torch.nn.BatchNorm1d(num_features=1024),
             torch.nn.ReLU(),
         )
 
@@ -43,7 +41,7 @@ class PoseEncoder(torch.nn.Module):
 
         cos_yaw = torch.cos(yaw_angles)
         sin_yaw = torch.sin(yaw_angles)
-        task_rot_world = torch.zeros((batch_size, 2, 2), device=self.device)
+        task_rot_world = torch.zeros((batch_size, 2, 2), device=poses.device, requires_grad=False)
         task_rot_world[:, 0, 0] = cos_yaw
         task_rot_world[:, 0, 1] = -sin_yaw
         task_rot_world[:, 1, 0] = sin_yaw

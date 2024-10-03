@@ -27,10 +27,6 @@ class BaseNetConfig:
     # The number of discretized orientations to use in the output distribution
     output_orientation_discretization: int = 20 
 
-    # The sizes of the hidden layers to use between the encoded input and the start
-    # of the deconvolution step
-    hidden_layer_sizes: list[int] = field(default_factory=lambda: [1024 + 512])
-
     # Whether to run on the gpu
     device: str = "cuda:0"
 
@@ -44,33 +40,32 @@ class BaseNet(torch.nn.Module):
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
         self.pointcloud_encoder = self.config.encoder_type()
-        self.pose_encoder = PoseEncoder(config.device)
+        self.pose_encoder = PoseEncoder()
 
         # Define a cross-attention layer between the pose embedding and the pointcloud embedding
         self.attention_layer = torch.nn.MultiheadAttention(
             num_heads=1,
             embed_dim=1024,
             batch_first=True,
-            device=self.config.device
         )
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
-            torch.nn.Linear(in_features=1024, out_features=512, device=self.config.device),
-            torch.nn.BatchNorm1d(num_features=512, device=self.config.device),
+            torch.nn.Linear(in_features=1024, out_features=512),
+            torch.nn.BatchNorm1d(num_features=512),
             torch.nn.ReLU()
         )
 
         # Define a deconvolution network to upscale to the final 3D grid
-        # Note that we pad the yaw axis with circular padding to account for angle wrap-around
-        # For dilation of 1, dimensional change is as follows:
-        #       D_out​ = (D_in​ − 1)×stride − 2×padding + kernel_size + output_padding
+        """ 
+        Note that we pad the yaw axis with circular padding to account for angle wrap-around
+        For dilation of 1, dimensional change is as follows:
+              D_out = (D_in - 1) x stride - 2 x padding + kernel_size + output_padding
+        Starting size is (B, 1, 8, 8, 8)
+        """
         self.deconvolution = torch.nn.Sequential(
-            # Size is (B, 1, 8, 8, 8)
-
             torch.nn.CircularPad3d(padding=(2, 2, 0, 0, 0, 0)),
             # Size is (B, 1, 8, 8, 12)
-
             torch.nn.ConvTranspose3d(
                 in_channels=1,
                 out_channels=1,
@@ -81,10 +76,8 @@ class BaseNet(torch.nn.Module):
             torch.nn.BatchNorm3d(num_features=1),
             torch.nn.ReLU(),
             # Size is (B, 1, 16, 16, 14)
-
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
             # Size is (B, 1, 16, 16, 16)
-
             torch.nn.ConvTranspose3d(
                 in_channels=1,
                 out_channels=1,
@@ -93,6 +86,9 @@ class BaseNet(torch.nn.Module):
             )
             # Size is (B, 1, 20, 20, 20)
         )
+
+        # Now that all modules are registered, move them to the appropriate device
+        self.to(self.config.device)
 
     def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor):
         """
@@ -109,12 +105,13 @@ class BaseNet(torch.nn.Module):
         """
 
         if self.config.debug:
+            print("Showing environment and task pose")
             task_visualization.visualize(tasks[0,:], pointclouds[0])
 
         # Embed the task poses and get the transforms needed for the pointclouds
         t1 = time.perf_counter()
         tasks = tasks.to(self.config.device)
-        task_rotation, pose_embeddings = self.pose_encoder(tasks, max_height=self.config.workspace_height)
+        task_rotation, pose_embeddings, adjusted_task_pose = self.pose_encoder(tasks, max_height=self.config.workspace_height)
         t2 = time.perf_counter()
 
         # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
@@ -123,16 +120,14 @@ class BaseNet(torch.nn.Module):
         t4 = time.perf_counter()
 
         if self.config.debug:
-            elevation_embedding, pitch_embedding, roll_embedding = pose_embeddings[0, :].cpu()
-            print(f"{pose_embeddings=}")
+            print("Showing trimmed environment and transformed task pose")
+            elevation, pitch, roll = adjusted_task_pose[0, :].cpu()
             quat = scipy.spatial.transform.Rotation.from_euler(
                 seq='ZYX', 
-                angles=[0, pitch_embedding*torch.pi/2, roll_embedding*torch.pi], 
+                angles=[0, pitch, roll], 
                 degrees=False
             ).as_quat(scalar_first=True)
-            print(quat)
-            new_task = torch.Tensor([0, 0, elevation_embedding*self.config.workspace_height, *quat])
-
+            new_task = torch.Tensor([0, 0, elevation, *quat])
             task_visualization.visualize(new_task, pointcloud_tensor[0, :, :])
 
         # Encode the points into a feature vector
@@ -205,33 +200,3 @@ class BaseNet(torch.nn.Module):
         
         return pointcloud_tensor
     
-    def quaternion_to_euler_tensor(self, quaternions) -> torch.Tensor:
-        qw, qx, qy, qz = quaternions[:, 0], quaternions[:, 1], quaternions[:, 2], quaternions[:, 3]
-
-        # Precompute terms for efficiency
-        qwx = qw*qx
-        qwy = qw*qy
-        qwz = qw*qz
-        qxy = qx*qy
-        qxz = qx*qz
-        qyz = qy*qz
-        qxx = qx*qx
-        qyy = qy*qy
-        qzz = qz*qz
-
-        # Yaw calculation
-        sin_yaw_cos_pitch = 2*(qwz + qxy)
-        cos_yaw_cos_pitch = 1 - 2*(qyy + qzz)
-        yaw = torch.atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
-
-        # Pitch calculation
-        sin_pitch = 2*(qwy - qxz)
-        sin_pitch = sin_pitch.clamp(-1.0, 1.0) # avoid numerical errors
-        pitch = torch.asin(sin_pitch)
-
-        # Roll calculation
-        sin_roll_cos_pitch = 2*(qwx + qyz)
-        cos_roll_cos_pitch = 1 - 2*(qxx + qyy)
-        roll = torch.atan2(sin_roll_cos_pitch, cos_roll_cos_pitch)
-
-        return torch.stack((roll, pitch, yaw), dim=1)

@@ -53,7 +53,7 @@ def main():
         debug=False
     )
     
-    base_net_model = BaseNet(base_net_config).to(base_net_config.device)
+    base_net_model = BaseNet(base_net_config)
     output = base_net_model(pointclouds, tasks)
     print(output.size())
 

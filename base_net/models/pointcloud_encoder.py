@@ -3,7 +3,7 @@ import torch
 from torch.nn.functional import relu
 
 class PointNetEncoder(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self):
         super(PointNetEncoder, self).__init__()
         self.num_channels = 3 + 3 # xyz plus normals
 
@@ -13,56 +13,59 @@ class PointNetEncoder(torch.nn.Module):
 
         # Pointnet Layers
         self.pointcloud_conv = torch.nn.Sequential(
-            torch.nn.Conv1d(self.num_channels, 64, 1, device=device),
-            torch.nn.BatchNorm1d(64, device=device),
+            torch.nn.Conv1d(self.num_channels, 64, 1),
+            torch.nn.BatchNorm1d(64),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(64, 64, 1, device=device),
-            torch.nn.BatchNorm1d(64, device=device),
+            torch.nn.Conv1d(64, 64, 1),
+            torch.nn.BatchNorm1d(64),
             torch.nn.ReLU()
         )
 
         self.pointnet_feature_conv = torch.nn.Sequential(
-            torch.nn.Conv1d(64, 64, 1, device=device),
-            torch.nn.BatchNorm1d(64, device=device),
+            torch.nn.Conv1d(64, 64, 1),
+            torch.nn.BatchNorm1d(64),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(64, 128, 1, device=device),
-            torch.nn.BatchNorm1d(128, device=device),
+            torch.nn.Conv1d(64, 128, 1),
+            torch.nn.BatchNorm1d(128),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(128, 1024, 1, device=device),
-            torch.nn.BatchNorm1d(1024, device=device),
+            torch.nn.Conv1d(128, 1024, 1),
+            torch.nn.BatchNorm1d(1024),
         )
 
         # Feature T-Net Layers
         self.feature_transform_conv = torch.nn.Sequential(
-            torch.nn.Conv1d(64, 64, 1, device=device),
-            torch.nn.BatchNorm1d(64, device=device),
+            torch.nn.Conv1d(64, 64, 1),
+            torch.nn.BatchNorm1d(64),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(64, 128, 1, device=device),
-            torch.nn.BatchNorm1d(128, device=device),
+            torch.nn.Conv1d(64, 128, 1),
+            torch.nn.BatchNorm1d(128),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(128, 1024, 1, device=device),
-            torch.nn.BatchNorm1d(1024, device=device),
+            torch.nn.Conv1d(128, 1024, 1),
+            torch.nn.BatchNorm1d(1024),
             torch.nn.ReLU()
         )
 
         self.feature_transform_linear = torch.nn.Sequential(
-            torch.nn.Linear(1024, 512, device=device),
-            torch.nn.BatchNorm1d(512, device=device),
+            torch.nn.Linear(1024, 512),
+            torch.nn.BatchNorm1d(512),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(512, 256, device=device),
-            torch.nn.BatchNorm1d(256, device=device),
+            torch.nn.Linear(512, 256),
+            torch.nn.BatchNorm1d(256),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(256, 64*64, device=device),
+            torch.nn.Linear(256, 64*64),
         )
 
-        self.tnet_identity_matrix = torch.from_numpy(np.eye(64, dtype=np.float32).flatten()).view(1, 64*64).to(device=device)
+        self.tnet_identity_matrix = torch.nn.Parameter(
+            data=torch.eye(64).view(1, 64*64),
+            requires_grad=False
+        )
 
     def forward(self, pointclouds: torch.Tensor):
         batch_size, num_points, point_dim = pointclouds.size()
