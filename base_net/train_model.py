@@ -45,7 +45,6 @@ def main():
 
     base_net_config = BaseNetConfig(
         encoder_type=PointNetEncoder,
-        hidden_layer_sizes=[1024 + 512],
         output_orientation_discretization=20,
         output_position_resolution=0.10,
         workspace_radius=2.0,
