@@ -10,7 +10,7 @@ RUN apt update \
     && apt install -y \
         python3 \
         python3-pip \
-    && pip install torch
+    && pip install torch setuptools==61
 
 
 # === Nvidia Jetson Install === #

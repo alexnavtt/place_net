@@ -1,10 +1,10 @@
 ARG CUDA_VERSION
 ARG BUILD_TARGET=workstation
 
-FROM alexnavtt/curobo:${BUILD_TARGET} as base_net
+FROM alexnavtt/curobo:${BUILD_TARGET} AS base_net
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG ROS_DISTRO
+ARG ROS_DISTRO=humble
 
 # Install ROS
 ENV LANG=en_US.UTF-8
@@ -22,11 +22,13 @@ RUN apt update && apt upgrade -y \
 RUN apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
 # Install BaseNet dependencies
-RUN pip install 'numpy<2.0.0' open3d xacro urdf_parser_py
 RUN apt install -y libgl1
+ADD base_net /base_net/base_net
+ADD setup.py /base_net/setup.py
+WORKDIR /base_net
+RUN pip install -e . 
 
-
-FROM base_net as base_net_nrg
+FROM base_net AS base_net_nrg
 SHELL ["/bin/bash", "-l", "-c"]
 
 # Install NRG ros package dependencies
@@ -48,4 +50,4 @@ RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc \
     && echo "source /colcon_ws/install/setup.bash" >> ~/.bashrc
 
-WORKDIR /base_net/scripts
+WORKDIR /base_net
