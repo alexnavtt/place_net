@@ -11,8 +11,8 @@ import scipy.spatial
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 
-from base_net.scripts.calculate_ground_truth import load_robot_config, load_pointclouds
 from base_net.utils import task_visualization
+from base_net.utils.base_net_config import BaseNetConfig
 
 def load_arguments() -> dict:
     parser = argparse.ArgumentParser(
@@ -69,7 +69,7 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int)
 def sample_close_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int) -> cuRoboPose:
     pass
 
-def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int, robot_config: RobotConfig, config: dict) -> cuRoboPose:
+def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int, model_config: BaseNetConfig) -> cuRoboPose:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -78,7 +78,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int,
     quaternion_tensor = torch.empty([0, 4])
 
     # Get the end effector collision spheres to make sure samples poses are valid
-    ee_spheres = get_end_effector_spheres(robot_config).cpu().numpy()
+    ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
     print(ee_spheres)
 
     # Get a KD tree for sphere-pointcloud collision detection
@@ -103,8 +103,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int,
         normal = normal / np.linalg.norm(normal) # just in case
 
         # Project the surface normal to the end effector location
-        offset: float = config['close_point_offset']
-        ee_location = point + normal * offset
+        ee_location = point + normal * model_config.surface_task_offset
 
         # Sample a random point in 3D space not along the normal
         while True:
@@ -153,21 +152,10 @@ def sample_poses_for_pointcloud(pointcloud: open3d.geometry.PointCloud, num_pose
 
 def main():
     args = load_arguments()
+    model_config = BaseNetConfig.from_yaml(args.config_file)
 
-    try:
-        with open(args.config_file, 'r') as f:
-            config = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        print(f"Error loading config file: {e}")
-        
-    # Load the pointclouds
-    pointclouds = load_pointclouds(config)
-
-    # Load the robot model
-    robot_config = load_robot_config(config)
-
-    for pointcloud_name, pointcloud in pointclouds.items():
-        sample_poses = sample_surface_poses(pointcloud, 300, robot_config, config)
+    for pointcloud_name, pointcloud in model_config.pointclouds.items():
+        sample_poses = sample_surface_poses(pointcloud, 300, model_config)
 
         if args.output_path is not None:
             with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
@@ -178,7 +166,7 @@ def main():
         else:
             print("No output path provided, generated poses have not been saved")
     
-        visualize_task_poses(pointcloud, sample_poses, robot_config)
+        visualize_task_poses(pointcloud, sample_poses, model_config.robot)
 
 if __name__ == "__main__":
     main()

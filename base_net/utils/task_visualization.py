@@ -106,7 +106,7 @@ def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.
 
     return transform_from_ee
 
-def get_robot_at_joint_state(
+def get_robot_geometry_at_joint_state(
         robot_config: RobotConfig, 
         joint_state: torch.Tensor, 
         base_link_pose: np.ndarray,
