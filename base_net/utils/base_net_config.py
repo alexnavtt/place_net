@@ -69,6 +69,7 @@ class BaseNetModelConfig:
             workspace_height=task_geometry['base_link_elevation'] + task_geometry['robot_reach_radius'],
             workspace_floor=task_geometry['min_pointcloud_elevation'],
             batch_size=yaml_config['model_settings']['batch_size'],
+            debug=yaml_config['model_settings']['debug'],
             encoder_type=pointcloud_encoder_type,
             device=torch_device
         )
