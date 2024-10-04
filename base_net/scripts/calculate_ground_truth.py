@@ -163,7 +163,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     geometries = geometries + task_visualization.get_base_arrows(base_poses, valid_base_indices)
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, robot_model: CudaRobotModel, pointcloud):
+def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: BaseNetConfig, pointcloud):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. Reachable base link poses will be colored green, 
@@ -181,9 +181,9 @@ def visualize_solution(world_mesh: open3d.geometry.TriangleMesh, solution_succes
     if torch.sum(solution_success) > 0:
         solution_idx = int(np.random.rand() * torch.sum(solution_success))
         robot_spheres = task_visualization.get_robot_geometry_at_joint_state(
-            robot_config=robot_model, 
+            robot_config=model_config.robot, 
             joint_state=solution_states[solution_success, :][solution_idx, :], 
-            as_spheres=True, 
+            as_spheres=model_config.render_as_spheres, 
             inverted=True, 
             base_link_pose=np.eye(4)
         )

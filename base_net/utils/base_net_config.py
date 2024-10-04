@@ -33,6 +33,9 @@ class BaseNetModelConfig:
     # The maximum height to consider for points in the input pointclouds
     workspace_height: float
 
+    # The batch size to use for training
+    batch_size: int = 1
+
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
 
@@ -46,7 +49,7 @@ class BaseNetModelConfig:
     @staticmethod               
     def from_yaml_dict(yaml_config: dict):
         # Determine which type of pointcloud encoder to use
-        pointcloud_encoder_lable: str = yaml_config['model_settings']['model_settings']
+        pointcloud_encoder_lable: str = yaml_config['model_settings']['pointcloud_encoder']
         if pointcloud_encoder_lable.lower() == 'pointnet':
             pointcloud_encoder_type = PointNetEncoder
         elif pointcloud_encoder_lable.lower() in ['cnn', 'cnnencoder']:
@@ -65,6 +68,7 @@ class BaseNetModelConfig:
             workspace_radius=task_geometry['workspace_radius'],
             workspace_height=task_geometry['base_link_elevation'] + task_geometry['robot_reach_radius'],
             workspace_floor=task_geometry['min_pointcloud_elevation'],
+            batch_size=yaml_config['model_settings']['batch_size'],
             encoder_type=pointcloud_encoder_type,
             device=torch_device
         )
@@ -105,8 +109,12 @@ class BaseNetConfig:
     # plane at which the base link of the kinematic chain sits
     base_link_elevation: float = 0.0
 
+    # In debug mode, whether to render the robot as the cuRobo collision
+    # spheres or to render the robot as the URDF visual geometry
+    render_as_spheres: bool = True
+
     @staticmethod
-    def from_yaml(filename: str):
+    def from_yaml(filename: str, load_tasks = True):
         with open(filename, 'r') as f:
             yaml_config = yaml.safe_load(f)
 
@@ -127,13 +135,14 @@ class BaseNetConfig:
 
         return BaseNetConfig(
             pointclouds=pointclouds,
-            tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds),
+            tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
             robot=BaseNetConfig.load_robot_config(yaml_config),
             model=model_config,
             surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
             position_count=yaml_config['task_geometry']['position_count'],
             heading_count=yaml_config['task_geometry']['heading_count'],
-            base_link_elevation=yaml_config['task_geometry']['base_link_elevation']
+            base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],
+            render_as_spheres=yaml_config['task_geometry']['render_as_spheres']
         )
 
     @staticmethod

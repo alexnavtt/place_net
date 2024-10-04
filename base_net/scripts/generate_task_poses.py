@@ -152,7 +152,7 @@ def sample_poses_for_pointcloud(pointcloud: open3d.geometry.PointCloud, num_pose
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml(args.config_file)
+    model_config = BaseNetConfig.from_yaml(args.config_file, load_tasks=False)
 
     for pointcloud_name, pointcloud in model_config.pointclouds.items():
         sample_poses = sample_surface_poses(pointcloud, 300, model_config)

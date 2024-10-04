@@ -1,4 +1,5 @@
 pointclouds:
+  - {path: "base_net/data/pointclouds/attic-draft.pcd", elevation: 0.0}
   - {path: "base_net/data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
   - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
 
@@ -21,7 +22,9 @@ task_geometry:
   surface_task_offset: 0.15
   position_count: 15
   heading_count: 15
+  render_as_spheres: False
 
 model_settings:
-  model_settings: 'PointNet'
+  pointcloud_encoder: 'PointNet'
   cuda_device: 0
+  batch_size: 4
