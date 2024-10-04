@@ -15,28 +15,29 @@ class BaseNetDataset(Dataset):
             raise RuntimeError(f"Train/Test/Validate split must have only 3 elements - you gave {split}")
         split_tensor /= torch.sum(split_tensor)
         
-        original_task_sizes = torch.Tensor([task.size()[0] for task in model_config.tasks.values()])
+        num_tasks = len(model_config.tasks)
+        original_task_sizes = torch.tensor([task.size()[0] for task in model_config.tasks.values()], dtype=torch.int)
         train_end_idx = split_tensor[0].item()*original_task_sizes
         test_end_idx  = (split_tensor[0].item() + split_tensor[1].item())*original_task_sizes
 
         if mode == 'training':
-            start = 0
-            end = train_end_idx
+            start = [0]*num_tasks
+            end = train_end_idx.int().tolist()
         elif mode == 'testing':
-            start = train_end_idx
-            end = test_end_idx
+            start = train_end_idx.int().tolist()
+            end = test_end_idx.int().tolist()
         elif mode == 'valdiation':
-            start = test_end_idx
-            end = original_task_sizes
+            start = test_end_idx.int().tolist()
+            end = original_task_sizes.int().tolist()
 
         open3d_to_tensor = lambda pointcloud: torch.tensor(np.concatenate([np.asarray(pointcloud.points), np.asarray(pointcloud.normals)], axis=1), device='cpu')
 
         self.task_pointcloud_pairs: list[tuple[Tensor, Tensor]] = [
-            (model_config.tasks[name][start:end, :], open3d_to_tensor(model_config.pointclouds[name]))
-            for name in model_config.tasks.keys()
+            (model_config.tasks[name][start[idx]:end[idx], :], open3d_to_tensor(model_config.pointclouds[name]))
+            for idx, name in enumerate(model_config.tasks.keys())
         ]
-        self.task_sizes = torch.Tensor([0] + [task.size()[0] for task, _ in self.task_pointcloud_pairs])
-        self.task_indices = torch.cumsum(self.task_sizes)
+        self.task_sizes = torch.tensor([0] + [task.size()[0] for task, _ in self.task_pointcloud_pairs], dtype=torch.int)
+        self.task_indices = torch.cumsum(self.task_sizes, dim=0)
 
     def __len__(self):
         return self.task_indices[-1]

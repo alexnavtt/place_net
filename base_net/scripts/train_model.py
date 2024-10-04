@@ -1,11 +1,25 @@
 #!/bin/python
 
 import torch
+import argparse
 import numpy as np
 import open3d as o3d
 
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
-from base_net.models.base_net import BaseNet, BaseNetConfig
+from base_net.models.base_net import BaseNet
+from base_net.models.basenet_dataset import BaseNetDataset
+from base_net.utils.base_net_config import BaseNetConfig
+
+def load_arguments():
+    """
+    Load the path to the config file from runtime arguments and load the config as a dictionary
+    """
+    parser = argparse.ArgumentParser(
+        prog="train_model.py",
+        description="Script to train the BaseNet model based on the setting provided in a configuration file",
+    )
+    parser.add_argument('--config-file', default='base_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
+    return parser.parse_args()
 
 def load_pointcloud_batch():
     files = [
@@ -31,6 +45,7 @@ def load_test_tasks() -> torch.Tensor:
     return torch.Tensor([[0.0, 0.0, 0.0, 0.4217103, 0.5662352, 0.4180669, -0.5716277]])
 
 def main():
+    args = load_arguments()
     pointclouds = load_pointcloud_batch()
     # pointclouds = load_test_pointcloud()
     # tasks = load_test_tasks()
@@ -43,16 +58,10 @@ def main():
 
     tasks = torch.concatenate([task_points, orientations], dim=1).cuda()
 
-    base_net_config = BaseNetConfig(
-        encoder_type=PointNetEncoder,
-        output_orientation_discretization=20,
-        output_position_resolution=0.10,
-        workspace_radius=2.0,
-        workspace_height=1.5,
-        debug=False
-    )
-    
+    base_net_config = BaseNetConfig.from_yaml(args.config_file)
     base_net_model = BaseNet(base_net_config)
+
+    data = BaseNetDataset(base_net_config)
     output = base_net_model(pointclouds, tasks)
     print(output.size())
 
