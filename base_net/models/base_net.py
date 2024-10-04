@@ -9,34 +9,12 @@ from torch.nn.functional import relu, pad
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 from base_net.models.pose_encoder import PoseEncoder
 from base_net.utils import task_visualization
-
-@dataclass
-class BaseNetConfig:
-    # The radial dimension of the workspace to consider from the task pose
-    workspace_radius: float
-
-    # The maximum height to consider for points in the input pointclouds
-    workspace_height: float
-
-    # The method to use for encoding the incoming pointcloud data
-    encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
-
-    # The grid cell size of the output x,y grid on the floor
-    output_position_resolution: float = 0.10
-
-    # The number of discretized orientations to use in the output distribution
-    output_orientation_discretization: int = 20 
-
-    # Whether to run on the gpu
-    device: str = "cuda:0"
-
-    # Whether to print debug statements and show visualizations
-    debug: bool = False
+from base_net.utils.base_net_config import BaseNetConfig
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
-        self.config = copy.deepcopy(config)
+        self.config = copy.deepcopy(config.model)
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
         self.pointcloud_encoder = self.config.encoder_type()
@@ -175,6 +153,7 @@ class BaseNet(torch.nn.Module):
         valid_elevations = (pointcloud_z < self.config.workspace_height).squeeze()
 
         # Step 3: Transform the pointclouds to the task invariant frame
+        # TODO: Reorder these steps so that matrix multiplication happens after distance filtering
         pointcloud_xy -= task_xy
         torch.matmul(pointcloud_xy , task_rotation, out=pointcloud_xy)
         torch.matmul(pointcloud_normals_xy, task_rotation, out=pointcloud_normals_xy)
