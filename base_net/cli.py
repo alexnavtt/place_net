@@ -8,7 +8,7 @@ def main():
 @main.command(context_settings=dict(ignore_unknown_options=True))
 @click.argument('args', nargs=-1, type=click.UNPROCESSED)
 def train(args):
-    from base_net.train_model import main as train_main
+    from base_net.scripts.train_model import main as train_main
     sys.argv = ['train'] + list(args)
     train_main()
 
