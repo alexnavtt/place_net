@@ -73,7 +73,7 @@ class BaseNetModelConfig:
 class BaseNetConfig:
     # The list of all pointclouds associated with their filenames stored
     # in CPU tensors of shape (num_points, 6) arranged x, y, z, nx, ny, nz
-    pointclouds: dict[str, Tensor]
+    pointclouds: dict[str, open3d.geometry.PointCloud]
 
     # All tasks associated with their pointclouds. Each task tensor
     # has the shape (num_tasks, 7) arranged as x, y, z, qw, qx, qy, qz
