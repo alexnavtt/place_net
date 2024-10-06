@@ -53,7 +53,7 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> li
 
     return geometries
 
-def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose) -> list[open3d.geometry.TriangleMesh]:
+def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose, color: list = [0.5, 0.5, 1.0]) -> list[open3d.geometry.TriangleMesh]:
     geometries = []
     
     for task_idx in range(task_poses.batch):
@@ -68,7 +68,7 @@ def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose) -> list[open3d.ge
             sphere_loc = transform @ np.array([x, y, z, 1])
             sphere_geom = open3d.geometry.TriangleMesh.create_sphere(radius=radius)
             sphere_geom.translate(sphere_loc[:3])
-            sphere_geom.paint_uniform_color([0.5, 0.5, 1.0])
+            sphere_geom.paint_uniform_color(color)
             geometries.append(sphere_geom.compute_triangle_normals())
 
     return geometries
