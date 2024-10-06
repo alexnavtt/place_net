@@ -69,7 +69,7 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int)
 def sample_close_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int) -> cuRoboPose:
     pass
 
-def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int, model_config: BaseNetConfig) -> cuRoboPose:
+def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig) -> cuRoboPose:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -86,7 +86,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int,
 
     # List all points as available to sample
     available_point_labels = np.ones(len(pointcloud.points), dtype=bool)
-    points_remaining = num_poses
+    points_remaining = model_config.task_generation.counts.surface
     while points_remaining > 0 and any(available_point_labels):
         available_point_indices = np.nonzero(available_point_labels)[0]
         
@@ -103,7 +103,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int,
         normal = normal / np.linalg.norm(normal) # just in case
 
         # Project the surface normal to the end effector location
-        ee_location = point + normal * model_config.surface_task_offset
+        ee_location = point + normal * model_config.task_generation.offsets.surface_offset
 
         # Sample a random point in 3D space not along the normal
         while True:
@@ -132,6 +132,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, num_poses: int,
         in_collision = False
         for sphere in ee_spheres:
             x, y, z, radius = sphere
+            radius += model_config.task_generation.offsets.surface_min
             location_in_ee_frame = np.array([x, y, z, 1])
             location_in_world_frame = (world_tform_ee @ location_in_ee_frame)[:3]
             num_points_in_collision = kd_tree.search_radius_vector_3d(location_in_world_frame, radius)[0]
@@ -155,7 +156,7 @@ def main():
     model_config = BaseNetConfig.from_yaml(args.config_file, load_tasks=False)
 
     for pointcloud_name, pointcloud in model_config.pointclouds.items():
-        sample_poses = sample_surface_poses(pointcloud, 300, model_config)
+        sample_poses = sample_surface_poses(pointcloud, model_config)
 
         if args.output_path is not None:
             with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:

@@ -73,6 +73,79 @@ class BaseNetModelConfig:
             encoder_type=pointcloud_encoder_type,
             device=torch_device
         )
+    
+@dataclass
+class TaskGenerationConfig:
+    @dataclass
+    class TaskGenerationCounts:
+        # Poses sampled at a very small offset from points
+        # in the pointcloud, and oriented with the end-effector
+        # facing the surface. Roll is sampled randomly
+        surface: int
+
+        # Poses sampled at a small offset from points in the
+        # pointcloud with a completely random orientation
+        close: int
+
+        # Poses sampled at a large offset from points in the
+        # pointcloud with a completely random orientation. Note
+        # that this distance should be less than the obstacle 
+        # inclusion radius as there are other poses dedicated
+        # to sampling empty space
+        far: int
+
+        # Poses sampled from other existing poses to have the
+        # same x, y, and heading but with different elevation,
+        # pitch and roll. This means that they will have 
+        # identical obstacle encoding to other poses but different
+        # pose encoding
+        offset: int
+
+    # Max and min distance of the end-effector frame from the nearest
+    # point in the pointcloud for a sample to be considered valid
+    @dataclass
+    class TaskGenerationOffsets:
+        # Distance from point on surface to sample pose 
+        surface_offset: float
+
+        # If there are no points within this radius, a sampled pose
+        # is considered invalid 
+        close_max     : float
+        far_max       : float
+
+        # If there is a point within this radius, a sampled pose is
+        # considered invalid
+        surface_min   : float
+        close_min     : float
+        far_min       : float
+
+    counts: TaskGenerationCounts
+    offsets: TaskGenerationOffsets
+
+    @staticmethod
+    def from_yaml_dict(yaml_config: dict):
+        config = yaml_config['task_generation']
+
+        if 'surface' in config['counts'] and 'surface_offset' not in config:
+            raise RuntimeError(f'You specified that you wanted {config["counts"]["surface"]} surface poses, but you did not specify a surface offset')
+
+        return TaskGenerationConfig(
+            counts = TaskGenerationConfig.TaskGenerationCounts(
+                surface= config['counts']['surface'] if 'surface' in config['counts'] else 0,
+                close  = config['counts']['close'  ] if 'close'   in config['counts'] else 0,
+                far    = config['counts']['far'    ] if 'far'     in config['counts'] else 0,
+                offset = config['counts']['offset' ] if 'offset'  in config['counts'] else 0,
+            ),
+
+            offsets = TaskGenerationConfig.TaskGenerationOffsets(
+                surface_min = config['min_offsets']['surface'] if 'surface' in config['min_offsets'] else 0.0,
+                close_min   = config['min_offsets']['close'  ] if 'close'   in config['min_offsets'] else 0.0,
+                far_min     = config['min_offsets']['far'    ] if 'far'     in config['min_offsets'] else 0.0,
+                close_max   = config['max_offsets']['close'  ] if 'close'   in config['max_offsets'] else 1e10,
+                far_max     = config['max_offsets']['far'    ] if 'far'     in config['max_offsets'] else 1e10,
+                surface_offset = config['surface_offset'] if 'surface_offset' in config else 0.0
+            )
+        )
 
 @dataclass
 class BaseNetConfig:
@@ -91,6 +164,11 @@ class BaseNetConfig:
     # The configuration related specifically to the kinematics model, used
     # for both the PyTorch model as well as the cuRobo ground truth calculations
     model: BaseNetModelConfig
+
+    # Configurations for sampling poses given an input pointcloud, including
+    # distances to nearest obstacles, and proportions of poses at certain 
+    # distances
+    task_generation: TaskGenerationConfig
 
     # Used in task pose generation. The distance offset from surfaces to
     # place a task pose for the subset of tasks sampled as 'surface tasks'
@@ -134,16 +212,19 @@ class BaseNetConfig:
                 raise RuntimeError(f"Duplicate pointcloud name detected: {name}")
             pointclouds[name] = pointcloud
 
+        task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config)
+
         return BaseNetConfig(
             pointclouds=pointclouds,
             tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
             robot=BaseNetConfig.load_robot_config(yaml_config),
             model=model_config,
+            task_generation=task_generation_config,
             surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
             position_count=yaml_config['task_geometry']['position_count'],
             heading_count=yaml_config['task_geometry']['heading_count'],
             base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],
-            render_as_spheres=yaml_config['task_geometry']['render_as_spheres']
+            render_as_spheres=yaml_config['task_geometry']['render_as_spheres'],
         )
 
     @staticmethod
@@ -198,7 +279,7 @@ class BaseNetConfig:
         Load the cuRobo config from the config yaml/XRDF file and the urdf specified in the config.
         This function inverts the loaded URDF such that the end effector becomes the base link 
         and the base link becomes the end effector. No modifications are needed from the user
-        to either the URDF or the cuRobot config file.
+        to either the URDF or the cuRobo config file.
         """
         
         # Resolve ros package paths if necessary
