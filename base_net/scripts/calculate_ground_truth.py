@@ -190,7 +190,6 @@ def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses
     start_idx = 0
     while start_idx < num_poses:
         end_idx = min(start_idx + batch_size, num_poses)
-        print(f'Solving from {start_idx} to {end_idx}')
         size = end_idx - start_idx
         if ik_solver.use_cuda_graph:
             position_batch[:size, :] = poses.position[start_idx:end_idx, :]
@@ -200,7 +199,6 @@ def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses
             quaternion_batch = poses.quaternion[start_idx:end_idx, :]
         batch = cuRoboPose(position=position_batch, quaternion=quaternion_batch)
         batch_soln = ik_solver.solve_batch(goal_pose=batch)
-        print(f'{success.size()} | {batch_soln.success.size()}')
         success[start_idx:end_idx] = batch_soln.success.squeeze()[:size]
         joint_states[start_idx:end_idx, :] = batch_soln.solution.squeeze(1)[:size, :]
         start_idx += batch_size
