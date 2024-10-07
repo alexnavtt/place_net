@@ -86,9 +86,13 @@ class BaseNet(torch.nn.Module):
             print("Showing environment and task pose")
             task_visualization.visualize(tasks[0,:], pointclouds[0])
 
+        # Copy the inputs to the correct device
+        t0 = time.perf_counter()
+        tasks = tasks.to(self.config.device)
+        pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
+
         # Embed the task poses and get the transforms needed for the pointclouds
         t1 = time.perf_counter()
-        tasks = tasks.to(self.config.device)
         task_rotation, pose_embeddings, adjusted_task_pose = self.pose_encoder(tasks, max_height=self.config.workspace_height)
         t2 = time.perf_counter()
 
@@ -133,12 +137,14 @@ class BaseNet(torch.nn.Module):
         final_3d_grid = self.deconvolution(first_3d_layer)
         t12 = time.perf_counter()
 
-        print(f"Pose encoding: {(t2 -t1)*1000}ms")
-        print(f"Pointcloud processing: {(t4 -t3)*1000}ms")
-        print(f"Pointcloud encoding: {(t6 -t5)*1000}ms")
-        print(f"Attention layer: {(t8 -t7)*1000}ms")
-        print(f"Linear processing: {(t10 -t9)*1000}ms")
-        print(f"Deconvolution: {(t12 -t11)*1000}ms")
+        if self.config.debug:
+            print(f"Copy to device       : {(t1-t0)*1000:4.2f}ms")
+            print(f"Pose embedding       : {(t2-t1)*1000:4.2f}ms")
+            print(f"Pointcloud processing: {(t4-t3)*1000:4.2f}ms")
+            print(f"Pointcloud encoding  : {(t6-t5)*1000:4.2f}ms")
+            print(f"Attention layer      : {(t8-t7)*1000:4.2f}ms")
+            print(f"Linear processing    : {(t10-t9)*1000:4.2f}ms")
+            print(f"Deconvolution        : {(t12-t11)*1000:4.2f}ms\n")
 
         return final_3d_grid.squeeze(1)
 
