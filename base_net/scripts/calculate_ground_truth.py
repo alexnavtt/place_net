@@ -42,22 +42,21 @@ def load_arguments():
     parser.add_argument('--output-path', help='path to a folder in which to save the task solutions')
     return parser.parse_args()
 
-def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor):
+def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None):
     """
     Consolidate the robot config and environment data to create a collision-aware IK
     solver for this particular environment. For efficiency, the pointcloud is cropped
     to only those points which are reachable from the task pose by the robot collision 
     bodies
     """
-    start = time.perf_counter()
     tensor_args = TensorDeviceType(device=model_config.model.device)
 
-    bound = np.array([model_config.model.workspace_radius]*2 + [model_config.model.workspace_height])
-    crop_box = open3d.geometry.AxisAlignedBoundingBox(min_bound=-bound, max_bound=bound)
-    pointcloud = pointcloud.crop(crop_box)
+    if pointcloud is not None and len(pointcloud.points) > 0:
+        bound = np.array([model_config.model.workspace_radius]*2 + [model_config.model.workspace_height])
+        crop_box = open3d.geometry.AxisAlignedBoundingBox(min_bound=-bound, max_bound=bound)
+        pointcloud = pointcloud.crop(crop_box)
 
-    open3d_mesh = open3d.geometry.TriangleMesh()
-    if len(pointcloud.points) > 0:
+        open3d_mesh = open3d.geometry.TriangleMesh()
         world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.01)
         world_config = WorldConfig(
             mesh=[world_mesh]
@@ -78,12 +77,10 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor):
         self_collision_check=True,
         self_collision_opt=True,
         tensor_args=tensor_args,
-        use_cuda_graph=False,
+        use_cuda_graph=True if pointcloud is None else False,
     ) 
 
-    end = time.perf_counter()
-    print(f"Loaded solver in {end-start} seconds")
-    return IKSolver(ik_config), open3d_mesh
+    return IKSolver(ik_config)
 
 def load_base_pose_array(model_config: BaseNetConfig) -> cuRoboPose:
     """
@@ -187,12 +184,13 @@ def main():
     model_config = BaseNetConfig.from_yaml(args.config_file)
 
     base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
-    print(base_poses_in_flattened_task_frame)
     num_poses = base_poses_in_flattened_task_frame.batch
+    empty_ik_solver = load_ik_solver(model_config)    
 
     for task_name, task_pose_tensor in model_config.tasks.items():
-        sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count))
+        sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count), dtype=bool)
         for task_pose_idx, task_pose in enumerate(task_pose_tensor):
+            t1 = time.perf_counter()
             position, quaternion = task_pose.to(model_config.model.device).split([3, 4])
             task_pose_in_world = cuRoboPose(position, quaternion)
 
@@ -218,21 +216,25 @@ def main():
 
             base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
-            # Filter out poses too far from the robot to have a feasible solution
-            valid_pose_indices = torch.norm(base_poses_in_task.position, dim=1) < (model_config.model.robot_reach_radius)
-            print(f"{torch.sum(valid_pose_indices)} poses were reachable out of {num_poses}")
+            # Filter out poses which the robot cannot reach even without obstacles
+            empty_solution = empty_ik_solver.solve_batch(goal_pose=base_poses_in_task)
+            valid_pose_indices = empty_solution.success.squeeze()
+            solution_success = valid_pose_indices
+            # t2 = time.perf_counter()
+            # print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
             if torch.sum(valid_pose_indices) == 0:
-                sol_tensor[task_pose_idx, :, :, :] = 0
+                print(f"0 poses were reachable out of {num_poses}")
+                sol_tensor[task_pose_idx, :, :, :] = False
                 continue
 
             valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
 
             if model_config.model.debug:
                 visualize_task(task_pose_in_world, model_config.pointclouds[task_name], base_poses_in_world, valid_pose_indices)
-            ik_solver, world_mesh = load_ik_solver(model_config, pointcloud_in_task)
-            solutions: IKResult = ik_solver.solve_batch(goal_pose=valid_base_poses_in_task)
-            print(f"There are {torch.sum(solutions.success)} successful poses")
-            print(f'Solved {base_poses_in_world.position.size()[0]} IK problems in {solutions.solve_time:.0f} seconds')
+            obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
+            solutions: IKResult = obstacle_aware_ik_solver.solve_batch(goal_pose=valid_base_poses_in_task)
+            t2 = time.perf_counter()
+            print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(solutions.success):5d} ({(t2-t1):.2f} seconds)')
 
             # Take the solution for the filtered base positions and expand it out to include all base positions
             solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
