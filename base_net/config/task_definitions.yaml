@@ -4,6 +4,7 @@ pointclouds:
   - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
 
 task_data_path: "base_net/data/tasks/"
+solution_data_path: "base_net/data/solutions"
 
 curobo_config_file:
   ros_package: spot_curobo_config
@@ -20,15 +21,16 @@ task_geometry:
   robot_reach_radius: 0.9
   workspace_radius: 2.0
   surface_task_offset: 0.15
-  position_count: 15
-  heading_count: 15
+  position_count: 20
+  heading_count: 20
   render_as_spheres: False
 
 task_generation:
+  max_ik_count: 2000
   counts:
-    surface: 300
-    close: 300
-    far: 300
+    surface: 10
+    close: 10
+    far: 10
     offset: 100
   surface_offset: 0.15
   min_offsets:

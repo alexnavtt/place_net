@@ -77,7 +77,7 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None
         self_collision_check=True,
         self_collision_opt=True,
         tensor_args=tensor_args,
-        use_cuda_graph=True if pointcloud is None else False,
+        use_cuda_graph=True
     ) 
 
     return IKSolver(ik_config)
@@ -179,13 +179,52 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     open3d.visualization.draw(geometries)
 
+def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses: cuRoboPose, model_config: BaseNetConfig) -> tuple[Tensor, Tensor]:
+    if ik_solver.use_cuda_graph:
+        position_batch = torch.empty((batch_size, 3), device=model_config.model.device)
+        quaternion_batch = torch.empty((batch_size, 4), device=model_config.model.device)
+
+    success = torch.zeros((num_poses), dtype=bool)
+    joint_states = torch.empty((num_poses, ik_solver.robot_config.kinematics.kinematics_config.n_dof))
+    
+    start_idx = 0
+    while start_idx < num_poses:
+        end_idx = min(start_idx + batch_size, num_poses)
+        print(f'Solving from {start_idx} to {end_idx}')
+        size = end_idx - start_idx
+        if ik_solver.use_cuda_graph:
+            position_batch[:size, :] = poses.position[start_idx:end_idx, :]
+            quaternion_batch[:size, :] = poses.quaternion[start_idx:end_idx, :]
+        else:
+            position_batch = poses.position[start_idx:end_idx, :]
+            quaternion_batch = poses.quaternion[start_idx:end_idx, :]
+        batch = cuRoboPose(position=position_batch, quaternion=quaternion_batch)
+        batch_soln = ik_solver.solve_batch(goal_pose=batch)
+        print(f'{success.size()} | {batch_soln.success.size()}')
+        success[start_idx:end_idx] = batch_soln.success.squeeze()[:size]
+        joint_states[start_idx:end_idx, :] = batch_soln.solution.squeeze(1)[:size, :]
+        start_idx += batch_size
+
+    return success, joint_states
+
 def main():
     args = load_arguments()
     model_config = BaseNetConfig.from_yaml(args.config_file)
 
     base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
     num_poses = base_poses_in_flattened_task_frame.batch
-    empty_ik_solver = load_ik_solver(model_config)    
+    empty_ik_solver = load_ik_solver(model_config)
+
+    # Determine empty_ik_solver batch size
+    if model_config.task_generation.max_ik_count is None:
+        batch_size = num_poses
+    else:
+        for i in range(1, 10000):
+            if num_poses // i < model_config.task_generation.max_ik_count:
+                batch_size = num_poses // i
+                break
+    if batch_size is None:
+        raise RuntimeError(f'Provided configuration with {num_poses} per solution is too big given your provided max_ik_count of {model_config.task_generation.max_ik_count}')
 
     for task_name, task_pose_tensor in model_config.tasks.items():
         sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count), dtype=bool)
@@ -214,33 +253,41 @@ def main():
             pointcloud_in_world = copy.deepcopy(model_config.pointclouds[task_name])
             pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
 
-            base_poses_in_task = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
+            base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
             # Filter out poses which the robot cannot reach even without obstacles
-            empty_solution = empty_ik_solver.solve_batch(goal_pose=base_poses_in_task)
-            valid_pose_indices = empty_solution.success.squeeze()
-            solution_success = valid_pose_indices
+            valid_pose_indices, _ = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
+
+            # solution_success = valid_pose_indices
             # t2 = time.perf_counter()
             # print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
-            if torch.sum(valid_pose_indices) == 0:
+            num_valid_poses = torch.sum(valid_pose_indices)
+            if num_valid_poses == 0:
                 print(f"0 poses were reachable out of {num_poses}")
                 sol_tensor[task_pose_idx, :, :, :] = False
                 continue
 
-            valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
-
             if model_config.model.debug:
                 visualize_task(task_pose_in_world, model_config.pointclouds[task_name], base_poses_in_world, valid_pose_indices)
+
+            # Solve all remaining poses in batches
             obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
-            solutions: IKResult = obstacle_aware_ik_solver.solve_batch(goal_pose=valid_base_poses_in_task)
+            valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
+            revised_solutions, joint_states = solve_batched_ik(
+                ik_solver=obstacle_aware_ik_solver, 
+                num_poses=num_valid_poses, 
+                batch_size=model_config.task_generation.max_ik_count,
+                poses=valid_base_poses_in_task,
+                model_config=model_config
+            )
             t2 = time.perf_counter()
-            print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(solutions.success):5d} ({(t2-t1):.2f} seconds)')
+            print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
 
             # Take the solution for the filtered base positions and expand it out to include all base positions
             solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
-            solution_states[valid_pose_indices, :] = solutions.solution.cpu().squeeze(1)
+            solution_states[valid_pose_indices, :] = joint_states
             solution_success = torch.zeros(num_poses, dtype=bool)
-            solution_success[valid_pose_indices] = solutions.success.cpu().squeeze(1)
+            solution_success[valid_pose_indices] = revised_solutions
             if model_config.model.debug:
                 visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
             sol_tensor[task_pose_idx, :, :, :] = solution_success.view(model_config.position_count, model_config.position_count, model_config.heading_count)

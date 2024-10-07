@@ -121,6 +121,7 @@ class TaskGenerationConfig:
 
     counts: TaskGenerationCounts
     offsets: TaskGenerationOffsets
+    max_ik_count: int | None = None
 
     @staticmethod
     def from_yaml_dict(yaml_config: dict):
@@ -144,7 +145,9 @@ class TaskGenerationConfig:
                 close_max   = config['max_offsets']['close'  ] if 'close'   in config['max_offsets'] else 1e10,
                 far_max     = config['max_offsets']['far'    ] if 'far'     in config['max_offsets'] else 1e10,
                 surface_offset = config['surface_offset'] if 'surface_offset' in config else 0.0
-            )
+            ),
+
+            max_ik_count = config['max_ik_count']
         )
 
 @dataclass
