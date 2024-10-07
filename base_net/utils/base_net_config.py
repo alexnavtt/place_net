@@ -157,6 +157,12 @@ class BaseNetConfig:
     # has the shape (num_tasks, 7) arranged as x, y, z, qw, qx, qy, qz
     tasks: dict[str, Tensor]
 
+    # All task solutions associated with their task names. Each solution
+    # tensor has the shape (num_tasks, num_pos, num_pos, num_headings) 
+    # and represent the binary reachability value of that base pose in 
+    # regular 3D grid of x, y, heading
+    solutions: dict[str, Tensor]
+
     # Modified cuRobot RobotConfig with the robot URDF and the robot
     # inverted robot URDF stored as a tuple in the kinematics debug field
     robot: RobotConfig
@@ -193,7 +199,7 @@ class BaseNetConfig:
     render_as_spheres: bool = True
 
     @staticmethod
-    def from_yaml(filename: str, load_tasks = True):
+    def from_yaml(filename: str, load_tasks = True, load_solutions = False):
         with open(filename, 'r') as f:
             yaml_config = yaml.safe_load(f)
 
@@ -217,6 +223,7 @@ class BaseNetConfig:
         return BaseNetConfig(
             pointclouds=pointclouds,
             tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
+            solutions=BaseNetConfig.load_solutions(yaml_config, pointclouds) if load_solutions else None,
             robot=BaseNetConfig.load_robot_config(yaml_config),
             model=model_config,
             task_generation=task_generation_config,
@@ -272,6 +279,17 @@ class BaseNetConfig:
             tasks[pointcloud_name] = task_tensor
 
         return tasks
+    
+    @staticmethod 
+    def load_solutions(yaml_config: dict, pointclouds: dict):
+
+        filepath = yaml_config['solution_data_path']
+        solutions = {}
+
+        for pointcloud_name in pointclouds.keys():
+            solutions[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}.pt'), map_location='cpu')
+
+        return solutions
     
     @staticmethod
     def load_robot_config(yaml_config: dict) -> RobotConfig:
