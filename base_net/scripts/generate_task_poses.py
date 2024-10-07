@@ -76,14 +76,14 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: 
     base poses that we are solving for. All input must be defined in the world frame
     """
 
-    geometries = [pointcloud]
+    geometries = [{'geometry': pointcloud, 'name': 'environment'}]
 
     # Get the end effector collision spheres to make sure samples poses are valid
     ee_spheres = get_end_effector_spheres(robot_config).cpu().numpy()
 
-    geometries = geometries + task_visualization.get_task_arrows(surface_poses)
-    geometries = geometries + task_visualization.get_task_arrows(close_poses)
-    geometries = geometries + task_visualization.get_task_arrows(far_poses)
+    geometries = geometries + task_visualization.get_task_arrows(surface_poses, suffix='_surface')
+    geometries = geometries + task_visualization.get_task_arrows(close_poses, suffix='_close')
+    geometries = geometries + task_visualization.get_task_arrows(far_poses, suffix='_far')
     geometries = geometries + task_visualization.get_spheres(ee_spheres, surface_poses, color=[1.0, 0.5, 0.0])
     geometries = geometries + task_visualization.get_spheres(ee_spheres, close_poses, color=[1.0, 0.0, 0.5])
     geometries = geometries + task_visualization.get_spheres(ee_spheres, far_poses, color=[0.0, 1.0, 0.5])

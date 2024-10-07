@@ -157,7 +157,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
     will also be rendered. All input must be defined in the task frame
     """
     geometries = []
-    if (len(pointcloud.points)) > 0: geometries.append(pointcloud)
+    if (len(pointcloud.points)) > 0: geometries.append({'geometry': pointcloud, 'name': 'environment'})
 
     # Render the base poses
     geometries += task_visualization.get_base_arrows(goal_poses, solution_success)
@@ -167,8 +167,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
         solution_idx = int(np.random.rand() * torch.sum(solution_success))
         robot_spheres = task_visualization.get_robot_geometry_at_joint_state(
             robot_config=model_config.robot, 
-            joint_state=solution_states[solution_success, :][solution_idx, :], 
-            as_spheres=model_config.render_as_spheres, 
+            joint_state=solution_states[solution_success, :][solution_idx, :],
             inverted=True, 
             base_link_pose=np.eye(4)
         )

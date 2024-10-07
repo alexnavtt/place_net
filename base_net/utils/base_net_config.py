@@ -197,10 +197,6 @@ class BaseNetConfig:
     # plane at which the base link of the kinematic chain sits
     base_link_elevation: float = 0.0
 
-    # In debug mode, whether to render the robot as the cuRobo collision
-    # spheres or to render the robot as the URDF visual geometry
-    render_as_spheres: bool = True
-
     @staticmethod
     def from_yaml(filename: str, load_tasks = True, load_solutions = False):
         with open(filename, 'r') as f:
@@ -233,8 +229,7 @@ class BaseNetConfig:
             surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
             position_count=yaml_config['task_geometry']['position_count'],
             heading_count=yaml_config['task_geometry']['heading_count'],
-            base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],
-            render_as_spheres=yaml_config['task_geometry']['render_as_spheres'],
+            base_link_elevation=yaml_config['task_geometry']['base_link_elevation']
         )
 
     @staticmethod

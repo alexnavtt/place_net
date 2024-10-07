@@ -8,9 +8,9 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
 
-def get_task_arrows(task_poses: cuRoboPose) -> list[open3d.geometry.TriangleMesh]:
-    geometries = []
-    
+def get_task_arrows(task_poses: cuRoboPose, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
+
+    arrows = open3d.geometry.TriangleMesh()    
     for task_idx in range(task_poses.batch):
         task_arrow = open3d.geometry.TriangleMesh.create_arrow(
             cylinder_radius=0.015,
@@ -25,17 +25,16 @@ def get_task_arrows(task_poses: cuRoboPose) -> list[open3d.geometry.TriangleMesh
         task_arrow.rotate(rotation.as_matrix(), center=[0, 0, 0])
         task_arrow.translate(task_poses.position[task_idx, :].squeeze().cpu().numpy())
         task_arrow.paint_uniform_color([0, 0, 1])
-        geometries.append(task_arrow.compute_triangle_normals())
+        arrows += task_arrow.compute_triangle_normals()
 
-    return geometries
+    return [{'name': f'task_arrows{suffix}', 'geometry': arrows, 'group': 'task_arrows'}]
 
 def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> list[open3d.geometry.TriangleMesh]:
-    geometries = []
-
     if success is None:
         success = torch.zeros(pose.batch)
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
+    composite_mesh = open3d.geometry.TriangleMesh()
     for position, rotation, pose_success in zip(pose.position, pose.quaternion, success):
         new_arrow = open3d.geometry.TriangleMesh.create_arrow(
             cylinder_radius=0.005,
@@ -49,13 +48,13 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> li
         new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
         new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
         new_arrow.translate(position.cpu().numpy())
-        geometries.append(new_arrow.compute_triangle_normals())
 
-    return geometries
+        composite_mesh += new_arrow.compute_triangle_normals()
+
+    return [{'geometry': composite_mesh, 'name': 'base_arrows'}]
 
 def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose, color: list = [0.5, 0.5, 1.0]) -> list[open3d.geometry.TriangleMesh]:
-    geometries = []
-    
+    all_spheres = open3d.geometry.TriangleMesh()
     for task_idx in range(task_poses.batch):
         translation = task_poses.position[task_idx, :].squeeze().cpu().numpy()
         rotation = task_poses.quaternion[task_idx, :].squeeze().cpu().numpy()
@@ -69,9 +68,9 @@ def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose, color: list = [0.
             sphere_geom = open3d.geometry.TriangleMesh.create_sphere(radius=radius)
             sphere_geom.translate(sphere_loc[:3])
             sphere_geom.paint_uniform_color(color)
-            geometries.append(sphere_geom.compute_triangle_normals())
+            all_spheres += sphere_geom.compute_triangle_normals()
 
-    return geometries
+    return [all_spheres]
 
 def urdf_pose_to_matrix(pose: urdfPose) -> np.ndarray:
         matrix = np.eye(4)
@@ -111,50 +110,47 @@ def get_robot_geometry_at_joint_state(
         joint_state: torch.Tensor, 
         base_link_pose: np.ndarray,
         *, 
-        inverted: bool = False,
-        as_spheres: bool = True
+        inverted: bool = False
     ) -> list[open3d.geometry.TriangleMesh]:
 
     robot_model = CudaRobotModel(config=robot_config.kinematics)
     geometries = []
     
-    if as_spheres:
-        robot_spheres = robot_model.get_robot_as_spheres(q=joint_state.cuda(robot_model.tensor_args.device))[0]
-        robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
-        for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
-            robot_sphere_o3d.translate(robot_sphere.position)
-            robot_sphere_o3d.vertex_colors.extend(np.random.rand(len(robot_sphere_o3d.vertices), 1).repeat(3, axis=1))
-            geometries.append(robot_sphere_o3d)
+    robot_spheres = robot_model.get_robot_as_spheres(q=joint_state.cuda(robot_model.tensor_args.device))[0]
+    robot_spheres_o3d = [open3d.geometry.TriangleMesh.create_sphere(radius=sphere.radius) for sphere in robot_spheres]
+    for robot_sphere_o3d, robot_sphere in zip(robot_spheres_o3d, robot_spheres):
+        robot_sphere_o3d.translate(robot_sphere.position)
+        robot_sphere_o3d.paint_uniform_color(np.random.rand(1).repeat(3))
+        geometries.append({'geometry': robot_sphere_o3d.compute_triangle_normals(), 'group': 'robot_spheres', 'name': robot_sphere.name})
 
-    else:
-        urdf_idx = 1 if inverted else 0
-        robot_urdf: Robot = robot_config.kinematics.kinematics_config.debug[urdf_idx]
-        chain_links = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=True, joints=False)
-        chain_joints = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=False, joints=True)
+    urdf_idx = 1 if inverted else 0
+    robot_urdf: Robot = robot_config.kinematics.kinematics_config.debug[urdf_idx]
+    chain_links = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=True, joints=False)
+    chain_joints = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=False, joints=True)
 
-        link_pose = base_link_pose
-        joint_idx = 0
-        for link_idx, link_name in enumerate(chain_links):
-            for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
-                for visual in robot_urdf.link_map[attached_link].visuals:
-                    mesh = open3d.io.read_triangle_mesh(visual.geometry.filename[7:])
-                    if visual.geometry.scale is not None:
-                        mesh.scale(visual.geometry.scale)
-                    mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
-                    geometries.append(mesh)
+    link_pose = base_link_pose
+    joint_idx = 0
+    for link_idx, link_name in enumerate(chain_links):
+        for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
+            for visual in robot_urdf.link_map[attached_link].visuals:
+                mesh = open3d.io.read_triangle_mesh(visual.geometry.filename[7:])
+                if visual.geometry.scale is not None:
+                    mesh.scale(visual.geometry.scale)
+                mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
+                geometries.append({'geometry': mesh, 'group': 'robot_mesh', 'name': link_name})
 
-            if link_idx != len(chain_joints):
-                joint: Joint = robot_urdf.joint_map[chain_joints[link_idx]]
-                link_pose = link_pose @ urdf_pose_to_matrix(joint.origin)
+        if link_idx != len(chain_joints):
+            joint: Joint = robot_urdf.joint_map[chain_joints[link_idx]]
+            link_pose = link_pose @ urdf_pose_to_matrix(joint.origin)
 
-                if joint.type == 'fixed': continue
+            if joint.type == 'fixed': continue
 
-                joint_angle = joint_state[joint_idx].item()
-                joint_idx += 1
-                if joint.type == 'revolute':
-                    link_pose[:3, :3] = link_pose[:3, :3] @ scipy.spatial.transform.Rotation.from_euler(seq="xyz", angles=np.array(joint.axis)*joint_angle, degrees=False).as_matrix()
-                elif joint.type == 'prismatic':
-                    link_pose[:3,  3] += link_pose[:3, :3] @ (joint_angle * np.array(joint.axis))
+            joint_angle = joint_state[joint_idx].item()
+            joint_idx += 1
+            if joint.type == 'revolute':
+                link_pose[:3, :3] = link_pose[:3, :3] @ scipy.spatial.transform.Rotation.from_euler(seq="xyz", angles=np.array(joint.axis)*joint_angle, degrees=False).as_matrix()
+            elif joint.type == 'prismatic':
+                link_pose[:3,  3] += link_pose[:3, :3] @ (joint_angle * np.array(joint.axis))
 
     return geometries
 
