@@ -197,6 +197,10 @@ class BaseNetConfig:
     # plane at which the base link of the kinematic chain sits
     base_link_elevation: float = 0.0
 
+    # Whether or not to include pointcloud information in the task generation
+    # and PyTorch model. Set to False to learn just the robot kinematics
+    check_environment_collisions: bool = True
+
     @staticmethod
     def from_yaml(filename: str, load_tasks = True, load_solutions = False):
         with open(filename, 'r') as f:
@@ -229,7 +233,8 @@ class BaseNetConfig:
             surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
             position_count=yaml_config['task_geometry']['position_count'],
             heading_count=yaml_config['task_geometry']['heading_count'],
-            base_link_elevation=yaml_config['task_geometry']['base_link_elevation']
+            base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],
+            check_environment_collisions=yaml_config['task_geometry']['check_environment_collisions']
         )
 
     @staticmethod

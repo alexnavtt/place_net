@@ -23,14 +23,14 @@ task_geometry:
   surface_task_offset: 0.15
   position_count: 20
   heading_count: 20
-  render_as_spheres: False
+  check_environment_collisions: False
 
 task_generation:
   max_ik_count: 2000
   counts:
-    surface: 10
-    close: 10
-    far: 10
+    surface: 0
+    close: 0
+    far: 1000
     offset: 100
   surface_offset: 0.15
   min_offsets:
@@ -44,5 +44,5 @@ task_generation:
 model_settings:
   pointcloud_encoder: 'PointNet'
   cuda_device: 0
-  batch_size: 4
-  debug: True
+  batch_size: 10
+  debug: False

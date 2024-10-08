@@ -15,6 +15,7 @@ class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config.model)
+        self.collision = config.check_environment_collisions
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
         self.pointcloud_encoder = self.config.encoder_type()
@@ -46,18 +47,18 @@ class BaseNet(torch.nn.Module):
             # Size is (B, 1, 8, 8, 12)
             torch.nn.ConvTranspose3d(
                 in_channels=1,
-                out_channels=1,
+                out_channels=3,
                 kernel_size=(4, 4, 3),
                 stride=(2, 2, 1),
                 padding=(1, 1, 0)
             ),
-            torch.nn.BatchNorm3d(num_features=1),
+            torch.nn.BatchNorm3d(num_features=3),
             torch.nn.ReLU(),
             # Size is (B, 1, 16, 16, 14)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
             # Size is (B, 1, 16, 16, 16)
             torch.nn.ConvTranspose3d(
-                in_channels=1,
+                in_channels=3,
                 out_channels=1,
                 kernel_size=5,
                 stride=1,
@@ -82,69 +83,34 @@ class BaseNet(torch.nn.Module):
                                  False during deployment) 
         """
 
-        if self.config.debug:
-            print("Showing environment and task pose")
-            task_visualization.visualize(tasks[0,:], pointclouds[0])
-
         # Copy the inputs to the correct device
-        t0 = time.perf_counter()
         tasks = tasks.to(self.config.device)
-        pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
 
         # Embed the task poses and get the transforms needed for the pointclouds
-        t1 = time.perf_counter()
         task_rotation, pose_embeddings, adjusted_task_pose = self.pose_encoder(tasks, max_height=self.config.workspace_height)
-        t2 = time.perf_counter()
 
-        # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
-        t3 = time.perf_counter()
-        pointcloud_tensor = self.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3])
-        t4 = time.perf_counter()
+        if self.collision:
+            # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
+            pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
+            pointcloud_tensor = self.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3])
 
-        if self.config.debug:
-            print("Showing trimmed environment and transformed task pose")
-            elevation, pitch, roll = adjusted_task_pose[0, :].cpu()
-            quat = scipy.spatial.transform.Rotation.from_euler(
-                seq='ZYX', 
-                angles=[0, pitch, roll], 
-                degrees=False
-            ).as_quat(scalar_first=True)
-            new_task = torch.Tensor([0, 0, elevation, *quat])
-            task_visualization.visualize(new_task, pointcloud_tensor[0, :, :])
+            # Encode the points into a feature vector
+            pointcloud_embeddings: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
 
-        # Encode the points into a feature vector
-        t5 = time.perf_counter()
-        pointcloud_embeddings: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
-        t6 = time.perf_counter()
+            # Attend the pose data to the pointcloud data
+            output, weights = self.attention_layer(
+                query=pose_embeddings.unsqueeze(1),
+                key=pointcloud_embeddings.unsqueeze(1),
+                value=pointcloud_embeddings.unsqueeze(1)
+            )
 
-        # Attend the pose data to the pointcloud data
-        t7 = time.perf_counter()
-        output, weights = self.attention_layer(
-            query=pose_embeddings.unsqueeze(1),
-            key=pointcloud_embeddings.unsqueeze(1),
-            value=pointcloud_embeddings.unsqueeze(1)
-        )
-        t8 = time.perf_counter()
-
-        # Scale up to final value before deconvolution
-        t9 = time.perf_counter()
-        final_vector = self.linear_upscale(output.squeeze(1))
-        t10 = time.perf_counter()
+            final_vector = self.linear_upscale(output.squeeze(1))
+        else:
+            final_vector = self.linear_upscale(pose_embeddings)
 
         # Scale up to final 20x20x20 grid
-        t11 = time.perf_counter()
         first_3d_layer = final_vector.view([-1, 1, 8, 8, 8])
         final_3d_grid = self.deconvolution(first_3d_layer)
-        t12 = time.perf_counter()
-
-        if self.config.debug:
-            print(f"Copy to device       : {(t1-t0)*1000:4.2f}ms")
-            print(f"Pose embedding       : {(t2-t1)*1000:4.2f}ms")
-            print(f"Pointcloud processing: {(t4-t3)*1000:4.2f}ms")
-            print(f"Pointcloud encoding  : {(t6-t5)*1000:4.2f}ms")
-            print(f"Attention layer      : {(t8-t7)*1000:4.2f}ms")
-            print(f"Linear processing    : {(t10-t9)*1000:4.2f}ms")
-            print(f"Deconvolution        : {(t12-t11)*1000:4.2f}ms\n")
 
         return final_3d_grid.squeeze(1)
 
