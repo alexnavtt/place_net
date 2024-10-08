@@ -48,7 +48,7 @@ class PoseEncoder(torch.nn.Module):
         task_rot_world[:, 1, 1] = cos_yaw
 
         adjusted_pose = torch.stack([task_positions[:, 2], pitch_angles, roll_angles], dim=1) # for debug
-        task_tensor = torch.stack([task_positions[:, 2]/max_height, pitch_angles/(torch.pi/2), roll_angles/torch.pi], dim=1)
+        task_tensor = torch.stack([(task_positions[:, 2] - max_height/2)/max_height, pitch_angles/(torch.pi/2), torch.sin(roll_angles)], dim=1)
         task_tensor = self.task_embedding(task_tensor)
 
         return task_rot_world, task_tensor, adjusted_pose

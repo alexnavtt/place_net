@@ -166,6 +166,9 @@ def visualize(*args):
         elif issubclass(type(arg), open3d.geometry.Geometry):
             geometries.append(arg)
 
+        elif type(arg) == cuRoboPose:
+            geometries = geometries + get_task_arrows(arg)
+
         # If the input is a tensor, it could be either pointcloud(s) or task_pose(s)
         elif type(arg) == torch.Tensor:
             last_dim = arg.size()[-1]
@@ -200,7 +203,6 @@ def visualize(*args):
                 else:
                     poses = arg.unsqueeze(0)
 
-                print(poses)
                 geometries = geometries + get_task_arrows(cuRoboPose(position=poses[:, :3].cuda(), quaternion=poses[:, 3:].cuda()))
 
     open3d.visualization.draw(geometries)
