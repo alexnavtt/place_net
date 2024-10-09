@@ -128,7 +128,7 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         quat = np.array([c1*sin2, c1*cos2, c2*sin3, c2*cos3])
 
         # Check to make syre there are no points within the minimum bound
-        if are_spheres_in_collision(
+        if model_config.check_environment_collisions and are_spheres_in_collision(
             kd_tree=kd_tree,
             ee_spheres=ee_spheres,
             ee_position_in_world=point,
@@ -137,7 +137,7 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         ): continue 
 
         # Check to make sure there are points within the maximum bound
-        if not are_spheres_in_collision(
+        if model_config.check_environment_collisions and not are_spheres_in_collision(
             kd_tree=kd_tree,
             ee_spheres=ee_spheres,
             ee_position_in_world=point,
@@ -209,7 +209,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
 
         # Check for collisions with the environment
-        if are_spheres_in_collision(
+        if model_config.check_environment_collisions and are_spheres_in_collision(
             kd_tree=kd_tree,
             ee_spheres=ee_spheres,
             ee_position_in_world=ee_location,
