@@ -98,7 +98,7 @@ def main():
     bce_loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5], device=base_net_config.model.device))
     focal_loss_fn = FocalLoss()
 
-    loss_fn = dice_loss_fn
+    loss_fn = focal_loss_fn
 
     train_data = BaseNetDataset(base_net_config, mode='training', split=[70, 30, 0])
     test_data = BaseNetDataset(base_net_config, mode='testing', split=[70, 30, 0])

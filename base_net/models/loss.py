@@ -28,6 +28,7 @@ class FocalLoss(torch.nn.Module):
         self.gamma = gamma
         self.alpha = alpha
         self.bce = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5.0]).cuda())
+        self.dice = DiceLoss()
 
     def forward(self, logits: Tensor, targets: Tensor):
         # Flatten the input
@@ -35,6 +36,7 @@ class FocalLoss(torch.nn.Module):
 
         # Get the BCE loss of the model output
         bce_loss = self.bce(logits.flatten(), targets.float())
+        dice_loss = self.dice(logits.flatten(), targets.float())
     
         probabilities = torch.sigmoid(logits).flatten()
         p_t = probabilities * targets + (1 - probabilities) * (1 - targets)
@@ -42,5 +44,5 @@ class FocalLoss(torch.nn.Module):
         focal_factor = (1 - p_t) ** self.gamma
 
         # Compute focal loss
-        focal_loss = alpha_t * focal_factor * bce_loss
+        focal_loss = alpha_t * focal_factor * 0.5*(dice_loss + bce_loss)
         return focal_loss.sum()
