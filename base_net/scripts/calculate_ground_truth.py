@@ -288,9 +288,9 @@ def main():
 
                 # Take the solution for the filtered base positions and expand it out to include all base positions
                 solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
-                solution_states[valid_pose_indices, :] = joint_states
+                solution_states[valid_pose_indices, :] = joint_states.cpu()
                 solution_success = torch.zeros(num_poses, dtype=bool)
-                solution_success[valid_pose_indices] = revised_solutions
+                solution_success[valid_pose_indices] = revised_solutions.cpu()
                 if model_config.model.debug:
                     visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
 
