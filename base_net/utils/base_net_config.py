@@ -41,7 +41,7 @@ class BaseNetModelConfig:
 
     # Device to run on for PyTorch operations. 
     # NOTE: cuRobo (and hence ground truth calculations) require a CUDA device 
-    device: str = "cuda:0"
+    device: torch.device = torch.device("cuda:0")
 
     # Learning rate to use during training
     learning_rate: float = 0.001
@@ -60,10 +60,10 @@ class BaseNetModelConfig:
 
         try:
             # If the device is an integer, interpret it as a cuda device index
-            torch_device = f"cuda:{int(yaml_config['model_settings']['cuda_device'])}"
+            torch_device = torch.device(f"cuda:{(int(yaml_config['model_settings']['cuda_device']))}")
         except ValueError:
             # Otherwise use the string as-is
-            torch_device = yaml_config['model_settings']['cuda_device']
+            torch_device = torch.device(yaml_config['model_settings']['cuda_device'])
 
         task_geometry = yaml_config['task_geometry']
         return BaseNetModelConfig(
@@ -231,7 +231,7 @@ class BaseNetConfig:
             pointclouds=pointclouds,
             tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
             solutions=BaseNetConfig.load_solutions(yaml_config, pointclouds) if load_solutions else None,
-            robot=BaseNetConfig.load_robot_config(yaml_config),
+            robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_generation=task_generation_config,
             surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
@@ -299,7 +299,7 @@ class BaseNetConfig:
         return solutions
     
     @staticmethod
-    def load_robot_config(yaml_config: dict) -> RobotConfig:
+    def load_robot_config(yaml_config: dict, device: torch.device) -> RobotConfig:
         """
         Load the cuRobo config from the config yaml/XRDF file and the urdf specified in the config.
         This function inverts the loaded URDF such that the end effector becomes the base link 
@@ -360,10 +360,13 @@ class BaseNetConfig:
             output_path  = "/tmp/inverted_urdf.urdf"
         )
 
-        curobo_config = RobotConfig(kinematics=CudaRobotModelConfig.from_robot_yaml_file(
-            file_path=robot_config,
-            ee_link=base_link,
-            urdf_path="/tmp/inverted_urdf.urdf")
+        curobo_config = RobotConfig(
+            kinematics=CudaRobotModelConfig.from_robot_yaml_file(
+                file_path=robot_config,
+                ee_link=base_link,
+                urdf_path="/tmp/inverted_urdf.urdf",
+                tensor_args=TensorDeviceType(device=device)
+            )
         )
 
         # Make the URDF structure available later
