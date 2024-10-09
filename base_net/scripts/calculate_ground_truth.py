@@ -174,11 +174,15 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
         geometries = geometries + robot_spheres
 
     # Render the task arrow
-    geometries += task_visualization.get_task_arrows(task_poses=cuRoboPose(torch.zeros(3).cuda(), torch.Tensor([1, 0, 0, 0]).cuda()))
+    geometries += task_visualization.get_task_arrows(task_poses=cuRoboPose(torch.zeros(3).to(model_config.model.device), torch.Tensor([1, 0, 0, 0]).to(model_config.model.device)))
 
     open3d.visualization.draw(geometries)
 
 def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses: cuRoboPose, model_config: BaseNetConfig) -> tuple[Tensor, Tensor]:
+    if batch_size is None:
+        soln = ik_solver.solve_batch(goal_pose=poses)
+        return soln.success.squeeze(), soln.solution.squeeze(1)
+    
     if ik_solver.use_cuda_graph:
         position_batch = torch.empty((batch_size, 3), device=model_config.model.device)
         quaternion_batch = torch.empty((batch_size, 4), device=model_config.model.device)
@@ -255,9 +259,6 @@ def main():
             # Filter out poses which the robot cannot reach even without obstacles
             valid_pose_indices, _ = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
 
-            # solution_success = valid_pose_indices
-            # t2 = time.perf_counter()
-            # print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
             num_valid_poses = torch.sum(valid_pose_indices)
             if num_valid_poses == 0:
                 print(f"0 poses were reachable out of {num_poses}")
@@ -267,26 +268,32 @@ def main():
             if model_config.model.debug:
                 visualize_task(task_pose_in_world, model_config.pointclouds[task_name], base_poses_in_world, valid_pose_indices)
 
-            # Solve all remaining poses in batches
-            obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
-            valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
-            revised_solutions, joint_states = solve_batched_ik(
-                ik_solver=obstacle_aware_ik_solver, 
-                num_poses=num_valid_poses, 
-                batch_size=model_config.task_generation.max_ik_count,
-                poses=valid_base_poses_in_task,
-                model_config=model_config
-            )
-            t2 = time.perf_counter()
-            print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
+            if not model_config.check_environment_collisions:
+                solution_success = valid_pose_indices
+                t2 = time.perf_counter()
+                print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
+            else:
+                # Solve all remaining poses in batches
+                obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
+                valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
+                revised_solutions, joint_states = solve_batched_ik(
+                    ik_solver=obstacle_aware_ik_solver, 
+                    num_poses=num_valid_poses, 
+                    batch_size=model_config.task_generation.max_ik_count,
+                    poses=valid_base_poses_in_task,
+                    model_config=model_config
+                )
+                t2 = time.perf_counter()
+                print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
 
-            # Take the solution for the filtered base positions and expand it out to include all base positions
-            solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
-            solution_states[valid_pose_indices, :] = joint_states
-            solution_success = torch.zeros(num_poses, dtype=bool)
-            solution_success[valid_pose_indices] = revised_solutions
-            if model_config.model.debug:
-                visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
+                # Take the solution for the filtered base positions and expand it out to include all base positions
+                solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
+                solution_states[valid_pose_indices, :] = joint_states
+                solution_success = torch.zeros(num_poses, dtype=bool)
+                solution_success[valid_pose_indices] = revised_solutions
+                if model_config.model.debug:
+                    visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
+
             sol_tensor[task_pose_idx, :, :, :] = solution_success.view(model_config.position_count, model_config.position_count, model_config.heading_count)
 
         torch.save(sol_tensor, os.path.join(args.output_path, f'{task_name}.pt'))

@@ -12,7 +12,8 @@ setup(
         'xacro',
         'urdf_parser_py',
         'click',
-        'scipy'
+        'scipy',
+        'tensorboard'
     ],
     entry_points={
         'console_scripts': [

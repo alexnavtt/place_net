@@ -26,7 +26,7 @@ RUN apt install -y libgl1
 ADD base_net /base_net/base_net
 ADD setup.py /base_net/setup.py
 WORKDIR /base_net
-RUN pip install -e . 
+RUN pip install -e . --no-build-isolation
 
 FROM base_net AS base_net_nrg
 SHELL ["/bin/bash", "-l", "-c"]
