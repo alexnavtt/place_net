@@ -45,4 +45,5 @@ model_settings:
   pointcloud_encoder: 'PointNet'
   cuda_device: 0
   batch_size: 10
+  learning_rate: 0.0005
   debug: False

@@ -93,21 +93,23 @@ def main():
     base_net_model = BaseNet(base_net_config)
     writer = SummaryWriter(log_dir='base_net/data/runs')
 
-    optimizer = torch.optim.Adam(base_net_model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
     dice_loss_fn = DiceLoss()
     bce_loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5], device=base_net_config.model.device))
     focal_loss_fn = FocalLoss()
 
     loss_fn = dice_loss_fn
 
-    train_data = BaseNetDataset(base_net_config, mode='training')
-    test_data = BaseNetDataset(base_net_config, mode='testing')
+    train_data = BaseNetDataset(base_net_config, mode='training', split=[70, 30, 0])
+    test_data = BaseNetDataset(base_net_config, mode='testing', split=[70, 30, 0])
     train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
     test_loader = DataLoader(test_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
     for epoch in range(1000):
         visualize = False
         print(f'Epoch {epoch}:')
         print('Training:')
+        aggregate_loss = 0
+        num_batches = 0
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
             optimizer.zero_grad()
             output = base_net_model(pointcloud_list, task_tensor)      
@@ -116,22 +118,30 @@ def main():
             loss.backward()
             optimizer.step()
 
-            writer.add_scalar('Loss/train', loss, epoch)
+            aggregate_loss += loss
+            num_batches += 1
 
             # Debug visualization
             if visualize:
                 visualize_solution(output, task_tensor, base_net_config, solution, pointcloud_list)
+        writer.add_scalar('Loss/train', aggregate_loss/num_batches, epoch)
 
         print('Testing:')
+        aggregate_loss = 0
+        num_batches = 0
         for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
             output = base_net_model(pointcloud_list, task_tensor)      
             target = solution.to(base_net_config.model.device)          
             loss = loss_fn(output, target)
 
-            writer.add_scalar('Loss/test', loss, epoch)
+            aggregate_loss += loss
+            num_batches += 1
+
+        writer.add_scalar('Loss/test', aggregate_loss/num_batches, epoch)
 
         # After running the test data, pass the last test datapoint to the visualizer
-        log_visualization(base_net_config, writer, epoch, output[0, :, :, :].cpu(), solution[0, :, :, :])
+        if epoch % 10 == 0:
+            log_visualization(base_net_config, writer, epoch//10, output[0, :, :, :].cpu(), solution[0, :, :, :])
 
     writer.flush()
 

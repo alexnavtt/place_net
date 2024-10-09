@@ -43,6 +43,9 @@ class BaseNetModelConfig:
     # NOTE: cuRobo (and hence ground truth calculations) require a CUDA device 
     device: str = "cuda:0"
 
+    # Learning rate to use during training
+    learning_rate: float = 0.001
+
     # Whether to print debug statements and show visualizations
     debug: bool = False
 
@@ -70,6 +73,7 @@ class BaseNetModelConfig:
             workspace_floor=task_geometry['min_pointcloud_elevation'],
             batch_size=yaml_config['model_settings']['batch_size'],
             debug=yaml_config['model_settings']['debug'],
+            learning_rate=yaml_config['model_settings']['learning_rate'],
             encoder_type=pointcloud_encoder_type,
             device=torch_device
         )

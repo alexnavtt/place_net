@@ -30,8 +30,8 @@ class BaseNet(torch.nn.Module):
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
-            torch.nn.Linear(in_features=1024, out_features=512),
-            torch.nn.BatchNorm1d(num_features=512),
+            torch.nn.Linear(in_features=1024, out_features=3584),
+            torch.nn.BatchNorm1d(num_features=3584),
             torch.nn.ReLU()
         )
 
@@ -43,14 +43,15 @@ class BaseNet(torch.nn.Module):
         Starting size is (B, 1, 8, 8, 8)
         """
         self.deconvolution = torch.nn.Sequential(
-            torch.nn.CircularPad3d(padding=(2, 2, 0, 0, 0, 0)),
-            # Size is (B, 1, 8, 8, 12)
+            # Size is (B, 1, 16, 16, 14)
+            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+            # Size is (B, 1, 16, 16, 16)
             torch.nn.ConvTranspose3d(
                 in_channels=1,
                 out_channels=3,
-                kernel_size=(4, 4, 3),
-                stride=(2, 2, 1),
-                padding=(1, 1, 0)
+                kernel_size=3,
+                stride=1,
+                padding=(1, 1, 2)
             ),
             torch.nn.BatchNorm3d(num_features=3),
             torch.nn.ReLU(),
@@ -59,9 +60,33 @@ class BaseNet(torch.nn.Module):
             # Size is (B, 1, 16, 16, 16)
             torch.nn.ConvTranspose3d(
                 in_channels=3,
-                out_channels=1,
+                out_channels=5,
+                kernel_size=3,
+                stride=1,
+                padding=(1, 1, 2)
+            ),
+            torch.nn.BatchNorm3d(num_features=5),
+            torch.nn.ReLU(),
+            # Size is (B, 1, 16, 16, 14)
+            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+            torch.nn.ConvTranspose3d(
+                in_channels=5,
+                out_channels=3,
                 kernel_size=5,
                 stride=1,
+                padding=(0, 0, 1)
+            ),
+            torch.nn.BatchNorm3d(num_features=3),
+            torch.nn.ReLU(),
+            # Size is (B, 1, 20, 20, 18)
+            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+            # Size is (B, 1, 20, 20, 20)
+            torch.nn.ConvTranspose3d(
+                in_channels=3,
+                out_channels=1,
+                kernel_size=3,
+                stride=1,
+                padding=1
             )
             # Size is (B, 1, 20, 20, 20)
         )
@@ -109,7 +134,7 @@ class BaseNet(torch.nn.Module):
             final_vector = self.linear_upscale(pose_embeddings)
 
         # Scale up to final 20x20x20 grid
-        first_3d_layer = final_vector.view([-1, 1, 8, 8, 8])
+        first_3d_layer = final_vector.view([-1, 1, 16, 16, 14])
         final_3d_grid = self.deconvolution(first_3d_layer)
 
         return final_3d_grid.squeeze(1)
