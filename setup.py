@@ -13,7 +13,8 @@ setup(
         'urdf_parser_py',
         'click',
         'scipy',
-        'tensorboard'
+        'tensorboard',
+        'setproctitle'
     ],
     entry_points={
         'console_scripts': [
