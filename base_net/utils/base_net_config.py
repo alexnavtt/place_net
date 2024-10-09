@@ -160,16 +160,6 @@ class BaseNetConfig:
     # in CPU tensors of shape (num_points, 6) arranged x, y, z, nx, ny, nz
     pointclouds: dict[str, open3d.geometry.PointCloud]
 
-    # All tasks associated with their pointclouds. Each task tensor
-    # has the shape (num_tasks, 7) arranged as x, y, z, qw, qx, qy, qz
-    tasks: dict[str, Tensor]
-
-    # All task solutions associated with their task names. Each solution
-    # tensor has the shape (num_tasks, num_pos, num_pos, num_headings) 
-    # and represent the binary reachability value of that base pose in 
-    # regular 3D grid of x, y, heading
-    solutions: dict[str, Tensor]
-
     # Modified cuRobot RobotConfig with the robot URDF and the robot
     # inverted robot URDF stored as a tuple in the kinematics debug field
     robot: RobotConfig
@@ -182,6 +172,22 @@ class BaseNetConfig:
     # distances to nearest obstacles, and proportions of poses at certain 
     # distances
     task_generation: TaskGenerationConfig
+
+    # Location from which to load or to which to save tasks 
+    task_path: str | None = None
+
+    # Location from which to load or to which to save tasks 
+    solution_path: str | None = None
+
+    # All tasks associated with their pointclouds. Each task tensor
+    # has the shape (num_tasks, 7) arranged as x, y, z, qw, qx, qy, qz
+    tasks: dict[str, Tensor] | None = None
+
+    # All task solutions associated with their task names. Each solution
+    # tensor has the shape (num_tasks, num_pos, num_pos, num_headings) 
+    # and represent the binary reachability value of that base pose in 
+    # regular 3D grid of x, y, heading
+    solutions: dict[str, Tensor] | None = None
 
     # Used in task pose generation. The distance offset from surfaces to
     # place a task pose for the subset of tasks sampled as 'surface tasks'
@@ -229,7 +235,9 @@ class BaseNetConfig:
 
         return BaseNetConfig(
             pointclouds=pointclouds,
+            task_path=yaml_config['task_data_path'],
             tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
+            solution_path=yaml_config['solution_data_path'],
             solutions=BaseNetConfig.load_solutions(yaml_config, pointclouds) if load_solutions else None,
             robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,

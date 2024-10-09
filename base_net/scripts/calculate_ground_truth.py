@@ -39,7 +39,6 @@ def load_arguments():
         description="Script to calculate the ground truth reachability values for BaseNet",
     )
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
-    parser.add_argument('--output-path', help='path to a folder in which to save the task solutions')
     return parser.parse_args()
 
 def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None):
@@ -229,6 +228,7 @@ def main():
 
     task_idx = 0
     for task_name, task_pose_tensor in model_config.tasks.items():
+        print(f'Starting calculations for environment {task_name}: solutions will be save to {os.path.join(model_config.solution_path, f"{task_name}.pt")}')
         sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count), dtype=bool)
         for task_pose_idx, task_pose in enumerate(task_pose_tensor):
             task_idx += 1
@@ -293,7 +293,8 @@ def main():
 
             sol_tensor[task_pose_idx, :, :, :] = solution_success.view(model_config.position_count, model_config.position_count, model_config.heading_count)
 
-        torch.save(sol_tensor, os.path.join(args.output_path, f'{task_name}.pt'))
+        if model_config.solution_path is not None:
+            torch.save(sol_tensor, os.path.join(model_config.solution_path, f'{task_name}.pt'))
 
 if __name__ == "__main__":
     main()

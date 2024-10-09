@@ -21,7 +21,6 @@ def load_arguments() -> dict:
         description="Script to sample task poses for a given set of pointcloud environments",
     )
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='Config yaml file in which to look for a list of pointclouds')
-    parser.add_argument('--output-path', help='Path to a folder in which to place the resulting task definitions, encoded as a YAML file')
     return parser.parse_args()
 
 def get_end_effector_spheres(robot_config: RobotConfig) -> torch.Tensor:
@@ -240,8 +239,8 @@ def main():
             quaternion=torch.concatenate([surface_poses.quaternion, close_poses.quaternion, far_poses.quaternion], dim=0)
         )
 
-        if args.output_path is not None:
-            with open(os.path.join(args.output_path, f'{pointcloud_name}.task'), 'w') as f:
+        if model_config.task_path is not None:
+            with open(os.path.join(model_config.task_path, f'{pointcloud_name}.task'), 'w') as f:
                 tasks = []
                 for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
                     tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
