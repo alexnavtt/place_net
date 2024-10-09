@@ -223,7 +223,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quaternion).unsqueeze(0)], dim=0)
         points_remaining -= 1
 
-    return cuRoboPose(position_tensor.cuda(), quaternion_tensor.cuda())
+    return cuRoboPose(position_tensor.to(model_config.model.device), quaternion_tensor.to(model_config.model.device))
 
 def main():
     args = load_arguments()
@@ -249,7 +249,8 @@ def main():
         else:
             print("No output path provided, generated poses have not been saved")
     
-        visualize_task_poses(pointcloud, surface_poses, close_poses, far_poses, model_config.robot)
+        if model_config.model.debug:
+            visualize_task_poses(pointcloud, surface_poses, close_poses, far_poses, model_config.robot)
 
 if __name__ == "__main__":
     main()
