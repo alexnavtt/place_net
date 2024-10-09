@@ -227,9 +227,11 @@ def main():
     if batch_size is None:
         raise RuntimeError(f'Provided configuration with {num_poses} per solution is too big given your provided max_ik_count of {model_config.task_generation.max_ik_count}')
 
+    task_idx = 0
     for task_name, task_pose_tensor in model_config.tasks.items():
         sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count), dtype=bool)
         for task_pose_idx, task_pose in enumerate(task_pose_tensor):
+            task_idx += 1
             t1 = time.perf_counter()
             position, quaternion = task_pose.to(model_config.model.device).split([3, 4])
             task_pose_in_world = cuRoboPose(position, quaternion)
@@ -258,20 +260,15 @@ def main():
 
             # Filter out poses which the robot cannot reach even without obstacles
             valid_pose_indices, _ = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
-
             num_valid_poses = torch.sum(valid_pose_indices)
-            if num_valid_poses == 0:
-                print(f"0 poses were reachable out of {num_poses}")
-                sol_tensor[task_pose_idx, :, :, :] = False
-                continue
 
             if model_config.model.debug:
                 visualize_task(task_pose_in_world, model_config.pointclouds[task_name], base_poses_in_world, valid_pose_indices)
 
-            if not model_config.check_environment_collisions:
+            if not model_config.check_environment_collisions or num_valid_poses == 0:
                 solution_success = valid_pose_indices
                 t2 = time.perf_counter()
-                print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
+                print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
             else:
                 # Solve all remaining poses in batches
                 obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
@@ -284,7 +281,7 @@ def main():
                     model_config=model_config
                 )
                 t2 = time.perf_counter()
-                print(f'{num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
+                print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
 
                 # Take the solution for the filtered base positions and expand it out to include all base positions
                 solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
