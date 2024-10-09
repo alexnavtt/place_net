@@ -4,7 +4,7 @@ pointclouds:
   - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
 
 task_data_path: "base_net/data/tasks/"
-solution_data_path: "base_net/data/solutions"
+solution_data_path: "base_net/data/solutions/"
 
 curobo_config_file:
   ros_package: spot_curobo_config
