@@ -30,5 +30,13 @@ def generate_task_poses(args):
     sys.argv = ['generate_task_poses'] + list(args)
     generate_task_poses_main()
 
+@main.command(context_settings=dict(ignore_unknown_options=True), add_help_option=False)
+@click.argument('args', nargs=-1, type=click.UNPROCESSED)
+def estimate_pointcloud_normals(args):
+    setproctitle.setproctitle('estimate_pointcloud_normals')
+    from base_net.utils.estimate_pointcloud_normals import main as pointcloud_normals_main
+    sys.argv = ['estimate_pointcloud_normals'] + list(args)
+    pointcloud_normals_main()
+
 if __name__ == '__main__':
     main()
