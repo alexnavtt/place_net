@@ -98,12 +98,21 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
     quaternion_tensor = torch.empty([0, 4])
 
     points_reminaing = count
-    max_attempt_count = 10 * points_reminaing
+    max_attempt_count = 100 * points_reminaing
     attempt_count = 0
 
+    bounding_box_offset = 0.15 # amount to trim off the bounding box while sampling
     bounding_box = pointcloud.get_axis_aligned_bounding_box()
-    bounding_box.max_bound = (bounding_box.max_bound[0], bounding_box.max_bound[1], model_config.model.workspace_height)
-    bounding_box.min_bound = (bounding_box.min_bound[0], bounding_box.min_bound[1], model_config.model.workspace_floor)
+    bounding_box.min_bound = (
+        bounding_box.min_bound[0] - bounding_box_offset,
+        bounding_box.min_bound[1] - bounding_box_offset,
+        bounding_box.min_bound[2]
+    )
+    bounding_box.max_bound = (
+        bounding_box.max_bound[0] + bounding_box_offset,
+        bounding_box.max_bound[1] + bounding_box_offset,
+        bounding_box.max_bound[2]
+    )
 
     ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=pointcloud)
@@ -226,7 +235,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml(args.config_file, load_tasks=False)
+    model_config = BaseNetConfig.from_yaml_file(args.config_file, load_tasks=False)
     task_config = model_config.task_generation
 
     for pointcloud_name, pointcloud in model_config.pointclouds.items():
