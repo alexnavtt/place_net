@@ -1,4 +1,5 @@
 import os
+import copy
 from dataclasses import dataclass
 from typing_extensions import Type, Union
 
@@ -46,13 +47,24 @@ class BaseNetModelConfig:
     # Learning rate to use during training
     learning_rate: float = 0.001
 
+    # The path to use as a base for saving tensorboard progress during training
+    log_base_path: str | None = None
+
+    # The path to use as a base for saving model checkpoints during training
+    checkpoint_base_path: str | None = None
+
+    # How many epochs between saving checkpoints. Set to zero or null to disable
+    checkpoint_frequency: int | None = None
+
     # Whether to print debug statements and show visualizations
     debug: bool = False
 
     @staticmethod               
     def from_yaml_dict(yaml_config: dict):
+        model_settings: dict = yaml_config['model_settings']
+
         # Determine which type of pointcloud encoder to use
-        pointcloud_encoder_lable: str = yaml_config['model_settings']['pointcloud_encoder']
+        pointcloud_encoder_lable: str = model_settings['pointcloud_encoder']
         if pointcloud_encoder_lable.lower() == 'pointnet':
             pointcloud_encoder_type = PointNetEncoder
         elif pointcloud_encoder_lable.lower() in ['cnn', 'cnnencoder']:
@@ -60,10 +72,10 @@ class BaseNetModelConfig:
 
         try:
             # If the device is an integer, interpret it as a cuda device index
-            torch_device = torch.device(f"cuda:{(int(yaml_config['model_settings']['cuda_device']))}")
+            torch_device = torch.device(f"cuda:{(int(model_settings['cuda_device']))}")
         except ValueError:
             # Otherwise use the string as-is
-            torch_device = torch.device(yaml_config['model_settings']['cuda_device'])
+            torch_device = torch.device(model_settings['cuda_device'])
 
         task_geometry = yaml_config['task_geometry']
         return BaseNetModelConfig(
@@ -71,11 +83,14 @@ class BaseNetModelConfig:
             workspace_radius=task_geometry['workspace_radius'],
             workspace_height=task_geometry['base_link_elevation'] + task_geometry['robot_reach_radius'],
             workspace_floor=task_geometry['min_pointcloud_elevation'],
-            batch_size=yaml_config['model_settings']['batch_size'],
-            debug=yaml_config['model_settings']['debug'],
-            learning_rate=yaml_config['model_settings']['learning_rate'],
+            batch_size=model_settings['batch_size'],
+            debug=model_settings['debug'],
+            learning_rate=model_settings['learning_rate'],
             encoder_type=pointcloud_encoder_type,
-            device=torch_device
+            device=torch_device,
+            log_base_path=model_settings.get('log_base_path', None),
+            checkpoint_base_path=model_settings.get('checkpoint_base_path', None),
+            checkpoint_frequency=model_settings.get('checkpoint_frequency', None),
         )
     
 @dataclass
@@ -156,6 +171,10 @@ class TaskGenerationConfig:
 
 @dataclass
 class BaseNetConfig:
+    # Used for saving and loading config. A direct copy of the yaml
+    # file used to create this config object
+    yaml_source: dict 
+
     # The list of all pointclouds associated with their filenames stored
     # in CPU tensors of shape (num_points, 6) arranged x, y, z, nx, ny, nz
     pointclouds: dict[str, open3d.geometry.PointCloud]
@@ -189,10 +208,6 @@ class BaseNetConfig:
     # regular 3D grid of x, y, heading
     solutions: dict[str, Tensor] | None = None
 
-    # Used in task pose generation. The distance offset from surfaces to
-    # place a task pose for the subset of tasks sampled as 'surface tasks'
-    surface_task_offset: float = 0.10
-
     # Used in ground truth calculations. The number of position cells
     # in the x and y directions when calculating inverse kinematics. This
     # parameter is ignored by the PyTorch BaseNet model
@@ -212,10 +227,13 @@ class BaseNetConfig:
     check_environment_collisions: bool = True
 
     @staticmethod
-    def from_yaml(filename: str, load_tasks = True, load_solutions = False):
+    def from_yaml_file(filename: str, load_tasks = True, load_solutions = False):
         with open(filename, 'r') as f:
             yaml_config = yaml.safe_load(f)
+        return BaseNetConfig.from_yaml_dict(yaml_config, load_tasks, load_solutions)
 
+    @staticmethod
+    def from_yaml_dict(yaml_config: dict, load_tasks = True, load_solutions = False):
         model_config = BaseNetModelConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
@@ -234,15 +252,15 @@ class BaseNetConfig:
         task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config)
 
         return BaseNetConfig(
+            yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
-            task_path=yaml_config['task_data_path'],
+            task_path=yaml_config.get('task_data_path', None),
             tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
-            solution_path=yaml_config['solution_data_path'],
+            solution_path=yaml_config.get('solution_data_path', None),
             solutions=BaseNetConfig.load_solutions(yaml_config, pointclouds) if load_solutions else None,
             robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_generation=task_generation_config,
-            surface_task_offset=yaml_config['task_geometry']['surface_task_offset'],
             position_count=yaml_config['task_geometry']['position_count'],
             heading_count=yaml_config['task_geometry']['heading_count'],
             base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],

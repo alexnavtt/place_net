@@ -1,7 +1,10 @@
 #!/bin/python
+import os
+import yaml
 import torch
 import open3d
 import argparse
+import datetime
 from tqdm import tqdm
 from open3d.visualization.tensorboard_plugin import summary
 from open3d.visualization.tensorboard_plugin.util import to_dict_batch
@@ -26,6 +29,8 @@ def load_arguments():
         description="Script to train the BaseNet model based on the setting provided in a configuration file",
     )
     parser.add_argument('--config-file', default='base_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
+    parser.add_argument('--checkpoint', help='path to a model checkpoint from which to resume training or evaluate')
+    parser.add_argument('--test', default=False, type=bool, help='Whether or not to evaluate the model on the test portion of the dataset')
     return parser.parse_args()
 
 def load_test_pointcloud() -> list[torch.Tensor]:
@@ -89,22 +94,74 @@ def log_visualization(model_config: BaseNetConfig, writer: SummaryWriter, epoch:
 
 def main():
     args = load_arguments()
-    base_net_config = BaseNetConfig.from_yaml(args.config_file, load_solutions=True)
-    base_net_model = BaseNet(base_net_config)
-    writer = SummaryWriter(log_dir='base_net/data/runs')
 
+    # Load the model from a checkpoint if necessary        
+    if args.checkpoint is None:
+        base_net_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=True)
+    else:
+        checkpoint_path, _ = os.path.split(args.checkpoint)
+        base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True)
+        
+    base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
+
+    if args.checkpoint is not None:
+        checkpoint = torch.load(args.checkpoint)
+        base_net_model.load_state_dict(checkpoint['base_net_model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        start_epoch = checkpoint['epoch']
+    else:
+        start_epoch = 0
+
+    # Set up a tensorboard logging if a log path is provided
+    if base_net_config.model.log_base_path is not None:
+        writer = SummaryWriter(log_dir=base_net_config.model.log_base_path)
+
+    # If we're not loading from a checkpoint, set up a new checkpoint directory based on the time and date
+    if checkpoint_path is None and base_net_config.model.checkpoint_base_path is not None:
+        midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
+        label = f'{datetime.datetime.now().date()}-{(datetime.datetime.now() - midnight).seconds}'
+        checkpoint_path = os.path.join(base_net_config.model.checkpoint_base_path, label)
+
+        if not os.path.exists(checkpoint_path):
+            os.makedirs(checkpoint_path)
+
+        with open(os.path.join(checkpoint_path, 'config.yaml'), 'w') as f:
+            yaml.dump(base_net_config.yaml_source, f)
+
     dice_loss_fn = DiceLoss()
     bce_loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5], device=base_net_config.model.device))
     focal_loss_fn = FocalLoss()
 
     loss_fn = focal_loss_fn
 
-    train_data = BaseNetDataset(base_net_config, mode='training', split=[70, 30, 0])
-    test_data = BaseNetDataset(base_net_config, mode='testing', split=[70, 30, 0])
-    train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
-    test_loader = DataLoader(test_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
-    for epoch in range(1000):
+    # Load the data
+    data_split = [60, 20, 20]
+    if args.test:
+        test_data = BaseNetDataset(base_net_config, mode='testing', split=data_split)
+        test_loader = DataLoader(test_data, collate_fn=collate_fn)
+        base_net_model.eval()
+    else:
+        train_data = BaseNetDataset(base_net_config, mode='training', split=data_split)
+        train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+        
+        validate_data = BaseNetDataset(base_net_config, mode='validation', split=data_split)
+        validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+
+    if args.test:
+        print('Testing:')
+        idx = 0
+        for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
+            output = base_net_model(pointcloud_list, task_tensor)      
+            target = solution.to(base_net_config.model.device)          
+            loss = loss_fn(output, target)
+
+            writer.add_scalar('Loss/test', loss, idx)
+            idx += 1
+        writer.flush()
+        return
+    
+    for epoch in range(start_epoch, 1000):
         visualize = False
         print(f'Epoch {epoch}:')
         print('Training:')
@@ -126,10 +183,10 @@ def main():
                 visualize_solution(output, task_tensor, base_net_config, solution, pointcloud_list)
         writer.add_scalar('Loss/train', aggregate_loss/num_batches, epoch)
 
-        print('Testing:')
+        print('Validating:')
         aggregate_loss = 0
         num_batches = 0
-        for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
+        for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
             output = base_net_model(pointcloud_list, task_tensor)      
             target = solution.to(base_net_config.model.device)          
             loss = loss_fn(output, target)
@@ -137,11 +194,22 @@ def main():
             aggregate_loss += loss
             num_batches += 1
 
-        writer.add_scalar('Loss/test', aggregate_loss/num_batches, epoch)
+        writer.add_scalar('Loss/validate', aggregate_loss/num_batches, epoch)
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
             log_visualization(base_net_config, writer, epoch//10, output[0, :, :, :].cpu(), solution[0, :, :, :])
+
+        # At regular intervals, save the 
+        if epoch != start_epoch and base_net_config.model.checkpoint_base_path is not None and epoch % base_net_config.model.checkpoint_frequency == 0:
+            torch.save(
+                {
+                    'base_net_model': base_net_model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'epoch': epoch
+                }, 
+                os.path.join(checkpoint_path, f'epoch-{epoch}_loss-{aggregate_loss/num_batches}.pt')
+            )
 
     writer.flush()
 

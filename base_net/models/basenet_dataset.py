@@ -18,17 +18,19 @@ class BaseNetDataset(Dataset):
         num_tasks = len(model_config.tasks)
         original_task_sizes = torch.tensor([task.size()[0] for task in model_config.tasks.values()], dtype=torch.int)
         train_end_idx = split_tensor[0].item()*original_task_sizes
-        test_end_idx  = (split_tensor[0].item() + split_tensor[1].item())*original_task_sizes
+        validate_end_idx  = (split_tensor[0].item() + split_tensor[1].item())*original_task_sizes
 
         if mode == 'training':
             start = [0]*num_tasks
             end = train_end_idx.int().tolist()
-        elif mode == 'testing':
+        elif mode == 'validation':
             start = train_end_idx.int().tolist()
-            end = test_end_idx.int().tolist()
-        elif mode == 'valdiation':
-            start = test_end_idx.int().tolist()
+            end = validate_end_idx.int().tolist()
+        elif mode == 'testing':
+            start = validate_end_idx.int().tolist()
             end = original_task_sizes.int().tolist()
+        else:
+            raise RuntimeError(f'Unrecognized dataset type {mode} passed. Options are "training", "validation", and "testing"')
 
         open3d_to_tensor = lambda pointcloud: torch.tensor(np.concatenate([np.asarray(pointcloud.points), np.asarray(pointcloud.normals)], axis=1), device='cpu')
 
@@ -56,7 +58,3 @@ class BaseNetDataset(Dataset):
         task_solution = task_solutions[index - self.task_indices[task_idx], :, :, :]
 
         return task_pose, task_pointcloud, task_solution
-
-    @staticmethod
-    def open3d_to_tensor(pointcloud: open3d.geometry.PointCloud) -> Tensor:
-        return torch.tensor(np.concatenate([np.asarray(pointcloud.points), np.asarray(pointcloud.normals)], axis=1), device='cpu')
