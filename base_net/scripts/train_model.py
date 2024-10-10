@@ -118,7 +118,7 @@ def main():
         writer = SummaryWriter(log_dir=base_net_config.model.log_base_path)
 
     # If we're not loading from a checkpoint, set up a new checkpoint directory based on the time and date
-    if checkpoint_path is None and base_net_config.model.checkpoint_base_path is not None:
+    if args.checkpoint is None and base_net_config.model.checkpoint_base_path is not None:
         midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
         label = f'{datetime.datetime.now().date()}-{(datetime.datetime.now() - midnight).seconds}'
         checkpoint_path = os.path.join(base_net_config.model.checkpoint_base_path, label)
@@ -131,7 +131,7 @@ def main():
 
     dice_loss_fn = DiceLoss()
     bce_loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5], device=base_net_config.model.device))
-    focal_loss_fn = FocalLoss()
+    focal_loss_fn = FocalLoss(device=base_net_config.model.device)
 
     loss_fn = focal_loss_fn
 
@@ -175,7 +175,7 @@ def main():
             loss.backward()
             optimizer.step()
 
-            aggregate_loss += loss
+            aggregate_loss += loss.item()
             num_batches += 1
 
             # Debug visualization
@@ -186,15 +186,16 @@ def main():
         print('Validating:')
         aggregate_loss = 0
         num_batches = 0
-        for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
-            output = base_net_model(pointcloud_list, task_tensor)      
-            target = solution.to(base_net_config.model.device)          
-            loss = loss_fn(output, target)
+        with torch.no_grad():
+            for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
+                output = base_net_model(pointcloud_list, task_tensor)      
+                target = solution.to(base_net_config.model.device)          
+                loss = loss_fn(output, target)
 
-            aggregate_loss += loss
-            num_batches += 1
+                aggregate_loss += loss.item()
+                num_batches += 1
 
-        writer.add_scalar('Loss/validate', aggregate_loss/num_batches, epoch)
+            writer.add_scalar('Loss/validate', aggregate_loss/num_batches, epoch)
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
