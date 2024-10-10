@@ -1,7 +1,9 @@
 pointclouds:
+  - {path: "base_net/data/pointclouds/living_room_small.pcd", elevation: 0.10}
   - {path: "base_net/data/pointclouds/attic-draft.pcd", elevation: 0.0}
   - {path: "base_net/data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
   - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
+  - {path: "base_net/data/pointclouds/office.pcd", elevation: 0.0}
 
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
@@ -20,23 +22,22 @@ task_geometry:
   min_pointcloud_elevation: 0.05
   robot_reach_radius: 0.9
   workspace_radius: 2.0
-  surface_task_offset: 0.15
   position_count: 20
   heading_count: 20
-  check_environment_collisions: True
+  check_environment_collisions: False
 
 task_generation:
-  max_ik_count: null
+  max_ik_count: 500
   counts:
-    surface: 0
-    close: 0
-    far: 1000
+    surface: 300
+    close: 300
+    far: 300
     offset: 100
   surface_offset: 0.15
   min_offsets:
     surface: 0.10
     close: 0.15
-    far: 0.60
+    far: 0.40
   max_offsets: 
     close: 0.30
     far: 0.90
@@ -44,6 +45,9 @@ task_generation:
 model_settings:
   pointcloud_encoder: 'PointNet'
   cuda_device: 0
-  batch_size: 10
+  batch_size: 32
   learning_rate: 0.0005
-  debug: False
+  debug: True
+  log_base_path: 'base_net/data/runs/latest/'
+  checkpoint_base_path: 'base_net/data/checkpoints/'
+  checkpoint_frequency: 50
