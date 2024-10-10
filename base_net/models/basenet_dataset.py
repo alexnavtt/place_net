@@ -14,47 +14,41 @@ class BaseNetDataset(Dataset):
         if split_tensor.numel() != 3:
             raise RuntimeError(f"Train/Test/Validate split must have only 3 elements - you gave {split}")
         split_tensor /= torch.sum(split_tensor)
-        
-        num_tasks = len(model_config.tasks)
-        original_task_sizes = torch.tensor([task.size()[0] for task in model_config.tasks.values()], dtype=torch.int)
-        train_end_idx = split_tensor[0].item()*original_task_sizes
-        validate_end_idx  = (split_tensor[0].item() + split_tensor[1].item())*original_task_sizes
-
-        if mode == 'training':
-            start = [0]*num_tasks
-            end = train_end_idx.int().tolist()
-        elif mode == 'validation':
-            start = train_end_idx.int().tolist()
-            end = validate_end_idx.int().tolist()
-        elif mode == 'testing':
-            start = validate_end_idx.int().tolist()
-            end = original_task_sizes.int().tolist()
-        else:
-            raise RuntimeError(f'Unrecognized dataset type {mode} passed. Options are "training", "validation", and "testing"')
 
         open3d_to_tensor = lambda pointcloud: torch.tensor(np.concatenate([np.asarray(pointcloud.points), np.asarray(pointcloud.normals)], axis=1), device='cpu')
 
-        self.task_pointcloud_solution_tuples: list[tuple[Tensor, Tensor]] = [
-            (
-                model_config.tasks[name][start[idx]:end[idx], :], 
-                open3d_to_tensor(model_config.pointclouds[name]),
-                model_config.solutions[name][start[idx]:end[idx], :, :, :].float()
-            )
-            for idx, name in enumerate(model_config.tasks.keys())
-        ]
-        self.task_sizes = torch.tensor([0] + [task.size()[0] for task, _, _ in self.task_pointcloud_solution_tuples], dtype=torch.int)
-        self.task_indices = torch.cumsum(self.task_sizes, dim=0)
+        self.data_points = []
+        for name in model_config.tasks.keys():
+            task_poses = model_config.tasks[name]
+            task_pointcloud = open3d_to_tensor(model_config.pointclouds[name])
+            task_solutions = model_config.solutions[name].float()
+
+            N: int = task_poses.size(0)
+            random_indices = torch.randperm(N)
+
+            train_size = int(split_tensor[0].item() * N)
+            validation_size = int(split_tensor[1].item() * N)
+            test_size = N - train_size - validation_size
+
+            if mode == 'training':
+                selected_indices = random_indices[:train_size]
+            elif mode == 'validation': 
+                selected_indices = random_indices[train_size:train_size+validation_size]
+            elif mode == 'testing':
+                selected_indices = random_indices[train_size+validation_size:]
+            else:
+                raise RuntimeError(f'Unrecognized dataset type {mode} passed. Options are "training", "validation", and "testing"')
+
+            for idx in selected_indices:
+                task_pose = task_poses[idx, :]
+                task_solution = task_solutions[idx, :, :, :]
+                self.data_points.append((task_pose, task_pointcloud, task_solution))
 
     def __len__(self):
-        return self.task_indices[-1]
+        return len(self.data_points)
     
     def __getitem__(self, index) -> tuple[Tensor, Tensor, Tensor]:
         """
         Return the next items in the dataset, arranged as (task_tensor, pointcloud_tensor, solution_tensor)
         """
-        task_idx = torch.nonzero(self.task_indices > index)[0].item() - 1
-        task_poses, task_pointcloud, task_solutions = self.task_pointcloud_solution_tuples[task_idx]
-        task_pose = task_poses[index - self.task_indices[task_idx], :]
-        task_solution = task_solutions[index - self.task_indices[task_idx], :, :, :]
-
-        return task_pose, task_pointcloud, task_solution
+        return self.data_points[index]
