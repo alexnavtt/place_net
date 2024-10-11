@@ -74,23 +74,32 @@ def visualize_solution(model_output: Tensor, task_tensor: Tensor, base_net_confi
     task_visualization.visualize(first_task, model_arrows)
     task_visualization.visualize(first_task, agreement_arrows)
 
-def log_visualization(model_config: BaseNetConfig, writer: SummaryWriter, epoch: int, model_output: Tensor, solution: Tensor, pointcloud: Tensor | None = None):
+def log_visualization(model_config: BaseNetConfig, writer: SummaryWriter, step: int, task: Tensor, model_output: Tensor, solution: Tensor, pointcloud: Tensor | None = None):
     model_labels = torch.sigmoid(model_output.flatten())
     model_labels[model_labels > 0.5] = 1
     model_labels[model_labels < 0.5] = 0
     base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
+    base_poses_in_flattened_task_frame.position[:, :2] += task[:2].to(base_poses_in_flattened_task_frame.position.device)
+    base_poses_in_flattened_task_frame.position[:, 2] = model_config.base_link_elevation
 
+    offset_factor = 0.0 if model_config.check_environment_collisions is True else 1.0
     solution_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, solution.flatten())
-    base_poses_in_flattened_task_frame.position[:, 0] += 2.2 * model_config.model.robot_reach_radius
+    task_geometry = task_visualization.get_task_arrows(task)
+    base_poses_in_flattened_task_frame.position[:, 0] += 2.2 * model_config.model.robot_reach_radius * offset_factor
     output_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, model_labels)
-    base_poses_in_flattened_task_frame.position[:, 0] -= 1.1 * model_config.model.robot_reach_radius
-    base_poses_in_flattened_task_frame.position[:, 1] -= 2.2 * model_config.model.robot_reach_radius
+    base_poses_in_flattened_task_frame.position[:, 0] -= 1.1 * model_config.model.robot_reach_radius * offset_factor
+    base_poses_in_flattened_task_frame.position[:, 1] -= 2.2 * model_config.model.robot_reach_radius * offset_factor
     agreement = torch.logical_not(torch.logical_xor(model_labels, solution.flatten()))
     aggreement_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, agreement)
 
-    writer.add_3d('solution', to_dict_batch([entry['geometry'] for entry in solution_geometry]), step=epoch)
-    writer.add_3d('output', to_dict_batch([entry['geometry'] for entry in output_geometry]), step=epoch)
-    writer.add_3d('agreement', to_dict_batch([entry['geometry'] for entry in aggreement_geometry]), step=epoch)
+    writer.add_3d('task', to_dict_batch([entry['geometry'] for entry in task_geometry]), step=step)
+    writer.add_3d('solution', to_dict_batch([entry['geometry'] for entry in solution_geometry]), step=step)
+    writer.add_3d('output', to_dict_batch([entry['geometry'] for entry in output_geometry]), step=step)
+    writer.add_3d('agreement', to_dict_batch([entry['geometry'] for entry in aggreement_geometry]), step=step)
+
+    # Additionally log the pointcloud if collisions are enabled
+    if model_config.check_environment_collisions:
+        writer.add_3d('environment', to_dict_batch([entry['geometry'] for entry in task_visualization.get_pointcloud(pointcloud, task, model_config)]), step=step)
 
 def main():
     args = load_arguments()
@@ -143,7 +152,7 @@ def main():
         base_net_model.eval()
     else:
         train_data = BaseNetDataset(base_net_config, mode='training', split=data_split)
-        train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+        train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
         
         validate_data = BaseNetDataset(base_net_config, mode='validation', split=data_split)
         validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
@@ -199,7 +208,15 @@ def main():
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
-            log_visualization(base_net_config, writer, epoch//10, output[0, :, :, :].cpu(), solution[0, :, :, :])
+            log_visualization(
+                model_config = base_net_config, 
+                writer       = writer, 
+                step         = epoch//10,
+                pointcloud   = pointcloud_list[0].cpu(), 
+                model_output = output[0, :, :, :].cpu(), 
+                solution     = solution[0, :, :, :],
+                task         = task_tensor[0, :]
+            )
 
         # At regular intervals, save the 
         if epoch != start_epoch and base_net_config.model.checkpoint_base_path is not None and epoch % base_net_config.model.checkpoint_frequency == 0:

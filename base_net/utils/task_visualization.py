@@ -7,23 +7,31 @@ from urdf_parser_py.urdf import Robot, Pose as urdfPose, Joint
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
+from base_net.utils.base_net_config import BaseNetConfig
 
-def get_task_arrows(task_poses: cuRoboPose, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
+def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
+
+    if isinstance(task_poses, cuRoboPose):
+        task_poses = torch.concatenate([task_poses.position, task_poses.quaternion], dim=1)
+    
+    if len(task_poses.size()) == 1:
+        task_poses = task_poses.unsqueeze(0)
 
     arrows = open3d.geometry.TriangleMesh()    
-    for task_idx in range(task_poses.batch):
+    for task_pose in task_poses:
         task_arrow = open3d.geometry.TriangleMesh.create_arrow(
             cylinder_radius=0.015,
             cone_radius=0.025,
             cylinder_height=0.1,
             cone_height=0.05,
         )
+        task_pos, task_ori = torch.split(task_pose, [3, 4])
 
         rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
-        rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_poses.quaternion[task_idx, :].squeeze().cpu().numpy(), scalar_first=True)
+        rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_ori.cpu().numpy(), scalar_first=True)
         task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
         task_arrow.rotate(rotation.as_matrix(), center=[0, 0, 0])
-        task_arrow.translate(task_poses.position[task_idx, :].squeeze().cpu().numpy())
+        task_arrow.translate(task_pos.cpu().numpy())
         task_arrow.paint_uniform_color([0, 0, 1])
         arrows += task_arrow.compute_triangle_normals()
 
@@ -153,6 +161,17 @@ def get_robot_geometry_at_joint_state(
                 link_pose[:3,  3] += link_pose[:3, :3] @ (joint_angle * np.array(joint.axis))
 
     return geometries
+
+def get_pointcloud(pointcloud_tensor: torch.Tensor, task: torch.Tensor, model_config: BaseNetConfig) -> list[open3d.geometry.Geometry]:
+    # Filter the pointcloud to all points in the appropriate radius around the task
+    distances = (pointcloud_tensor[:, :2] - task[:2]).norm(dim=1)
+    valid_points = pointcloud_tensor[distances < model_config.model.workspace_radius, :]
+
+    pointcloud = open3d.geometry.PointCloud()
+    pointcloud.points.extend(valid_points[:, :3].cpu().numpy())
+    pointcloud.normals.extend(valid_points[:, 3:].cpu().numpy())
+
+    return [{'name': 'environment', 'geometry': pointcloud}]
 
 def visualize(*args):
     geometries = []
