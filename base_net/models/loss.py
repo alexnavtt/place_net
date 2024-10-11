@@ -23,11 +23,11 @@ class DiceLoss(torch.nn.Module):
         return dice_loss
     
 class FocalLoss(torch.nn.Module):
-    def __init__(self, gamma: float = 2.0, alpha: float = 0.25):
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.25, device='cuda:0'):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        self.bce = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5.0]).cuda())
+        self.bce = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5.0]).to(device))
         self.dice = DiceLoss()
 
     def forward(self, logits: Tensor, targets: Tensor):
