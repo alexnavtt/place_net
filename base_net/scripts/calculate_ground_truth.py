@@ -209,7 +209,7 @@ def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml(args.config_file)
+    model_config = BaseNetConfig.from_yaml_file(args.config_file)
 
     base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
     num_poses = base_poses_in_flattened_task_frame.batch
