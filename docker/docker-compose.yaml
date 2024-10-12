@@ -1,31 +1,9 @@
 services:
   base_net:
     environment:
-      # pass the display variable to the container
-      - DISPLAY=${DISPLAY}
-      # disable qt-X11 memory sharing for RViz
-      - QT_X11_NO_MITSHM=1
       # Load in the ROS distro
       - ROS_DISTRO=$TARGET_ROS_DISTRO
-      # Get the build target
-      - BUILD_TARGET=$BUILD_TARGET
-    security_opt:
-      # this is set bc of errors with RViz being denied dbus comm w/ host
-      - apparmor:unconfined
-    volumes:
-      # mount the X11 socket to enable graphics display
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      # required for non-nvidia users, comment out for nvidia users
-      # - /dev/dri:/dev/dri
-      # add the .Xauthority file to use ssh X11 forwarding
-      - ${HOME}/.Xauthority:/root/.Xauthority:rw
-      # The base net folder itself
-      - ${PWD}/../../base_net:/base_net
     runtime: nvidia
-    # give the container access to the host's network
-    ## network_mode: host
-    ## ipc: host
-    ## pid: host
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
     tty: true
@@ -34,8 +12,6 @@ services:
     build:
       context: ./..
       dockerfile: docker/Dockerfile
-      # platforms: 
-      #   - linux/${BUILD_ARCHITECTURE}
       ssh:
         - default
       args:
@@ -49,5 +25,25 @@ services:
         BUILD_TARGET: $BUILD_TARGET
         CUDA_VERSION: $TARGET_CUDA_VERSION
 
+  generate_task_poses:
+    extends: base_net
+    container_name: base_net_task_pose_generation
+    volumes:
+      - ${PWD}/../../base_net:/base_net
+    command: "/bin/bash -l -c 'base_net generate-task-poses --config-file base_net/config/${BASE_NET_CONFIG}'"
+
+  calculate_ground_truth:
+    extends: base_net
+    container_name: base_net_ground_truth_calculation
+    volumes:
+      - ${PWD}/../../base_net:/base_net
+    command: "/bin/bash -l -c 'base_net calculate-ground-truth --config-file base_net/config/${BASE_NET_CONFIG}'"
+
+  train_model:
+    extends: base_net
+    container_name: base_net_training
+    volumes:
+      - ${PWD}/../../base_net:/base_net
+    command: "/bin/bash -l -c 'base_net train --config-file base_net/config/${BASE_NET_CONFIG}'"
 
   

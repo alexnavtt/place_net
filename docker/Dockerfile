@@ -23,7 +23,6 @@ RUN apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
 # Install BaseNet dependencies
 RUN apt install -y libgl1
-ADD base_net /base_net/base_net
 ADD setup.py /base_net/setup.py
 WORKDIR /base_net
 RUN pip install -e . --no-build-isolation
@@ -47,7 +46,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to sp
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
     && sed -i 's/01;32m/01;36m/g; s/01;34m/01;35m/g' "/root/.bashrc"
 
-RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc \
-    && echo "source /colcon_ws/install/setup.bash" >> ~/.bashrc
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
+    && echo "source /colcon_ws/install/setup.bash" >> ~/.profile
 
 WORKDIR /base_net
