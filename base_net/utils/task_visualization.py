@@ -1,8 +1,11 @@
-import open3d.visualization
+import os
 import torch
 import open3d
+import collada
 import numpy as np
 import scipy.spatial
+import collada.triangleset
+import open3d.visualization
 from urdf_parser_py.urdf import Robot, Pose as urdfPose, Joint
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
@@ -113,6 +116,28 @@ def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.
 
     return transform_from_ee
 
+def collada_to_open3d(collada_geom: collada.Collada):    
+    o3d_mesh = open3d.geometry.TriangleMesh()
+    vertices_offset = 0
+    for geom in collada_geom.geometries:
+        for prim in geom.primitives:
+            if isinstance(prim, collada.triangleset.TriangleSet):
+                o3d_mesh.vertices.extend(prim.vertex)
+                o3d_mesh.triangles.extend(prim.indices[:, :, 0] + vertices_offset)
+                vertices_offset += len(prim.vertex)
+
+                if hasattr(prim, 'colors') and prim.colors is not None:
+                    o3d_mesh.vertex_colors.extend(prim.colors)
+
+    if not o3d_mesh.has_vertex_normals():
+        o3d_mesh.compute_vertex_normals()
+
+    if collada_geom.assetInfo.upaxis == 'Z_UP':
+        rotation = scipy.spatial.transform.Rotation.from_euler('XYZ', [90, 90, 0], degrees=True).as_matrix()
+        o3d_mesh.rotate(rotation)
+            
+    return o3d_mesh
+
 def get_robot_geometry_at_joint_state(
         robot_config: RobotConfig, 
         joint_state: torch.Tensor, 
@@ -141,7 +166,16 @@ def get_robot_geometry_at_joint_state(
     for link_idx, link_name in enumerate(chain_links):
         for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
             for visual in robot_urdf.link_map[attached_link].visuals:
-                mesh = open3d.io.read_triangle_mesh(visual.geometry.filename[7:])
+                visual_filename = visual.geometry.filename[7:]
+                if os.path.splitext(visual_filename)[1] == '.dae':
+                    try:
+                        obj = collada.Collada(filename=visual_filename)
+                        mesh = collada_to_open3d(obj)
+                    except collada.common.DaeMalformedError:
+                        continue
+                else:
+                    mesh = open3d.io.read_triangle_mesh(visual_filename)
+
                 if visual.geometry.scale is not None:
                     mesh.scale(visual.geometry.scale)
                 mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))

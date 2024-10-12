@@ -14,7 +14,8 @@ setup(
         'click',
         'scipy',
         'tensorboard',
-        'setproctitle'
+        'setproctitle',
+        'pycollada'
     ],
     entry_points={
         'console_scripts': [

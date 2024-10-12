@@ -259,11 +259,11 @@ def main():
             base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
             # Filter out poses which the robot cannot reach even without obstacles
-            valid_pose_indices, _ = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
+            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
             num_valid_poses = torch.sum(valid_pose_indices)
 
             if model_config.model.debug:
-                visualize_task(task_pose_in_world, model_config.pointclouds[task_name], base_poses_in_world, valid_pose_indices)
+                visualize_solution(valid_pose_indices, solution_states, task_pose_in_world, model_config, pointcloud_in_world)
 
             if not model_config.check_environment_collisions or num_valid_poses == 0:
                 solution_success = valid_pose_indices
