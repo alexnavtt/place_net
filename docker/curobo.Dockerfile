@@ -5,26 +5,11 @@ ARG BUILD_TARGET=workstation
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS base_workstation
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install pytorch the normal way
 RUN apt update \
     && apt install -y \
         python3 \
         python3-pip \
     && pip install torch setuptools==61
-
-
-# === Nvidia Jetson Install === #
-# FROM nvcr.io/nvidia/l4t-cuda:12.2.12-devel AS base_jetson
-# ARG DEBIAN_FRONTEND=noninteractive
-
-# # Install pytorch the Jetson way
-# RUN apt update \
-#     && apt install -y \
-#         python3 \
-#         python3-pip \
-#         libopenblas-dev
-
-# TODO
 
 FROM base_${BUILD_TARGET} AS build
 ARG DEBIAN_FRONTEND=noninteractive

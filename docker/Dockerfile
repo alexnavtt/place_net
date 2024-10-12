@@ -5,6 +5,14 @@ FROM alexnavtt/curobo:${BUILD_TARGET} AS base_net
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO=humble
+ARG BUILD_TARGET
+
+# This line fixes a bug with base ros cuda image where preintsalled opencv packages cause updates to fail
+RUN if [ "${BUILD_TARGET}" = 'jetson' ]; then \
+        apt update \ 
+        && apt install -y libopencv-dev -o DPkg::options::="--force-overwrite" \
+        && rm -rf /var/lib/apt/lists/* \
+    ;fi
 
 # Install ROS
 ENV LANG=en_US.UTF-8
@@ -17,9 +25,8 @@ RUN apt update && apt upgrade -y \
     && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
     && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null \
-    && apt update
-
-RUN apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
+    && apt update \
+    && apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
 # Install BaseNet dependencies
 RUN apt install -y libgl1
