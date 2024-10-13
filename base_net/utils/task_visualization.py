@@ -11,6 +11,7 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
 from base_net.utils.base_net_config import BaseNetConfig
+from base_net.utils.pointcloud_region import PointcloudRegion
 
 def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
 
@@ -64,7 +65,7 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> li
 
     return [{'geometry': composite_mesh, 'name': 'base_arrows'}]
 
-def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [0.5, 0.5, 1.0]) -> list[open3d.geometry.TriangleMesh]:
+def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [0.5, 0.5, 1.0], label = None) -> list[open3d.geometry.TriangleMesh]:
     all_spheres = open3d.geometry.TriangleMesh()
     for task_idx in range(task_poses.size(0)):
         translation = task_poses[task_idx, :3].cpu().numpy()
@@ -81,7 +82,27 @@ def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [
             sphere_geom.paint_uniform_color(color)
             all_spheres += sphere_geom.compute_triangle_normals()
 
+    if label is not None:
+        all_spheres = {'name': label, 'geometry': all_spheres, 'group': 'spheres'}
+        
     return [all_spheres]
+
+def get_regions(regions: PointcloudRegion) -> list[open3d.geometry.TriangleMesh]:
+    transparent_material = open3d.visualization.rendering.MaterialRecord()
+    transparent_material.shader = 'defaultLitTransparency'
+    transparent_material.base_color = [0.0, 1.0, 0.0, 0.3]
+
+    meshes = []
+    for idx, region in enumerate(regions._regions):
+        extent = np.array(region.max_bound) - np.array(region.min_bound)
+        center = 0.5*(np.array(region.max_bound) + np.array(region.min_bound))
+        new_box = open3d.geometry.TriangleMesh.create_box(width = extent[0], height=extent[1], depth=extent[2])
+        new_box.translate(center)
+        new_box.translate(-0.5*extent)
+        new_box.compute_triangle_normals()
+        meshes.append({'name': f'region_{idx}', 'geometry': new_box, 'material': transparent_material, 'group': 'regions'})
+
+    return meshes
 
 def urdf_pose_to_matrix(pose: urdfPose) -> np.ndarray:
         matrix = np.eye(4)

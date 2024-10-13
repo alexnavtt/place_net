@@ -1,6 +1,6 @@
 import os
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing_extensions import Type, Union
 
 import yaml
@@ -14,6 +14,7 @@ from curobo.types.base import TensorDeviceType
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 from base_net.utils.invert_robot_model import main as invert_urdf
+from base_net.utils.pointcloud_region import PointcloudRegion
 
 # Allow running even without ROS
 try:
@@ -148,13 +149,21 @@ class TaskGenerationConfig:
     counts: TaskGenerationCounts
     offsets: TaskGenerationOffsets
     max_ik_count: int | None = None
+    regions: dict[str, PointcloudRegion] = field(default_factory=dict)
 
     @staticmethod
-    def from_yaml_dict(yaml_config: dict):
+    def from_yaml_dict(yaml_config: dict, pointclouds: dict[str, open3d.geometry.PointCloud]):
         config = yaml_config['task_generation']
 
         if 'surface' in config['counts'] and 'surface_offset' not in config:
             raise RuntimeError(f'You specified that you wanted {config["counts"]["surface"]} surface poses, but you did not specify a surface offset')
+        
+        pointcloud_regions: dict[str, PointcloudRegion] = {}
+        for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
+            pointcloud_regions[pointcloud_name] = PointcloudRegion(pointclouds[pointcloud_name])
+            if 'regions' in pointcloud_config:
+                for region in pointcloud_config['regions']:
+                    pointcloud_regions[pointcloud_name].add_region(np.array(region['min_bound']), np.array(region['max_bound']))
 
         return TaskGenerationConfig(
             counts = TaskGenerationConfig.TaskGenerationCounts(
@@ -174,7 +183,9 @@ class TaskGenerationConfig:
                 surface_offset = config['surface_offset'] if 'surface_offset' in config else 0.0
             ),
 
-            max_ik_count = config['max_ik_count']
+            max_ik_count = config['max_ik_count'],
+
+            regions=pointcloud_regions
         )
 
 @dataclass
@@ -245,9 +256,9 @@ class BaseNetConfig:
         model_config = BaseNetModelConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
-        for pointcloud_config in yaml_config['pointclouds']:
+        for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
             name, pointcloud = BaseNetConfig.load_pointcloud(
-                filepath=pointcloud_config['path'], 
+                filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
                 min_elevation=model_config.workspace_floor, 
                 max_elevation=model_config.workspace_height, 
                 elevation_offset=pointcloud_config['elevation']
@@ -257,7 +268,7 @@ class BaseNetConfig:
                 raise RuntimeError(f"Duplicate pointcloud name detected: {name}")
             pointclouds[name] = pointcloud
 
-        task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config)
+        task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config, pointclouds)
 
         return BaseNetConfig(
             yaml_source=copy.deepcopy(yaml_config),

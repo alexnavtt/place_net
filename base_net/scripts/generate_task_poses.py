@@ -14,6 +14,7 @@ from curobo.types.robot import RobotConfig
 
 from base_net.utils import task_visualization
 from base_net.utils.base_net_config import BaseNetConfig
+from base_net.utils.pointcloud_region import PointcloudRegion
 
 def load_arguments() -> dict:
     parser = argparse.ArgumentParser(
@@ -69,7 +70,7 @@ def are_spheres_in_collision(
         
     return False
 
-def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: RobotConfig) -> None:
+def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: RobotConfig, regions: PointcloudRegion) -> None:
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
@@ -83,13 +84,14 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: 
     geometries = geometries + task_visualization.get_task_arrows(surface_poses, suffix='_surface')
     geometries = geometries + task_visualization.get_task_arrows(close_poses, suffix='_close')
     geometries = geometries + task_visualization.get_task_arrows(far_poses, suffix='_far')
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, surface_poses, color=[1.0, 0.5, 0.0])
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, close_poses, color=[1.0, 0.0, 0.5])
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, far_poses, color=[0.0, 1.0, 0.5])
+    geometries = geometries + task_visualization.get_spheres(ee_spheres, surface_poses, color=[1.0, 0.5, 0.0], label='surface_poses')
+    geometries = geometries + task_visualization.get_spheres(ee_spheres, close_poses, color=[1.0, 0.0, 0.5], label='close_poses')
+    geometries = geometries + task_visualization.get_spheres(ee_spheres, far_poses, color=[0.0, 1.0, 0.5], label='far_poses')
+    geometries += task_visualization.get_regions(regions)
 
     open3d.visualization.draw(geometry=geometries)
 
-def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig, count: int, min_offset: float, max_offset: float) -> Tensor:
+def sample_distant_poses(regions: PointcloudRegion, model_config: BaseNetConfig, count: int, min_offset: float, max_offset: float) -> Tensor:
     """
     Generate poses at random locations in the environment and only accept those that contain obstacles 
     in a given 'maximum distance' sphere while having no obstacles within a 'minimum distance' sphere
@@ -101,21 +103,11 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
     max_attempt_count = 100 * points_reminaing
     attempt_count = 0
 
-    bounding_box_offset = 0.15 # amount to trim off the bounding box while sampling
+    pointcloud = regions.pointcloud
     bounding_box = pointcloud.get_axis_aligned_bounding_box()
-    bounding_box.min_bound = (
-        bounding_box.min_bound[0] - bounding_box_offset,
-        bounding_box.min_bound[1] - bounding_box_offset,
-        bounding_box.min_bound[2]
-    )
-    bounding_box.max_bound = (
-        bounding_box.max_bound[0] + bounding_box_offset,
-        bounding_box.max_bound[1] + bounding_box_offset,
-        bounding_box.max_bound[2]
-    )
 
     ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
-    kd_tree = open3d.geometry.KDTreeFlann(geometry=pointcloud)
+    kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
 
     while points_reminaing > 0 and attempt_count < max_attempt_count:
         attempt_count += 1
@@ -123,6 +115,8 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         # Randomly sample a point within the pointcloud bounds
         fractions = np.random.rand(3)
         point = np.asarray(bounding_box.min_bound) + fractions * (np.asarray(bounding_box.max_bound) - np.asarray(bounding_box.min_bound)) 
+        if not regions.contains(point):
+            continue
 
         # Randomly sample an orientation with the Shoemaker's Algorithm (https://en.wikipedia.org/wiki/3D_rotation_group#Uniform_random_sampling)
         u1, u2, u3 = np.random.rand(3)
@@ -163,7 +157,7 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
 
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
-def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig) -> Tensor:
+def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig) -> Tensor:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -173,10 +167,11 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
 
     # Get the end effector collision spheres to make sure samples poses are valid
     ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
-    print(ee_spheres)
 
     # Get a KD tree for sphere-pointcloud collision detection
-    kd_tree = open3d.geometry.KDTreeFlann(geometry=pointcloud)
+    pointcloud = regions.pointcloud
+    kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
+    sampled_points = open3d.geometry.PointCloud()
 
     # List all points as available to sample
     available_point_labels = np.ones(len(pointcloud.points), dtype=bool)
@@ -198,11 +193,20 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
 
         # Project the surface normal to the end effector location
         ee_location = point + normal * model_config.task_generation.offsets.surface_offset
+        if not regions.contains(ee_location):
+            continue
+
+        # Check to see that there aren't too many sampled points already close to this one
+        sampled_points.points.extend(open3d.utility.Vector3dVector([ee_location]))
+        search = open3d.geometry.KDTreeFlann(geometry=sampled_points)
+        # TODO: Make this not hard-coded
+        num_close_samples = search.search_radius_vector_3d(ee_location, 0.3)[0]
+        if num_close_samples > 5:
+            continue
 
         # Sample a random point in 3D space not along the normal
         while True:
-            random_point = np.random.rand(1, 3)
-            offset_vector = random_point - ee_location
+            offset_vector = np.random.rand(1, 3)
             offset_vector = offset_vector/np.linalg.norm(offset_vector)
             if np.linalg.norm(np.cross(offset_vector, normal)) > 1e-3:
                 break
@@ -256,10 +260,11 @@ def main():
         exit(0)
 
     # If we are checking collisions then we need to sample based on the pointcloud geometry
-    for pointcloud_name, pointcloud in model_config.pointclouds.items():
-        surface_poses = sample_surface_poses(pointcloud, model_config)
-        close_poses = sample_distant_poses(pointcloud, model_config, task_config.counts.close, task_config.offsets.close_min, task_config.offsets.close_max)
-        far_poses = sample_distant_poses(pointcloud, model_config, task_config.counts.far, task_config.offsets.far_min, task_config.offsets.far_max)
+    for pointcloud_name, original_pointcloud in model_config.pointclouds.items():
+        regions = model_config.task_generation.regions[pointcloud_name]
+        surface_poses = sample_surface_poses(regions, model_config)
+        close_poses = sample_distant_poses(regions, model_config, task_config.counts.close, task_config.offsets.close_min, task_config.offsets.close_max)
+        far_poses = sample_distant_poses(regions, model_config, task_config.counts.far, task_config.offsets.far_min, task_config.offsets.far_max)
 
         sample_poses: Tensor = torch.concatenate([surface_poses, close_poses, far_poses], dim=0)
 
@@ -271,7 +276,7 @@ def main():
             print("No output path provided, generated poses have not been saved")
     
         if model_config.model.debug:
-            visualize_task_poses(pointcloud, surface_poses, close_poses, far_poses, model_config.robot)
+            visualize_task_poses(original_pointcloud, surface_poses, close_poses, far_poses, model_config.robot, regions)
 
 if __name__ == "__main__":
     main()
