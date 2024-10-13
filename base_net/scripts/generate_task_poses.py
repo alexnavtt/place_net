@@ -9,6 +9,7 @@ import argparse
 import numpy as np
 import scipy.spatial
 
+from tqdm import tqdm
 from torch import Tensor
 from curobo.types.robot import RobotConfig
 
@@ -173,67 +174,76 @@ def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig)
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
     sampled_points = open3d.geometry.PointCloud()
 
+    # Define a function for checking if a point is within bounds of the pointcloud itself
+    # This helps to minimize poses sampled outside trimmed portions of the pointcloud
+    pointcloud_bbox = open3d.geometry.OrientedBoundingBox.create_from_points(regions._pointcloud.points)
+    def is_in_pointcloud_bbox(point) -> bool:
+        point_vec = open3d.utility.Vector3dVector([point])
+        return len(pointcloud_bbox.get_point_indices_within_bounding_box(point_vec)) > 0
+
     # List all points as available to sample
     available_point_labels = np.ones(len(pointcloud.points), dtype=bool)
     points_remaining = model_config.task_generation.counts.surface
-    while points_remaining > 0 and any(available_point_labels):
-        available_point_indices = np.nonzero(available_point_labels)[0]
-        
-        # Sample a point
-        label_idx = random.randrange(len(available_point_indices))
-        point_idx = available_point_indices[label_idx]
-        available_point_labels[point_idx] = False
+    with tqdm(total=points_remaining) as pbar:
+        while points_remaining > 0 and any(available_point_labels):
+            available_point_indices = np.nonzero(available_point_labels)[0]
+            
+            # Sample a point
+            label_idx = random.randrange(len(available_point_indices))
+            point_idx = available_point_indices[label_idx]
+            available_point_labels[point_idx] = False
 
-        # Retrieve the geometry
-        point  = np.asarray(pointcloud.points)[point_idx, :]
-        normal = np.asarray(pointcloud.normals)[point_idx, :]
-        if np.linalg.norm(normal) == 0:
-            continue
-        normal = normal / np.linalg.norm(normal) # just in case
+            # Retrieve the geometry
+            point  = np.asarray(pointcloud.points)[point_idx, :]
+            normal = np.asarray(pointcloud.normals)[point_idx, :]
+            if np.linalg.norm(normal) == 0:
+                continue
+            normal = normal / np.linalg.norm(normal) # just in case
 
-        # Project the surface normal to the end effector location
-        ee_location = point + normal * model_config.task_generation.offsets.surface_offset
-        if not regions.contains(ee_location):
-            continue
+            # Project the surface normal to the end effector location
+            ee_location = point + normal * model_config.task_generation.offsets.surface_offset
+            if not regions.contains(ee_location) or not is_in_pointcloud_bbox(ee_location):
+                continue
 
-        # Check to see that there aren't too many sampled points already close to this one
-        sampled_points.points.extend(open3d.utility.Vector3dVector([ee_location]))
-        search = open3d.geometry.KDTreeFlann(geometry=sampled_points)
-        # TODO: Make this not hard-coded
-        num_close_samples = search.search_radius_vector_3d(ee_location, 0.3)[0]
-        if num_close_samples > 5:
-            continue
+            # Check to see that there aren't too many sampled points already close to this one
+            sampled_points.points.extend(open3d.utility.Vector3dVector([ee_location]))
+            search = open3d.geometry.KDTreeFlann(geometry=sampled_points)
+            # TODO: Make this not hard-coded
+            num_close_samples = search.search_radius_vector_3d(ee_location, 0.2)[0]
+            if num_close_samples > 3:
+                continue
 
-        # Sample a random point in 3D space not along the normal
-        while True:
-            offset_vector = np.random.rand(1, 3)
-            offset_vector = offset_vector/np.linalg.norm(offset_vector)
-            if np.linalg.norm(np.cross(offset_vector, normal)) > 1e-3:
-                break
+            # Sample a random point in 3D space not along the normal
+            while True:
+                offset_vector = np.random.rand(1, 3)
+                offset_vector = offset_vector/np.linalg.norm(offset_vector)
+                if np.linalg.norm(np.cross(offset_vector, normal)) > 1e-3:
+                    break
 
-        # Project this point onto the plane described by the point and the normal to define the poes y-axis
-        pose_x_axis = -normal
-        plane_vector = offset_vector - np.dot(offset_vector, pose_x_axis) * pose_x_axis
-        pose_y_axis = plane_vector / np.linalg.norm(plane_vector)
+            # Project this point onto the plane described by the point and the normal to define the poes y-axis
+            pose_x_axis = -normal
+            plane_vector = offset_vector - np.dot(offset_vector, pose_x_axis) * pose_x_axis
+            pose_y_axis = plane_vector / np.linalg.norm(plane_vector)
 
-        # Calculate the cross product to get the z-axis and create the rotation matrix
-        pose_z_axis = np.cross(pose_x_axis, pose_y_axis)
-        rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
+            # Calculate the cross product to get the z-axis and create the rotation matrix
+            pose_z_axis = np.cross(pose_x_axis, pose_y_axis)
+            rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
 
-        # Check for collisions with the environment
-        if model_config.check_environment_collisions and are_spheres_in_collision(
-            kd_tree=kd_tree,
-            ee_spheres=ee_spheres,
-            ee_position_in_world=ee_location,
-            ee_orientation_in_world=scipy.spatial.transform.Rotation.from_matrix(rot_mat),
-            inflation=model_config.task_generation.offsets.surface_min
-        ): continue
+            # Check for collisions with the environment
+            if model_config.check_environment_collisions and are_spheres_in_collision(
+                kd_tree=kd_tree,
+                ee_spheres=ee_spheres,
+                ee_position_in_world=ee_location,
+                ee_orientation_in_world=scipy.spatial.transform.Rotation.from_matrix(rot_mat),
+                inflation=model_config.task_generation.offsets.surface_min
+            ): continue
 
-        # If not in collision, add this pose to the return set and decrement the remaining pose counter
-        quaternion = scipy.spatial.transform.Rotation.from_matrix(rot_mat).as_quat(scalar_first=True)
-        position_tensor = torch.concatenate([position_tensor, torch.Tensor(ee_location).unsqueeze(0)], dim=0)
-        quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quaternion).unsqueeze(0)], dim=0)
-        points_remaining -= 1
+            # If not in collision, add this pose to the return set and decrement the remaining pose counter
+            quaternion = scipy.spatial.transform.Rotation.from_matrix(rot_mat).as_quat(scalar_first=True)
+            position_tensor = torch.concatenate([position_tensor, torch.Tensor(ee_location).unsqueeze(0)], dim=0)
+            quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quaternion).unsqueeze(0)], dim=0)
+            points_remaining -= 1
+            pbar.update(1)
 
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 

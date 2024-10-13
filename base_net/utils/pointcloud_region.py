@@ -1,5 +1,6 @@
 import open3d
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 class PointcloudRegion():
     def __init__(self, pointcloud):
@@ -8,8 +9,9 @@ class PointcloudRegion():
         self._valid_indices: set[int] = set()
         self._updated = False
 
-    def add_region(self, min_bound: np.ndarray, max_bound: np.ndarray) -> None:
-        self._regions.append(open3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound))
+    def add_region(self, center: np.ndarray, extent: np.ndarray, yaw: float = 0.0) -> None:
+        rotation = Rotation.from_rotvec(yaw*np.array([0, 0, 1]), degrees=True).as_matrix()
+        self._regions.append(open3d.geometry.OrientedBoundingBox(center, rotation, extent))
         self._updated = False
 
     def update_valid_points(self) -> None:

@@ -1,10 +1,35 @@
 pointclouds:
-  - {path: "base_net/data/pointclouds/living_room_small.pcd", elevation: 0.10}
-  - {path: "base_net/data/pointclouds/attic-draft.pcd", elevation: 0.0}
-  - {path: "base_net/data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
-  - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
-  - {path: "base_net/data/pointclouds/office.pcd", elevation: 0.0}
+  living_room_small:
+    elevation: 0.1
+    regions:
+      - {min_bound: [-2.52, -1.95, 0.20], max_bound: [2.41, 4.01, 2.0]}
+  attic-draft:
+    elevation: 0.0
+    regions: 
+      - {min_bound: [-4.0, -3.85, 0.0], max_bound: [-0.5, 3.2, 2.0]}
+      - {min_bound: [ 1.4, -3.85, 0.0], max_bound: [ 4.7, 3.2, 2.0]}
+      - {min_bound: [-5.5, -2.30, 0.0], max_bound: [ 5.8, 2.0, 2.1]}
+      - {min_bound: [ 5.8, -3.80, 0.0], max_bound: [ 8.5, 2.0, 2.1]}
+  URSA_sample_valves:
+    elevation: -1.0
+    regions: 
+      - {min_bound: [-3.7, -3.8, 0.0], max_bound: [3.9, 4.0, 2.0]}
+  geometry_env: 
+    elevation: 0.0
+  office:
+    elevation: 0.0
+    regions: 
+      - {min_bound: [-3.8, -2.6, 0.0], max_bound: [3.8, 2.6, 2.0]}
+  nrg_map:
+    elevation: 0.0
+    filter_statistical_outliers: True
+    filter_std_dev: 1.1
+    filter_num_neighbors: 30
+    regions:
+      - {center: [-4.2, 0.0, 1.1], extent: [9, 18, 1.8], yaw: -23}
+      - {center: [-11.5, -1, 1.1], extent: [5.5, 6.0, 1.8], yaw: -23}
 
+pointcloud_data_path: "base_net/data/pointclouds/"
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
 
@@ -19,12 +44,12 @@ urdf_file:
 
 task_geometry:
   base_link_elevation: 0.709
-  min_pointcloud_elevation: 0.05
+  min_pointcloud_elevation: 0.2
   robot_reach_radius: 0.9
   workspace_radius: 2.0
   position_count: 20
   heading_count: 20
-  check_environment_collisions: False
+  check_environment_collisions: True
 
 task_generation:
   max_ik_count: 500

@@ -84,7 +84,7 @@ def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [
 
     if label is not None:
         all_spheres = {'name': label, 'geometry': all_spheres, 'group': 'spheres'}
-        
+
     return [all_spheres]
 
 def get_regions(regions: PointcloudRegion) -> list[open3d.geometry.TriangleMesh]:
@@ -94,11 +94,11 @@ def get_regions(regions: PointcloudRegion) -> list[open3d.geometry.TriangleMesh]
 
     meshes = []
     for idx, region in enumerate(regions._regions):
-        extent = np.array(region.max_bound) - np.array(region.min_bound)
-        center = 0.5*(np.array(region.max_bound) + np.array(region.min_bound))
+        extent = region.extent
         new_box = open3d.geometry.TriangleMesh.create_box(width = extent[0], height=extent[1], depth=extent[2])
-        new_box.translate(center)
         new_box.translate(-0.5*extent)
+        new_box.rotate(region.R)
+        new_box.translate(region.center)
         new_box.compute_triangle_normals()
         meshes.append({'name': f'region_{idx}', 'geometry': new_box, 'material': transparent_material, 'group': 'regions'})
 

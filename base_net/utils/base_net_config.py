@@ -163,7 +163,13 @@ class TaskGenerationConfig:
             pointcloud_regions[pointcloud_name] = PointcloudRegion(pointclouds[pointcloud_name])
             if 'regions' in pointcloud_config:
                 for region in pointcloud_config['regions']:
-                    pointcloud_regions[pointcloud_name].add_region(np.array(region['min_bound']), np.array(region['max_bound']))
+                    if 'min_bound' in region and 'max_bound' in region:
+                        center = 0.5*(np.array(region['min_bound']) + np.array(region['max_bound']))
+                        extent = np.array(region['max_bound']) - np.array(region['min_bound'])
+                    else:
+                        center = np.array(region['center'])
+                        extent = np.array(region['extent'])
+                    pointcloud_regions[pointcloud_name].add_region(center, extent, region.get('yaw', 0.0))
 
         return TaskGenerationConfig(
             counts = TaskGenerationConfig.TaskGenerationCounts(
@@ -261,7 +267,7 @@ class BaseNetConfig:
                 filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
                 min_elevation=model_config.workspace_floor, 
                 max_elevation=model_config.workspace_height, 
-                elevation_offset=pointcloud_config['elevation']
+                pointcloud_config=pointcloud_config
             )
 
             if name in pointclouds:
@@ -287,7 +293,7 @@ class BaseNetConfig:
         )
 
     @staticmethod
-    def load_pointcloud(filepath: str, min_elevation: float, max_elevation: float, elevation_offset: float) -> tuple[str, open3d.geometry.PointCloud]:
+    def load_pointcloud(filepath: str, min_elevation: float, max_elevation: float, pointcloud_config: dict) -> tuple[str, open3d.geometry.PointCloud]:
         height_filter = open3d.geometry.AxisAlignedBoundingBox(
             min_bound=[-1e10, -1e10, min_elevation], 
             max_bound=[1e10, 1e10, max_elevation]
@@ -303,12 +309,15 @@ class BaseNetConfig:
 
         pointcloud_o3d = open3d.io.read_point_cloud(filepath)
         if not pointcloud_o3d.has_normals():
-            # pointcloud_o3d.estimate_normals()
             raise RuntimeError(f"Cannot load pointcloud from file \"{filepath}\" - it does not contain normals")
         
-        pointcloud_o3d.translate([0, 0, -elevation_offset])
+        pointcloud_o3d.translate([0, 0, -pointcloud_config.get('elevation', 0.0)])
         pointcloud_o3d = pointcloud_o3d.crop(height_filter)
         pointcloud_o3d = pointcloud_o3d.voxel_down_sample(0.05)
+        if pointcloud_config.get('filter_statistical_outliers', False):
+            std_dev = pointcloud_config.get('filter_std_dev', 1.5)
+            num_neighbors = pointcloud_config.get('filter_num_neighbors', 10)
+            pointcloud_o3d, _ = pointcloud_o3d.remove_statistical_outlier(num_neighbors, std_dev, True)
         return name, pointcloud_o3d
     
     @staticmethod 
