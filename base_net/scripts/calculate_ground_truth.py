@@ -148,7 +148,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     geometries = geometries + task_visualization.get_base_arrows(base_poses, valid_base_indices)
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: BaseNetConfig, pointcloud):
+def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: BaseNetConfig, pointcloud = None):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. Reachable base link poses will be colored green, 
@@ -156,7 +156,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
     will also be rendered. All input must be defined in the task frame
     """
     geometries = []
-    if (len(pointcloud.points)) > 0: geometries.append({'geometry': pointcloud, 'name': 'environment'})
+    if pointcloud is not None and (len(pointcloud.points)) > 0: geometries.append({'geometry': pointcloud, 'name': 'environment'})
 
     # Render the base poses
     geometries += task_visualization.get_base_arrows(goal_poses, solution_success)
@@ -247,15 +247,6 @@ def main():
             base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
             base_poses_in_world.position[:,2] = model_config.base_link_elevation
 
-            # Transform the pointcloud from the world frame to the task frame
-            task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
-            task_tform_world_mat = np.eye(4)
-            task_tform_world_mat[:3, :3] = task_R_world
-            task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
-
-            pointcloud_in_world = copy.deepcopy(model_config.pointclouds[task_name])
-            pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
-
             base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
             # Filter out poses which the robot cannot reach even without obstacles
@@ -263,13 +254,22 @@ def main():
             num_valid_poses = torch.sum(valid_pose_indices)
 
             if model_config.model.debug:
-                visualize_solution(valid_pose_indices, solution_states, task_pose_in_world, model_config, pointcloud_in_world)
+                visualize_solution(valid_pose_indices, solution_states, task_pose_in_world, model_config)
 
             if not model_config.check_environment_collisions or num_valid_poses == 0:
                 solution_success = valid_pose_indices
                 t2 = time.perf_counter()
                 print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
             else:
+                # Transform the pointcloud from the world frame to the task frame
+                task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
+                task_tform_world_mat = np.eye(4)
+                task_tform_world_mat[:3, :3] = task_R_world
+                task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
+
+                pointcloud_in_world = copy.deepcopy(model_config.pointclouds[task_name])
+                pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
+
                 # Solve all remaining poses in batches
                 obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
                 valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
