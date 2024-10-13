@@ -238,6 +238,24 @@ def main():
     model_config = BaseNetConfig.from_yaml_file(args.config_file, load_tasks=False)
     task_config = model_config.task_generation
 
+    # In the case of no collisions, do a grid based generation on z, pitch, roll
+    if not model_config.check_environment_collisions:
+        num_z, num_pitch, num_roll = model_config.task_generation.counts.empty
+
+        z_range = torch.linspace(model_config.model.workspace_floor, model_config.model.workspace_height, num_z)
+        pitch_range = torch.linspace(-torch.pi/2, torch.pi/2, num_pitch)
+        roll_range = torch.linspace(-torch.pi, torch.pi, num_roll)
+
+        z_grid, pitch_grid, roll_grid = torch.meshgrid(z_range, pitch_range, roll_range, indexing='ij')
+        task_grid = torch.stack([z_grid, pitch_grid, roll_grid]).reshape(3, -1).T
+
+        filename = os.path.abspath(os.path.join(model_config.task_path, 'empty_task.pt'))
+        torch.save(task_grid, filename)
+        print(f'Saved {task_grid.numel() // 3} task poses to {filename}')
+
+        exit(0)
+
+    # If we are checking collisions then we need to sample based on the pointcloud geometry
     for pointcloud_name, pointcloud in model_config.pointclouds.items():
         surface_poses = sample_surface_poses(pointcloud, model_config)
         close_poses = sample_distant_poses(pointcloud, model_config, task_config.counts.close, task_config.offsets.close_min, task_config.offsets.close_max)

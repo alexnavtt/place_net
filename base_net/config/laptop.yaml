@@ -29,6 +29,7 @@ task_geometry:
 task_generation:
   max_ik_count: 500
   counts:
+    empty: [100, 50, 20]
     surface: 300
     close: 300
     far: 300

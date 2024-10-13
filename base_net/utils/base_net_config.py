@@ -97,6 +97,12 @@ class BaseNetModelConfig:
 class TaskGenerationConfig:
     @dataclass
     class TaskGenerationCounts:
+        # Poses sampled with no obstacles (i.e. an empty environment)
+        # Represented as a list with the number of z sample, pitch
+        # samples, and roll samples respectively for a uniform
+        # grid sampling approach
+        empty: tuple[int]
+
         # Poses sampled at a very small offset from points
         # in the pointcloud, and oriented with the end-effector
         # facing the surface. Roll is sampled randomly
@@ -151,6 +157,7 @@ class TaskGenerationConfig:
 
         return TaskGenerationConfig(
             counts = TaskGenerationConfig.TaskGenerationCounts(
+                empty  = tuple(config['counts']['empty']) if 'empty' in config['counts'] else 0,
                 surface= config['counts']['surface'] if 'surface' in config['counts'] else 0,
                 close  = config['counts']['close'  ] if 'close'   in config['counts'] else 0,
                 far    = config['counts']['far'    ] if 'far'     in config['counts'] else 0,
