@@ -23,11 +23,12 @@ task_geometry:
   surface_task_offset: 0.15
   position_count: 20
   heading_count: 20
-  check_environment_collisions: True
+  check_environment_collisions: False
 
 task_generation:
   max_ik_count: null
   counts:
+    empty: [100, 50, 20]
     surface: 1000
     close: 1000
     far: 1000

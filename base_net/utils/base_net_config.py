@@ -7,6 +7,7 @@ import yaml
 import torch
 import open3d
 import numpy as np
+import scipy.spatial.transform
 from torch import Tensor
 from curobo.types.robot import RobotConfig
 from curobo.types.base import TensorDeviceType
@@ -304,6 +305,24 @@ class BaseNetConfig:
 
         filepath = yaml_config['task_data_path']
         tasks = {}
+
+        # Handle the special case of no collisions
+        if not yaml_config['task_geometry']['check_environment_collisions']:
+            # Of shape (N, 3) with each tuple arranged as (z, pitch, roll)
+            data = torch.load(os.path.join(filepath, 'empty_task.pt'))
+
+            positions = torch.zeros(data.size(0), 3)
+            positions[:, 2] = data[:, 0]
+
+            rpy_vec = torch.zeros(data.size(0), 3)
+            rpy_vec[:, 1:] = data[:, 1:]
+            quaternions = torch.tensor(
+                [scipy.spatial.transform.Rotation.from_euler("ZYX", rpy, degrees=False).as_quat(scalar_first=True) for rpy in rpy_vec]
+            )
+
+            tasks = {'empty': torch.concatenate([positions, quaternions], dim=1).float()}
+            print(tasks['empty'])
+            return tasks
 
         for pointcloud_name in pointclouds.keys():
             with open(os.path.join(filepath, f'{pointcloud_name}.task'), 'r') as f: 

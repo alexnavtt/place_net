@@ -70,13 +70,13 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None
     ik_config = IKSolverConfig.load_from_robot_config(
         model_config.robot,
         world_config,
-        rotation_threshold=0.1,
-        position_threshold=0.01,
+        rotation_threshold=0.01,
+        position_threshold=0.001,
         num_seeds=10,
         self_collision_check=True,
         self_collision_opt=True,
         tensor_args=tensor_args,
-        use_cuda_graph=True
+        use_cuda_graph=True,
     ) 
 
     return IKSolver(ik_config)
@@ -254,7 +254,7 @@ def main():
             num_valid_poses = torch.sum(valid_pose_indices)
 
             if model_config.model.debug:
-                visualize_solution(valid_pose_indices, solution_states, task_pose_in_world, model_config)
+                visualize_task(task_pose_in_world, None, base_poses_in_world, valid_pose_indices)
 
             if not model_config.check_environment_collisions or num_valid_poses == 0:
                 solution_success = valid_pose_indices
