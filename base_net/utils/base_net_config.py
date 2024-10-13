@@ -321,21 +321,10 @@ class BaseNetConfig:
             )
 
             tasks = {'empty': torch.concatenate([positions, quaternions], dim=1).float()}
-            print(tasks['empty'])
-            return tasks
 
-        for pointcloud_name in pointclouds.keys():
-            with open(os.path.join(filepath, f'{pointcloud_name}.task'), 'r') as f: 
-                task_config = yaml.safe_load(f)
-
-            num_tasks = len(task_config)
-            task_tensor = torch.empty([num_tasks, 7])
-
-            for idx in range(num_tasks):
-                task_tensor[idx, :3] = torch.Tensor(task_config[idx]['position'])
-                task_tensor[idx, 3:] = torch.Tensor(task_config[idx]['orientation'])
-
-            tasks[pointcloud_name] = task_tensor
+        else:
+            for pointcloud_name in pointclouds.keys():
+                tasks[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}_task.pt'), map_location='cpu').float()
 
         return tasks
     

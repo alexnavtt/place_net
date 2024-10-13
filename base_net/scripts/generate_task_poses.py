@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 import scipy.spatial
 
-from curobo.types.math import Pose as cuRoboPose
+from torch import Tensor
 from curobo.types.robot import RobotConfig
 
 from base_net.utils import task_visualization
@@ -69,7 +69,7 @@ def are_spheres_in_collision(
         
     return False
 
-def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: cuRoboPose, close_poses: cuRoboPose, far_poses: cuRoboPose, robot_config: RobotConfig) -> None:
+def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: RobotConfig) -> None:
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
@@ -89,7 +89,7 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: 
 
     open3d.visualization.draw(geometry=geometries)
 
-def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig, count: int, min_offset: float, max_offset: float) -> cuRoboPose:
+def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig, count: int, min_offset: float, max_offset: float) -> Tensor:
     """
     Generate poses at random locations in the environment and only accept those that contain obstacles 
     in a given 'maximum distance' sphere while having no obstacles within a 'minimum distance' sphere
@@ -154,16 +154,16 @@ def sample_distant_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         ): continue 
 
         # Append the pose to the samples
-        position_tensor = torch.concatenate([position_tensor, torch.Tensor(point).unsqueeze(0)], dim=0)
-        quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quat).unsqueeze(0)], dim=0)
+        position_tensor = torch.concatenate([position_tensor, torch.tensor(point).unsqueeze(0)], dim=0)
+        quaternion_tensor = torch.concatenate([quaternion_tensor, torch.tensor(quat).unsqueeze(0)], dim=0)
         points_reminaing -= 1
 
     if points_reminaing != 0:
         print(f"WARNING: Out of the {model_config.task_generation.counts.close} points requested to be sampled, we could only find {model_config.task_generation.counts.close - points_reminaing}")
 
-    return cuRoboPose(position_tensor.to(model_config.model.device), quaternion_tensor.to(model_config.model.device))
+    return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
-def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig) -> cuRoboPose:
+def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: BaseNetConfig) -> Tensor:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -231,7 +231,7 @@ def sample_surface_poses(pointcloud: open3d.geometry.PointCloud, model_config: B
         quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quaternion).unsqueeze(0)], dim=0)
         points_remaining -= 1
 
-    return cuRoboPose(position_tensor.to(model_config.model.device), quaternion_tensor.to(model_config.model.device))
+    return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
 def main():
     args = load_arguments()
@@ -261,17 +261,12 @@ def main():
         close_poses = sample_distant_poses(pointcloud, model_config, task_config.counts.close, task_config.offsets.close_min, task_config.offsets.close_max)
         far_poses = sample_distant_poses(pointcloud, model_config, task_config.counts.far, task_config.offsets.far_min, task_config.offsets.far_max)
 
-        sample_poses = cuRoboPose(
-            position=torch.concatenate([surface_poses.position, close_poses.position, far_poses.position], dim=0),
-            quaternion=torch.concatenate([surface_poses.quaternion, close_poses.quaternion, far_poses.quaternion], dim=0)
-        )
+        sample_poses: Tensor = torch.concatenate([surface_poses, close_poses, far_poses], dim=0)
 
         if model_config.task_path is not None:
-            with open(os.path.join(model_config.task_path, f'{pointcloud_name}.task'), 'w') as f:
-                tasks = []
-                for position, orientation in zip(sample_poses.position, sample_poses.quaternion):
-                    tasks.append({'position': position.cpu().numpy().tolist(), 'orientation': orientation.cpu().numpy().tolist()})
-                yaml.dump(tasks, f)
+            filename = os.path.join(model_config.task_path, f'{pointcloud_name}_task.pt')
+            torch.save(sample_poses, filename)
+            print(f'Saved {sample_poses.size(0)} task poses to {filename}')
         else:
             print("No output path provided, generated poses have not been saved")
     

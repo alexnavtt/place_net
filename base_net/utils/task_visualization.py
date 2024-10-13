@@ -64,11 +64,11 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> li
 
     return [{'geometry': composite_mesh, 'name': 'base_arrows'}]
 
-def get_spheres(spheres: torch.Tensor, task_poses: cuRoboPose, color: list = [0.5, 0.5, 1.0]) -> list[open3d.geometry.TriangleMesh]:
+def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [0.5, 0.5, 1.0]) -> list[open3d.geometry.TriangleMesh]:
     all_spheres = open3d.geometry.TriangleMesh()
-    for task_idx in range(task_poses.batch):
-        translation = task_poses.position[task_idx, :].squeeze().cpu().numpy()
-        rotation = task_poses.quaternion[task_idx, :].squeeze().cpu().numpy()
+    for task_idx in range(task_poses.size(0)):
+        translation = task_poses[task_idx, :3].cpu().numpy()
+        rotation = task_poses[task_idx, 3:].cpu().numpy()
         transform = np.eye(4)
         transform[:3, :3] = scipy.spatial.transform.Rotation.from_quat(rotation, scalar_first=True).as_matrix()
         transform[:3,  3] = translation
