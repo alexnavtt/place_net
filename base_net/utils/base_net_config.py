@@ -9,12 +9,14 @@ import open3d
 import numpy as np
 import scipy.spatial.transform
 from torch import Tensor
+from torch.nn import BCEWithLogitsLoss
 from curobo.types.robot import RobotConfig
 from curobo.types.base import TensorDeviceType
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 from base_net.utils.invert_robot_model import main as invert_urdf
 from base_net.utils.pointcloud_region import PointcloudRegion
+from base_net.models.loss import FocalLoss, DiceLoss
 
 # Allow running even without ROS
 try:
@@ -41,6 +43,9 @@ class BaseNetModelConfig:
 
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
+
+    # Loss function type
+    loss_fn_type: Type[Union[BCEWithLogitsLoss, DiceLoss, FocalLoss]] = DiceLoss
 
     # Device to run on for PyTorch operations. 
     # NOTE: cuRobo (and hence ground truth calculations) require a CUDA device 
@@ -72,6 +77,18 @@ class BaseNetModelConfig:
         elif pointcloud_encoder_lable.lower() in ['cnn', 'cnnencoder']:
             pointcloud_encoder_type = CNNEncoder
 
+        # Determine which loss function to use
+        loss_fn_label: str = model_settings.get('loss_function', 'dice').lower()
+        match loss_fn_label:
+            case 'bce' | 'bce_loss' | 'bceloss' | 'binary_cross_entropy' | 'binary-cross-entropy':
+                loss_fn_type = BCEWithLogitsLoss
+            case 'dice' | 'dice_loss' | 'diceloss':
+                loss_fn_type = DiceLoss
+            case 'focal' | 'focal_loss' | 'focalloss':
+                loss_fn_type = FocalLoss
+            case _:
+                raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
+
         try:
             # If the device is an integer, interpret it as a cuda device index
             torch_device = torch.device(f"cuda:{(int(model_settings['cuda_device']))}")
@@ -89,6 +106,7 @@ class BaseNetModelConfig:
             debug=model_settings['debug'],
             learning_rate=model_settings['learning_rate'],
             encoder_type=pointcloud_encoder_type,
+            loss_fn_type=loss_fn_type,
             device=torch_device,
             log_base_path=model_settings.get('log_base_path', None),
             checkpoint_base_path=model_settings.get('checkpoint_base_path', None),

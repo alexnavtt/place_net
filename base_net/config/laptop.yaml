@@ -3,25 +3,26 @@ pointclouds:
     elevation: 0.1
     regions:
       - {min_bound: [-2.52, -1.95, 0.20], max_bound: [2.41, 4.01, 2.0]}
+
   attic-draft:
-    elevation: 0.0
     regions: 
       - {min_bound: [-4.0, -3.85, 0.0], max_bound: [-0.5, 3.2, 2.0]}
       - {min_bound: [ 1.4, -3.85, 0.0], max_bound: [ 4.7, 3.2, 2.0]}
       - {min_bound: [-5.5, -2.30, 0.0], max_bound: [ 5.8, 2.0, 2.1]}
       - {min_bound: [ 5.8, -3.80, 0.0], max_bound: [ 8.5, 2.0, 2.1]}
+
   URSA_sample_valves:
     elevation: -1.0
     regions: 
       - {min_bound: [-3.7, -3.8, 0.0], max_bound: [3.9, 4.0, 2.0]}
-  geometry_env: 
-    elevation: 0.0
+
+  geometry_env: {}
+
   office:
-    elevation: 0.0
     regions: 
       - {min_bound: [-3.8, -2.6, 0.0], max_bound: [3.8, 2.6, 2.0]}
+
   nrg_map:
-    elevation: 0.0
     filter_statistical_outliers: True
     filter_std_dev: 1.1
     filter_num_neighbors: 30
@@ -49,7 +50,7 @@ task_geometry:
   workspace_radius: 2.0
   position_count: 20
   heading_count: 20
-  check_environment_collisions: True
+  check_environment_collisions: False
 
 task_generation:
   max_ik_count: 500
@@ -70,10 +71,11 @@ task_generation:
 
 model_settings:
   pointcloud_encoder: 'PointNet'
+  loss_function: 'Dice' # BCE, Dice, Focal
   cuda_device: 0
   batch_size: 32
   learning_rate: 0.0005
-  debug: True
+  debug: False
   log_base_path: 'base_net/data/runs/latest/'
   checkpoint_base_path: 'base_net/data/checkpoints/'
   checkpoint_frequency: 50

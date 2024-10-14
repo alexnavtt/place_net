@@ -15,7 +15,6 @@ from curobo.types.math import Pose as cuRoboPose
 
 from base_net.models.base_net import BaseNet
 from base_net.models.basenet_dataset import BaseNetDataset
-from base_net.models.loss import DiceLoss, FocalLoss
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils import task_visualization
 from base_net.scripts.calculate_ground_truth import load_base_pose_array, flatten_task
@@ -138,11 +137,7 @@ def main():
         with open(os.path.join(checkpoint_path, 'config.yaml'), 'w') as f:
             yaml.dump(base_net_config.yaml_source, f)
 
-    dice_loss_fn = DiceLoss()
-    bce_loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5], device=base_net_config.model.device))
-    focal_loss_fn = FocalLoss(device=base_net_config.model.device)
-
-    loss_fn = focal_loss_fn
+    loss_fn = base_net_config.model.loss_fn_type()
 
     # Load the data
     data_split = [60, 20, 20]
