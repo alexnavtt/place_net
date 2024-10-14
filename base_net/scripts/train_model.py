@@ -171,11 +171,12 @@ def main():
         return
     
     for epoch in range(start_epoch, 1000):
-        visualize = False
         print(f'Epoch {epoch}:')
         print('Training:')
-        aggregate_loss = 0
+        base_net_model.train()
         num_batches = 0
+        aggregate_loss = aggregate_error = max_error = 0.0
+        min_error = 1.0
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
             optimizer.zero_grad()
             output = base_net_model(pointcloud_list, task_tensor)      
@@ -184,27 +185,54 @@ def main():
             loss.backward()
             optimizer.step()
 
-            aggregate_loss += loss.item()
             num_batches += 1
 
+            # Logging statistics
+            aggregate_loss += loss.item()
+            binary_output = torch.sigmoid(output)
+            binary_output[binary_output > 0.5] = 1
+            binary_output[binary_output < 0.5] = 0
+            error = (binary_output != target).float().mean().item()
+            aggregate_error += error
+            max_error = max(error, max_error)
+            min_error = min(error, min_error)
+
             # Debug visualization
-            if visualize:
+            if base_net_config.model.debug:
                 visualize_solution(output, task_tensor, base_net_config, solution, pointcloud_list)
+
         writer.add_scalar('Loss/train', aggregate_loss/num_batches, epoch)
+        writer.add_scalar('AvgError/train', aggregate_error*100/num_batches, epoch)
+        writer.add_scalar('MaxError/train', max_error*100, epoch)
+        writer.add_scalar('MinError/train', min_error*100, epoch)
 
         print('Validating:')
-        aggregate_loss = 0
         num_batches = 0
+        aggregate_loss = aggregate_error = max_error = 0.0
+        min_error = 1.0
         with torch.no_grad():
+            base_net_model.eval()
             for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
                 output = base_net_model(pointcloud_list, task_tensor)      
                 target = solution.to(base_net_config.model.device)          
                 loss = loss_fn(output, target)
 
-                aggregate_loss += loss.item()
                 num_batches += 1
 
+                # Logging statistics
+                aggregate_loss += loss.item()
+                binary_output = torch.sigmoid(output)
+                binary_output[binary_output > 0.5] = 1
+                binary_output[binary_output < 0.5] = 0
+                error = (binary_output != target).float().mean().item()
+                aggregate_error += error
+                max_error = max(error, max_error)
+                min_error = min(error, min_error)
+
             writer.add_scalar('Loss/validate', aggregate_loss/num_batches, epoch)
+            writer.add_scalar('AvgError/validate', aggregate_error*100/num_batches, epoch)
+            writer.add_scalar('MaxError/validate', max_error*100, epoch)
+            writer.add_scalar('MinError/validate', min_error*100, epoch)
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
@@ -212,7 +240,7 @@ def main():
                 model_config = base_net_config, 
                 writer       = writer, 
                 step         = epoch//10,
-                pointcloud   = pointcloud_list[0].cpu(), 
+                pointcloud   = pointcloud_list[0].cpu() if pointcloud_list[0] is not None else None, 
                 model_output = output[0, :, :, :].cpu(), 
                 solution     = solution[0, :, :, :],
                 task         = task_tensor[0, :]
