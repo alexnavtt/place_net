@@ -41,7 +41,7 @@ def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> 
 
     return [{'name': f'task_arrows{suffix}', 'geometry': arrows, 'group': 'task_arrows'}]
 
-def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> list[open3d.geometry.TriangleMesh]:
+def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None, prefix: str = '') -> list[open3d.geometry.TriangleMesh]:
     if success is None:
         success = torch.zeros(pose.batch)
 
@@ -63,7 +63,7 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None) -> li
 
         composite_mesh += new_arrow.compute_triangle_normals()
 
-    return [{'geometry': composite_mesh, 'name': 'base_arrows'}]
+    return [{'geometry': composite_mesh, 'name': f'{prefix}base_arrows', 'group': 'base_arrows'}]
 
 def get_spheres(spheres: torch.Tensor, task_poses: torch.Tensor, color: list = [0.5, 0.5, 1.0], label = None) -> list[open3d.geometry.TriangleMesh]:
     all_spheres = open3d.geometry.TriangleMesh()
