@@ -337,6 +337,22 @@ class BaseNetConfig:
             num_neighbors = pointcloud_config.get('filter_num_neighbors', 10)
             pointcloud_o3d, _ = pointcloud_o3d.remove_statistical_outlier(num_neighbors, std_dev, True)
         return name, pointcloud_o3d
+
+    @staticmethod
+    def get_empty_env_task_grid(filepath: str):
+        # Of shape (N, 3) with each tuple arranged as (z, pitch, roll)
+        data = torch.load(os.path.join(filepath, 'empty_task.pt'))
+
+        positions = torch.zeros(data.size(0), 3)
+        positions[:, 2] = data[:, 0]
+
+        rpy_vec = torch.zeros(data.size(0), 3)
+        rpy_vec[:, 1:] = data[:, 1:]
+        quaternions = torch.tensor(
+            [scipy.spatial.transform.Rotation.from_euler("ZYX", rpy, degrees=False).as_quat(scalar_first=True) for rpy in rpy_vec]
+        )
+
+        return torch.concatenate([positions, quaternions], dim=1).float()
     
     @staticmethod 
     def load_tasks(yaml_config: dict, pointclouds: dict):
@@ -346,19 +362,7 @@ class BaseNetConfig:
 
         # Handle the special case of no collisions
         if not yaml_config['task_geometry']['check_environment_collisions']:
-            # Of shape (N, 3) with each tuple arranged as (z, pitch, roll)
-            data = torch.load(os.path.join(filepath, 'empty_task.pt'))
-
-            positions = torch.zeros(data.size(0), 3)
-            positions[:, 2] = data[:, 0]
-
-            rpy_vec = torch.zeros(data.size(0), 3)
-            rpy_vec[:, 1:] = data[:, 1:]
-            quaternions = torch.tensor(
-                [scipy.spatial.transform.Rotation.from_euler("ZYX", rpy, degrees=False).as_quat(scalar_first=True) for rpy in rpy_vec]
-            )
-
-            tasks = {'empty': torch.concatenate([positions, quaternions], dim=1).float()}
+            tasks = {'empty': BaseNetConfig.get_empty_env_task_grid(filepath)}
 
         else:
             for pointcloud_name in pointclouds.keys():
