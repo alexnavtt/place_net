@@ -1,5 +1,21 @@
 import torch
 import numpy as np
+from torch.nn.functional import pad
+from base_net.utils.base_net_config import BaseNetModelConfig
+
+def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
+    device = pointclouds[0].device
+    pointcloud_counts = [pc.size()[0] for pc in pointclouds]
+    max_point_count = max(pointcloud_counts)
+    pointcloud_tensor = torch.empty(size=(len(pointclouds), max_point_count, 6), device=device)
+    padding_masks = torch.zeros((len(pointclouds), max_point_count), device=device, dtype=bool)
+    for pointcloud_idx, point_count in enumerate(pointcloud_counts):
+        if point_count < max_point_count:
+            pointclouds[pointcloud_idx] = pad(input=pointclouds[pointcloud_idx], pad=(0, 0, 0, max_point_count - point_count), value=0)
+            padding_masks[pointcloud_idx, :point_count] = True
+        pointcloud_tensor[pointcloud_idx, :, :] = pointclouds[pointcloud_idx]
+    
+    return pointcloud_tensor, padding_masks
 
 class PointNetEncoder(torch.nn.Module):
     def __init__(self):
@@ -103,6 +119,31 @@ class PointNetEncoder(torch.nn.Module):
         transformation: torch.Tensor = self.feature_transform_linear(transformation_features)
         transformation = transformation + self.tnet_identity_matrix.repeat((batch_size, 1))
         return transformation.view((batch_size, 64, 64))
+    
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor, config: BaseNetModelConfig) -> torch.Tensor:
+        # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
+        pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds)
+
+        # Step 2: Determine which ones are within the allowable elevations
+        task_xy, task_z = task_position.view([-1, 1, 3]).split([2, 1], dim=-1)
+        pointcloud_xy, pointcloud_z, pointcloud_normals_xy, pointcloud_normals_z = pointcloud_tensor.split([2, 1, 2, 1], dim=-1)
+        valid_elevations = (pointcloud_z < config.workspace_height).squeeze()
+
+        # Step 3: Transform the pointclouds to the task invariant frame
+        # TODO: Reorder these steps so that matrix multiplication happens after distance filtering
+        pointcloud_xy -= task_xy
+        torch.matmul(pointcloud_xy, task_rotation, out=pointcloud_xy)
+        torch.matmul(pointcloud_normals_xy, task_rotation, out=pointcloud_normals_xy)
+
+        # Step 4: Filter out all points too far from the task pose and pad these again
+        distances_from_task = torch.norm(pointcloud_xy, dim=-1)
+        indices_in_range = torch.logical_and(distances_from_task < config.workspace_radius, valid_elevations)
+
+        valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
+        filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
+        filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds)
+
+        return filtered_pointclouds_tensor.to(config.device), padding_mask
     
 class CNNEncoder(torch.nn.Module):
     def __init__(self, radius: float):
