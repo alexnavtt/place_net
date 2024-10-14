@@ -1,6 +1,5 @@
-import numpy as np
 import torch
-from torch.nn.functional import relu
+import numpy as np
 
 class PointNetEncoder(torch.nn.Module):
     def __init__(self):
@@ -106,9 +105,26 @@ class PointNetEncoder(torch.nn.Module):
         return transformation.view((batch_size, 64, 64))
     
 class CNNEncoder(torch.nn.Module):
-    def __init__(self, device="cuda"):
+    def __init__(self, radius: float):
         super(CNNEncoder, self).__init__()
         self.num_channels = 3 + 3 # xyz plus normals
+        self._radius = radius
+        self._resolution = 50
+        self._max = self._radius * np.ones(3)
+        self._min = -self._max
 
-        self.conv1 = torch.nn.Conv3d(in_channels=self.num_channels, out_channels=2, kernel_size=5, stride=3, device=device)
-        self.conv2 = torch.nn.Conv3d(in_channels=2, out_channels=1, kernel_size=3, stride=1, device=device)
+        self.conv1 = torch.nn.Conv3d(in_channels=self.num_channels, out_channels=2, kernel_size=5, stride=3)
+        self.conv2 = torch.nn.Conv3d(in_channels=2, out_channels=1, kernel_size=3, stride=1)
+
+    def voxelize(self, pointclouds: torch.Tensor, valid_points: torch.Tensor):
+        batch_size, num_points, _ = pointclouds.size()
+
+        voxel_grid = torch.zeros((batch_size, self._resolution, self._resolution, self._resolution, 4), device=pointclouds.device)
+        grid_indices = torch.floor((pointclouds[:, :, :3] - self._min) / (self._max - self._min) * (self._resolution - 1))
+        grid_indices = torch.clamp(grid_indices.long(), 0, self._resolution-1)
+        grid_indices = grid_indices[valid_points]
+
+        batch_indices = torch.arange(batch_size, device=pointclouds.device).view(-1, 1).expand(-1, num_points)
+        batch_indices = batch_indices[valid_points]
+
+        voxel_grid[batch_indices, grid_indices[:, 0], grid_indices[:, 1], grid_indices[:, 2], 0] = 1
