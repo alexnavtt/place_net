@@ -20,7 +20,7 @@ class BaseNetDataset(Dataset):
         self.data_points = []
         for name in model_config.tasks.keys():
             task_poses = model_config.tasks[name]
-            task_pointcloud = open3d_to_tensor(model_config.pointclouds[name])
+            task_pointcloud = open3d_to_tensor(model_config.pointclouds[name]) if model_config.check_environment_collisions else None
             task_solutions = model_config.solutions[name].float()
 
             N: int = task_poses.size(0)
