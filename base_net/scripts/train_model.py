@@ -33,9 +33,9 @@ def load_test_tasks() -> Tensor:
     return Tensor([[0.0, 0.0, 0.0, 0.4217103, 0.5662352, 0.4180669, -0.5716277]])
 
 def collate_fn(data_tuple) -> tuple[Tensor, list[open3d.geometry.PointCloud]]:
-    pointcloud_list = [pointcloud for task, pointcloud, sol in data_tuple]
-    task_list = [task.unsqueeze(0) for task, pointcloud, sol in data_tuple]
-    sol_list = [sol.unsqueeze(0) for task, pointcloud, sol in data_tuple]
+    pointcloud_list, task_list, sol_list = map(list, zip(*(
+        (pointcloud, task.unsqueeze(0), sol.unsqueeze(0)) for task, pointcloud, sol in data_tuple
+    )))
     task_tensor = torch.concatenate(task_list, dim=0)
     sol_tensor = torch.concatenate(sol_list, dim=0)
     return task_tensor, pointcloud_list, sol_tensor
