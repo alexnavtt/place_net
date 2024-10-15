@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 
 class PoseEncoder(torch.nn.Module):
     def __init__(self):
@@ -15,7 +16,7 @@ class PoseEncoder(torch.nn.Module):
             torch.nn.ReLU(),
         )
 
-    def forward(self, poses: torch.Tensor, max_height: float) -> tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, poses: Tensor, max_height: float) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Given a tensor of input poses, provide an encoded feature vector for those poses, 
         as well as a transformation matrix which transforms points defined in the same
@@ -28,8 +29,10 @@ class PoseEncoder(torch.nn.Module):
             transform - Tensor of shape (batch_size, 4, 4) which can be used to transform 
                         other geometric quantities from the global frame to the pose task
                         invariant frame
-            embedding - Tensor of shape (batch_size, 256) representing a feature embedding
-                        of the task pose in its task invariant frame
+            adjusted_pose - Tensor of shape (batch_size, 3) representing a the z, pitch, roll 
+                            encoding of the task pose in its task invariant frame
+            encoding - Tensor of shape (batch_size, 4) representing the normalized encoding
+                       of the adjusted pose with fields z, pitch, sin(roll), cos(roll)
         """
         batch_size = poses.size()[0]
         task_positions, task_orientations = poses.split([3, 4], dim=1)
@@ -48,12 +51,13 @@ class PoseEncoder(torch.nn.Module):
         task_rot_world[:, 1, 1] = cos_yaw
 
         adjusted_pose = torch.stack([task_positions[:, 2], pitch_angles, roll_angles], dim=1)
-        task_tensor = torch.stack([(task_positions[:, 2] - max_height/2)/max_height, pitch_angles/(torch.pi/2), torch.sin(roll_angles), torch.cos(roll_angles)], dim=1)
-        task_tensor = self.task_embedding(task_tensor)
+        task_encoding = torch.stack([(task_positions[:, 2] - max_height/2)/max_height, pitch_angles/(torch.pi/2), torch.sin(roll_angles), torch.cos(roll_angles)], dim=1)
+        return task_rot_world, adjusted_pose, task_encoding
 
-        return task_rot_world, task_tensor, adjusted_pose
+    def forward(self, encoded_poses: Tensor) -> Tensor:
+        return self.task_embedding(encoded_poses)
 
-    def quaternion_to_euler_tensor(self, quaternions) -> torch.Tensor:
+    def quaternion_to_euler_tensor(self, quaternions) -> Tensor:
         qw, qx, qy, qz = quaternions[:, 0], quaternions[:, 1], quaternions[:, 2], quaternions[:, 3]
 
         # Precompute terms for efficiency

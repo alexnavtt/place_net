@@ -103,11 +103,10 @@ class BaseNet(torch.nn.Module):
                                  False during deployment) 
         """
 
-        # Copy the inputs to the correct device
-        tasks = tasks.to(self.config.device)
-
         # Embed the task poses and get the transforms needed for the pointclouds
-        task_rotation, pose_embeddings, adjusted_task_pose = self.pose_encoder(tasks, max_height=self.config.workspace_height)
+        tasks = tasks.to(self.config.device)
+        task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, max_height=self.config.workspace_height)
+        task_embedding: Tensor = self.pose_encoder(task_encoding)
 
         if self.collision:
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
@@ -119,14 +118,14 @@ class BaseNet(torch.nn.Module):
 
             # Attend the pose data to the pointcloud data
             output, weights = self.attention_layer(
-                query=pose_embeddings.unsqueeze(1),
+                query=task_embedding.unsqueeze(1),
                 key=pointcloud_embeddings.unsqueeze(1),
                 value=pointcloud_embeddings.unsqueeze(1)
             )
 
             final_vector = self.linear_upscale(output.squeeze(1))
         else:
-            final_vector = self.linear_upscale(pose_embeddings)
+            final_vector = self.linear_upscale(task_embedding)
 
         # Scale up to final 20x20x20 grid
         first_3d_layer = final_vector.view([-1, 1, 16, 16, 14])
@@ -159,7 +158,7 @@ class BaseNetLite(torch.nn.Module):
         # Remove preprocessing and indexing steps from gradient calculations
         with torch.no_grad():
             # Encode the pose and get its adjusted representation
-            task_rotation, encoded_tasks, adjusted_task_pose = self._pose_encoder(tasks, max_height=self.config.workspace_height)
+            task_rotation, adjusted_task_pose, task_encoding = self._pose_encoder.encode(tasks, max_height=self.config.workspace_height)
             z, pitch, roll = adjusted_task_pose.split([1, 1, 1], dim=-1)
 
             # Get the grid indices of this task pose
@@ -174,7 +173,7 @@ class BaseNetLite(torch.nn.Module):
             valid_pose_encodings = self._relative_pose_grid[pose_indices]
 
             # Append the task pose information to these relative poses
-            valid_pose_encodings = torch.concat([valid_pose_encodings, encoded_tasks[batch_indices]], dim=1)
+            valid_pose_encodings = torch.concat([valid_pose_encodings, task_encoding[batch_indices]], dim=1)
 
             # Preprocess the pointclouds to get them in a valid form
             task_positions = tasks[:, :3]
