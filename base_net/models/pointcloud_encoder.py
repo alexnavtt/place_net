@@ -1,10 +1,8 @@
 import torch
 import numpy as np
 from torch.nn.functional import pad
-from base_net.utils.base_net_config import BaseNetModelConfig
 
-def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch.Tensor:
-    device = pointclouds[0].device
+def pad_pointclouds_to_same_size(pointclouds: list[torch.Tensor], device: torch.device) -> torch.Tensor:
     pointcloud_counts = [pc.size()[0] for pc in pointclouds]
     max_point_count = max(pointcloud_counts)
     pointcloud_tensor = torch.empty(size=(len(pointclouds), max_point_count, 6), device=device)
@@ -13,7 +11,7 @@ def pad_pointclouds_to_same_size(self, pointclouds: list[torch.Tensor]) -> torch
         if point_count < max_point_count:
             pointclouds[pointcloud_idx] = pad(input=pointclouds[pointcloud_idx], pad=(0, 0, 0, max_point_count - point_count), value=0)
             padding_masks[pointcloud_idx, :point_count] = True
-        pointcloud_tensor[pointcloud_idx, :, :] = pointclouds[pointcloud_idx]
+        pointcloud_tensor[pointcloud_idx, :, :] = pointclouds[pointcloud_idx].to(device)
     
     return pointcloud_tensor, padding_masks
 
@@ -82,7 +80,8 @@ class PointNetEncoder(torch.nn.Module):
             requires_grad=False
         )
 
-    def forward(self, pointclouds: torch.Tensor):
+    def forward(self, pointclouds: torch.Tensor, point_masks: torch.Tensor):
+        # TODO: Incorporate point masks for pointclouds
         batch_size, num_points, point_dim = pointclouds.size()
         assert point_dim==6, "Points must be structured as xyz, normal-xyz tuples"
 
@@ -120,9 +119,9 @@ class PointNetEncoder(torch.nn.Module):
         transformation = transformation + self.tnet_identity_matrix.repeat((batch_size, 1))
         return transformation.view((batch_size, 64, 64))
     
-    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor, config: BaseNetModelConfig) -> torch.Tensor:
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor, config) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
-        pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds)
+        pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds, config.device)
 
         # Step 2: Determine which ones are within the allowable elevations
         task_xy, task_z = task_position.view([-1, 1, 3]).split([2, 1], dim=-1)

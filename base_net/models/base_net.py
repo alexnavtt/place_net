@@ -1,8 +1,10 @@
 import copy
 
 import torch
+from torch import Tensor
 from base_net.models.pose_encoder import PoseEncoder
 from base_net.utils.base_net_config import BaseNetConfig
+from base_net.models.pose_validity_checker import PoseValidityChecker
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
@@ -87,7 +89,7 @@ class BaseNet(torch.nn.Module):
         # Now that all modules are registered, move them to the appropriate device
         self.to(self.config.device)
 
-    def forward(self, pointclouds: list[torch.Tensor] | torch.Tensor, tasks: torch.Tensor):
+    def forward(self, pointclouds: list[Tensor] | Tensor, tasks: Tensor):
         """
         Perform the forward pass on a model with batch size B. The pointclouds and task poses must be 
         defined in the same frame
@@ -113,7 +115,7 @@ class BaseNet(torch.nn.Module):
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.config)
 
             # Encode the points into a feature vector
-            pointcloud_embeddings: torch.Tensor = self.pointcloud_encoder(pointcloud_tensor)
+            pointcloud_embeddings: Tensor = self.pointcloud_encoder(pointcloud_tensor)
 
             # Attend the pose data to the pointcloud data
             output, weights = self.attention_layer(
@@ -132,4 +134,55 @@ class BaseNet(torch.nn.Module):
 
         return final_3d_grid.squeeze(1)
 
+class BaseNetLite(torch.nn.Module):
+    def __init__(self, config: BaseNetConfig):
+        super(BaseNetLite, self).__init__()
+        self.config = copy.deepcopy(config.model)
+
+        self._pose_encoder = PoseEncoder()
+        self._pointcloud_encoder = self.config.encoder_type()
+        self._classifier = PoseValidityChecker()
+
+        self._base_solution_grid = config.solutions['empty']
+        num_solutions, self._num_z, self._num_pitch, self._num_roll = self._base_solution_grid.size()
+        self._min_z = self.config.workspace_floor
+        self._max_z = self.config.workspace_height
+
+        # Generate a grid of relative poses from the center of the grid
+        x_range = torch.linspace(-1, 1, config.position_count)
+        y_range = torch.linspace(-1, 1, config.position_count)
+        yaw_range = torch.linspace(-torch.pi, torch.pi, config.heading_count)
+        x_grid, y_grid, yaw_grid = self.relative_pose_grid = torch.meshgrid(x_range, y_range, yaw_range, indexing='ij')
+        self._relative_pose_grid = torch.stack([x_grid, y_grid, torch.sin(yaw_grid), torch.cos(yaw_grid)]).reshape(4, -1).T
+    
+    def forward(self, pointclouds: list[Tensor] | Tensor, tasks: Tensor):
+        # Remove preprocessing and indexing steps from gradient calculations
+        with torch.no_grad():
+            # Encode the pose and get its adjusted representation
+            task_rotation, encoded_tasks, adjusted_task_pose = self._pose_encoder(tasks, max_height=self.config.workspace_height)
+            z, pitch, roll = adjusted_task_pose.split([1, 1, 1], dim=-1)
+
+            # Get the grid indices of this task pose
+            z_idx     = torch.floor((z - self._min_z) / (self._max_z - self._min_z) * self._num_z).long().squeeze()
+            pitch_idx = torch.floor((pitch + torch.pi/2) / torch.pi * self._num_pitch).long().squeeze()
+            roll_idx  = torch.floor((roll + torch.pi) / (2*torch.pi) * self._num_roll).long().squeeze()
+            flat_idx  = z_idx * self._num_pitch * self._num_roll + pitch_idx * self._num_roll + roll_idx
+
+            # Retrieve only those poses which are valid without obstacles
+            valid_pose_masks = self._base_solution_grid[flat_idx, :, :, :].flatten(start_dim=1)
+            batch_indices, pose_indices = valid_pose_masks.nonzero(as_tuple=True)
+            valid_pose_encodings = self._relative_pose_grid[pose_indices]
+
+            # Append the task pose information to these relative poses
+            valid_pose_encodings = torch.concat([valid_pose_encodings, encoded_tasks[batch_indices]], dim=1)
+
+            # Preprocess the pointclouds to get them in a valid form
+            task_positions = tasks[:, :3]
+            pointcloud_tensor, padding_mask = self._pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, task_positions, self.config)
+
+        pointcloud_embeddings: Tensor = self._pointcloud_encoder(pointcloud_tensor, padding_mask)
+
+        # Pass these through the classification network
+        output_logit = self._classifier(pointcloud_embeddings, valid_pose_encodings)
+        return output_logit
     

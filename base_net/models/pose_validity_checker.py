@@ -5,8 +5,8 @@ class PoseValidityChecker(torch.nn.Module):
     def __init__(self):
         super(PoseValidityChecker, self).__init__()
 
-        self.pose_encoder = torch.nn.Sequential(
-            torch.nn.Linear(6, 32),
+        self.pose_embedder = torch.nn.Sequential(
+            torch.nn.Linear(8, 32),
             torch.nn.BatchNorm1d(32),
             torch.nn.ReLU(),
 
@@ -34,7 +34,7 @@ class PoseValidityChecker(torch.nn.Module):
 
     def forward(self, pointcloud_embeddings: Tensor, pose_encodings: Tensor):
         # Embed pose from x, y, z, R, P, Y to a higher dimensional representation
-        pose_embeddings: Tensor = self.pose_encoder(pose_encodings)
+        pose_embeddings: Tensor = self.pose_embedder(pose_encodings)
 
         # Determine which parts of the pointcloud are important for this problem
         attended_pointcloud, _ = self.pointcloud_attention(

@@ -376,10 +376,9 @@ class BaseNetConfig:
         filepath = yaml_config['solution_data_path']
         solutions = {}
 
-        if not yaml_config['task_geometry']['check_environment_collisions']:
-            solutions['empty'] = torch.load(os.path.join(filepath, 'empty.pt'), map_location='cpu')
-
-        else:
+        # Always load the empty solution
+        solutions['empty'] = torch.load(os.path.join(filepath, 'empty.pt'), map_location='cpu')
+        if yaml_config['task_geometry']['check_environment_collisions']:
             for pointcloud_name in pointclouds.keys():
                 solutions[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}.pt'), map_location='cpu')
 
