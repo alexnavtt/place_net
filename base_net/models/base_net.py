@@ -114,7 +114,7 @@ class BaseNet(torch.nn.Module):
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.config)
 
             # Encode the points into a feature vector
-            pointcloud_embeddings: Tensor = self.pointcloud_encoder(pointcloud_tensor)
+            pointcloud_embeddings: Tensor = self.pointcloud_encoder(pointcloud_tensor, padding_mask)
 
             # Attend the pose data to the pointcloud data
             output, weights = self.attention_layer(

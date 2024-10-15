@@ -85,6 +85,9 @@ class PointNetEncoder(torch.nn.Module):
         batch_size, num_points, point_dim = pointclouds.size()
         assert point_dim==6, "Points must be structured as xyz, normal-xyz tuples"
 
+        if pointclouds.size(1) == 0:
+            return torch.zeros((batch_size, 1024), device=pointclouds.device, requires_grad=False)
+
         # pointclouds is size (batch_size, num_points, 6)
         pointclouds = pointclouds.permute((0, 2, 1))
         # pointclouds is size (batch_size, 6, num_points)
@@ -140,7 +143,7 @@ class PointNetEncoder(torch.nn.Module):
 
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
         filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
-        filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds)
+        filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds, config.device)
 
         return filtered_pointclouds_tensor.to(config.device), padding_mask
     

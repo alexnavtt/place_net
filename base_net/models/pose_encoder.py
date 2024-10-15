@@ -7,7 +7,7 @@ class PoseEncoder(torch.nn.Module):
 
         # Task embedding layers
         self.task_embedding = torch.nn.Sequential(
-            torch.nn.Linear(in_features=3, out_features=32),
+            torch.nn.Linear(in_features=4, out_features=32),
             torch.nn.BatchNorm1d(num_features=32),
             torch.nn.ReLU(),
 
