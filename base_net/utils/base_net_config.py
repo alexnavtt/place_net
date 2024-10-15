@@ -1,5 +1,6 @@
 import os
 import copy
+import hashlib
 from dataclasses import dataclass, field
 from typing_extensions import Type, Union
 
@@ -23,6 +24,10 @@ try:
     from ament_index_python import get_package_share_directory
 except ModuleNotFoundError:
     pass
+
+def tensor_hash(tensor: Tensor):
+    tensor_bytes = tensor.cpu().numpy().tobytes()
+    return hashlib.sha256(tensor_bytes).hexdigest()
 
 @dataclass
 class BaseNetModelConfig:
@@ -389,9 +394,13 @@ class BaseNetConfig:
         if yaml_config['task_geometry']['check_environment_collisions']:
             for pointcloud_name in pointclouds.keys():
                 if fake_solutions:
-                    solutions[pointcloud_name] = torch.randint(0, 1, (tasks[pointcloud_name].size(0), num_pos, num_pos, num_yaw), dtype=bool)
+                    solutions[pointcloud_name] = torch.randint(0, 2, (tasks[pointcloud_name].size(0), num_pos, num_pos, num_yaw), dtype=bool)
                 else:
-                    solutions[pointcloud_name] = torch.load(os.path.join(solution_filepath, f'{pointcloud_name}.pt'), map_location='cpu')
+                    solution_struct = torch.load(os.path.join(solution_filepath, f'{pointcloud_name}.pt'), map_location='cpu')
+                    current_task_hash = tensor_hash(tasks[pointcloud_name])
+                    if current_task_hash != solution_struct['task_hash']:
+                        raise RuntimeError(f'Your loaded tasks for the environment {pointcloud_name} do not match the version used to calculate the ground truth values!')
+                    solutions[pointcloud_name] = solution_struct['solution_tensor']
 
         return solutions
     

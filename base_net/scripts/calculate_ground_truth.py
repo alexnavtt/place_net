@@ -28,7 +28,7 @@ cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
 from base_net.utils import task_visualization
-from base_net.utils.base_net_config import BaseNetConfig  
+from base_net.utils.base_net_config import BaseNetConfig, tensor_hash
 
 def load_arguments():
     """
@@ -294,7 +294,8 @@ def main():
             sol_tensor[task_pose_idx, :, :, :] = solution_success.view(model_config.position_count, model_config.position_count, model_config.heading_count)
 
         if model_config.solution_path is not None:
-            torch.save(sol_tensor, os.path.join(model_config.solution_path, f'{task_name}.pt'))
+            solution_path = os.path.join(model_config.solution_path, f'{task_name}.pt')
+            torch.save({'solution_tensor': sol_tensor, 'task_hash': tensor_hash(task_pose_tensor)}, solution_path)
 
 if __name__ == "__main__":
     main()
