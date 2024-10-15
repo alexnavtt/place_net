@@ -293,14 +293,16 @@ class BaseNetConfig:
             pointclouds[name] = pointcloud
 
         task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config, pointclouds)
+        tasks     = BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None
+        solutions = BaseNetConfig.load_solutions(yaml_config, pointclouds, yaml_config.get('fake_solutions', False), tasks) if load_solutions else None
 
         return BaseNetConfig(
             yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
             task_path=yaml_config.get('task_data_path', None),
-            tasks=BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None,
+            tasks=tasks,
             solution_path=yaml_config.get('solution_data_path', None),
-            solutions=BaseNetConfig.load_solutions(yaml_config, pointclouds) if load_solutions else None,
+            solutions=solutions,
             robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_generation=task_generation_config,
@@ -349,21 +351,22 @@ class BaseNetConfig:
         rpy_vec = torch.zeros(data.size(0), 3)
         rpy_vec[:, 1:] = data[:, 1:]
         quaternions = torch.tensor(
-            [scipy.spatial.transform.Rotation.from_euler("ZYX", rpy, degrees=False).as_quat(scalar_first=True) for rpy in rpy_vec]
+            np.array([scipy.spatial.transform.Rotation.from_euler("ZYX", rpy, degrees=False).as_quat(scalar_first=True) for rpy in rpy_vec])
         )
 
         return torch.concatenate([positions, quaternions], dim=1).float()
     
     @staticmethod 
-    def load_tasks(yaml_config: dict, pointclouds: dict):
+    def load_tasks(yaml_config: dict, pointclouds: dict) -> dict[str, Tensor]:
 
         filepath = yaml_config['task_data_path']
         tasks = {}
 
-        # Handle the special case of no collisions
+        # Check if we should load the special case of no collisions
         if not yaml_config['task_geometry']['check_environment_collisions']:
             tasks = {'empty': BaseNetConfig.get_empty_env_task_grid(filepath)}
 
+        # Then check if collision checked tasks are enabled
         else:
             for pointcloud_name in pointclouds.keys():
                 tasks[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}_task.pt'), map_location='cpu').float()
@@ -371,16 +374,24 @@ class BaseNetConfig:
         return tasks
     
     @staticmethod 
-    def load_solutions(yaml_config: dict, pointclouds: dict):
+    def load_solutions(yaml_config: dict, pointclouds: dict, fake_solutions: bool = False, tasks: dict[str, Tensor] = None):
 
-        filepath = yaml_config['solution_data_path']
+        solution_filepath = yaml_config['solution_data_path']
         solutions = {}
 
+        num_pos = yaml_config['task_geometry']['position_count']
+        num_yaw = yaml_config['task_geometry']['heading_count']
+
         # Always load the empty solution
-        solutions['empty'] = torch.load(os.path.join(filepath, 'empty.pt'), map_location='cpu')
+        solutions['empty'] = torch.load(os.path.join(solution_filepath, 'empty.pt'), map_location='cpu')
+
+        # Then check if collision checked tasks are enabled
         if yaml_config['task_geometry']['check_environment_collisions']:
             for pointcloud_name in pointclouds.keys():
-                solutions[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}.pt'), map_location='cpu')
+                if fake_solutions:
+                    solutions[pointcloud_name] = torch.randint(0, 1, (tasks[pointcloud_name].size(0), num_pos, num_pos, num_yaw), dtype=bool)
+                else:
+                    solutions[pointcloud_name] = torch.load(os.path.join(solution_filepath, f'{pointcloud_name}.pt'), map_location='cpu')
 
         return solutions
     

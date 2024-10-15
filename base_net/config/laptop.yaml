@@ -33,6 +33,7 @@ pointclouds:
 pointcloud_data_path: "base_net/data/pointclouds/"
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
+fake_solutions: False
 
 curobo_config_file:
   ros_package: spot_curobo_config
@@ -50,7 +51,7 @@ task_geometry:
   workspace_radius: 2.0
   position_count: 20
   heading_count: 20
-  check_environment_collisions: False
+  check_environment_collisions: True
 
 task_generation:
   max_ik_count: 500
@@ -73,7 +74,7 @@ model_settings:
   pointcloud_encoder: 'PointNet'
   loss_function: 'Dice' # BCE, Dice, Focal
   cuda_device: 0
-  batch_size: 32
+  batch_size: 2
   learning_rate: 0.0005
   debug: False
   log_base_path: 'base_net/data/runs/latest/'
