@@ -81,11 +81,10 @@ class PointNetEncoder(torch.nn.Module):
         )
 
     def forward(self, pointclouds: torch.Tensor, point_masks: torch.Tensor):
-        # TODO: Incorporate point masks for pointclouds
         batch_size, num_points, point_dim = pointclouds.size()
         assert point_dim==6, "Points must be structured as xyz, normal-xyz tuples"
 
-        if pointclouds.size(1) == 0:
+        if num_points == 0:
             return torch.zeros((batch_size, 1024), device=pointclouds.device, requires_grad=False)
 
         # pointclouds is size (batch_size, num_points, 6)
@@ -102,6 +101,10 @@ class PointNetEncoder(torch.nn.Module):
         # features is size (batch_size, 64, num_points)
         features = self.pointnet_feature_conv(features)
         # features is size (batch_size, 1024, num_points)
+
+        # Apply the point mask to make sure invalid points cannot participate in max pooling
+        features.masked_fill_(torch.logical_not(point_masks.unsqueeze(1)), -torch.inf)
+
         features = torch.max(features, 2, keepdim=True)[0]
         # features is size (batch_size, 1024, 1)
         features = features.view(batch_size, 1024)
