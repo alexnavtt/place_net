@@ -1,10 +1,17 @@
 pointclouds:
-  - {path: "base_net/data/pointclouds/attic-draft.pcd", elevation: 0.0}
-  - {path: "base_net/data/pointclouds/URSA_sample_valves.pcd", elevation: -1.0}
-  - {path: "base_net/data/pointclouds/geometry_env.pcd", elevation: 0.0}
+  living_room_small: {elevation: 0.1}
+  attic-draft: {}
+  URSA_sample_valves: {elevation: -1.0}
+  geometry_env: {}
+  office: {}
+  nrg_map: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
 
+pointcloud_data_path: "base_net/data/pointclouds/"
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
+fake_solutions: False
+max_ik_count: null
+debug: False
 
 curobo_config_file:
   ros_package: spot_curobo_config
@@ -17,37 +24,55 @@ urdf_file:
 
 task_geometry:
   base_link_elevation: 0.709
-  min_pointcloud_elevation: 0.05
-  robot_reach_radius: 0.9
-  workspace_radius: 2.0
-  surface_task_offset: 0.15
-  position_count: 20
-  heading_count: 20
-  check_environment_collisions: False
+  max_radial_reach: 0.9
+  min_task_elevation: 0.3
+  max_task_elevation: 1.6
+  min_pointcloud_elevation: 0.2
+  max_pointcloud_elevation: 1.7
+  max_pointcloud_radius: 2.0
 
 task_generation:
-  max_ik_count: null
-  counts:
-    empty: [100, 50, 20]
-    surface: 1000
-    close: 1000
-    far: 1000
-    offset: 100
-  surface_offset: 0.15
-  min_offsets:
-    surface: 0.10
-    close: 0.15
-    far: 0.60
-  max_offsets: 
-    close: 0.30
-    far: 0.90
+  visualize: False
+  surface_points: 
+    offset: 0.15
+    min_clearance: 0.0
+    count: 333
+  offset_points:
+    - {name: 'close', offset_bounds: [0.15, 0.30], count: 333} 
+    - {name: 'far'  , offset_bounds: [0.40, 0.90], count: 333} 
+  pointcloud_regions:
+    living_room_small:
+      - {min_bound: [-2.52, -1.95, 0.20], max_bound: [2.41, 4.01, 2.0]}
+    attic-draft:
+      - {min_bound: [-4.0, -3.85, 0.0], max_bound: [-0.5, 3.2, 2.0]}
+      - {min_bound: [ 1.4, -3.85, 0.0], max_bound: [ 4.7, 3.2, 2.0]}
+      - {min_bound: [-5.5, -2.30, 0.0], max_bound: [ 5.8, 2.0, 2.1]}
+      - {min_bound: [ 5.8, -3.80, 0.0], max_bound: [ 8.5, 2.0, 2.1]}
+    URSA_sample_valves:
+      - {min_bound: [-3.7, -3.8, 0.0], max_bound: [3.9, 4.0, 2.0]}
+    office:
+      - {min_bound: [-3.8, -2.6, 0.0], max_bound: [3.8, 2.6, 2.0]}
+    nrg_map:
+      - {center: [-4.2, 0.0, 1.1], extent: [9, 18, 1.8], yaw: -23}
+      - {center: [-11.5, -1, 1.1], extent: [5.5, 6.0, 1.8], yaw: -23}
+
+inverse_reachability_map:
+  task_resolution: 
+    z: 100
+    pitch: 50
+    roll: 20
+
+  solution_resolution:
+    x: 20
+    y: 20
+    yaw: 20
 
 model_settings:
   pointcloud_encoder: 'PointNet'
+  loss_function: 'Dice' # BCE, Dice, Focal
   cuda_device: 2
   batch_size: 16
   learning_rate: 0.0005
-  debug: False
   log_base_path: 'base_net/data/runs/latest/'
   checkpoint_base_path: 'base_net/data/checkpoints/'
   checkpoint_frequency: 50
