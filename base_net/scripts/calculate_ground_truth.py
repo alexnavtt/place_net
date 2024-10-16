@@ -230,7 +230,7 @@ def main():
 
     task_idx = 0
     for task_name, task_pose_tensor in model_config.tasks.items():
-        print(f'Starting calculations for environment {task_name}: solutions will be save to {os.path.join(model_config.solution_path, f"{task_name}.pt")}')
+        print(f'Starting calculations for environment {task_name}: solutions will be saved to {os.path.join(model_config.solution_path, f"{task_name}.pt")}')
         sol_tensor = torch.empty((task_pose_tensor.size()[0], x_count, y_count, yaw_count), dtype=bool)
         for task_pose_idx, task_pose in enumerate(task_pose_tensor):
             task_idx += 1
