@@ -41,6 +41,13 @@ def load_arguments():
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     return parser.parse_args()
 
+def trim_pointcloud(model_config: BaseNetConfig, pointcloud: Tensor):
+    valid_indices = []
+    for idx, point in enumerate(np.asarray(pointcloud.points)):
+        if np.linalg.norm(point) < model_config.task_geometry.max_pointcloud_radius:
+            valid_indices.append(idx)
+    return pointcloud.select_by_index(valid_indices)
+
 def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None):
     """
     Consolidate the robot config and environment data to create a collision-aware IK
@@ -51,10 +58,6 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None
     tensor_args = TensorDeviceType(device=model_config.model.device)
 
     if pointcloud is not None and len(pointcloud.points) > 0:
-        bound = np.array([model_config.model.workspace_radius]*2 + [model_config.model.workspace_height])
-        crop_box = open3d.geometry.AxisAlignedBoundingBox(min_bound=-bound, max_bound=bound)
-        pointcloud = pointcloud.crop(crop_box)
-
         open3d_mesh = open3d.geometry.TriangleMesh()
         world_mesh = Mesh.from_pointcloud(pointcloud=np.asarray(pointcloud.points), pitch=0.01)
         world_config = WorldConfig(
@@ -87,28 +90,23 @@ def load_base_pose_array(model_config: BaseNetConfig) -> cuRoboPose:
     reachability problem. The resulting array is defined centered around the origin and 
     aligned with the gravity-aligned task frame
     """
-    num_yaws = model_config.heading_count
-    num_pos = model_config.position_count
+    x_range = torch.linspace(-model_config.task_geometry.max_radial_reach, model_config.task_geometry.max_radial_reach, model_config.inverse_reachability.solution_resolution['x'])
+    y_range = torch.linspace(-model_config.task_geometry.max_radial_reach, model_config.task_geometry.max_radial_reach, model_config.inverse_reachability.solution_resolution['y'])
+    yaw_range = torch.linspace(0, 2*torch.pi, model_config.inverse_reachability.solution_resolution['yaw'])
 
-    yaw_angles = torch.arange(0, 2*math.pi - 1e-4, 2*math.pi/num_yaws)
-    quats = torch.zeros([num_yaws, 4])
-    quats[:, 0] = torch.cos(yaw_angles/2)
-    quats[:, 3] = torch.sin(yaw_angles/2)
+    y_grid, x_grid, yaw_grid = torch.meshgrid(y_range, x_range, yaw_range, indexing='ij')
+    base_pose_array = torch.stack([x_grid, y_grid, yaw_grid]).reshape(3, -1).T
 
-    radius = model_config.model.robot_reach_radius
-    cell_size = 2*radius/num_pos
-    location_axis = torch.arange(-radius, radius - 1e-4, cell_size) + cell_size/2
-    x_coords_arranged = location_axis.repeat(num_pos)
-    y_coords_arranged = location_axis.repeat_interleave(num_pos)
+    x_pos, y_pos, yaw_pos = base_pose_array.split([1, 1, 1], dim=-1)
 
-    pos_grid = torch.concatenate([x_coords_arranged.unsqueeze(1), y_coords_arranged.unsqueeze(1), torch.zeros([num_pos**2, 1])], dim=1)
-
-    pos_grid_arranged = pos_grid.repeat_interleave(num_yaws, dim=0)
-    yaw_grid_arranged = quats.repeat([num_pos**2, 1])
+    pos_grid = torch.concatenate([x_pos, y_pos, torch.zeros([x_pos.numel(), 1])], dim=1)
+    yaw_grid = torch.zeros((yaw_pos.numel(), 4))
+    yaw_grid[:, 0] = torch.cos(yaw_pos/2).squeeze()
+    yaw_grid[:, 3] = torch.sin(yaw_pos/2).squeeze()
 
     curobo_pose = cuRoboPose(
-        position=pos_grid_arranged.to(model_config.model.device), 
-        quaternion=yaw_grid_arranged.to(model_config.model.device)
+        position=pos_grid.to(model_config.model.device), 
+        quaternion=yaw_grid.to(model_config.model.device)
     )
 
     return curobo_pose
@@ -211,25 +209,29 @@ def main():
     args = load_arguments()
     model_config = BaseNetConfig.from_yaml_file(args.config_file)
 
+    x_count = model_config.inverse_reachability.solution_resolution['x']
+    y_count = model_config.inverse_reachability.solution_resolution['y']
+    yaw_count = model_config.inverse_reachability.solution_resolution['yaw']
+
     base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
     num_poses = base_poses_in_flattened_task_frame.batch
     empty_ik_solver = load_ik_solver(model_config)
 
     # Determine empty_ik_solver batch size
-    if model_config.task_generation.max_ik_count is None:
+    if model_config.max_ik_count is None:
         batch_size = num_poses
     else:
         for i in range(1, 10000):
-            if num_poses // i < model_config.task_generation.max_ik_count:
+            if num_poses // i < model_config.max_ik_count:
                 batch_size = num_poses // i
                 break
     if batch_size is None:
-        raise RuntimeError(f'Provided configuration with {num_poses} per solution is too big given your provided max_ik_count of {model_config.task_generation.max_ik_count}')
+        raise RuntimeError(f'Provided configuration with {num_poses} per solution is too big given your provided max_ik_count of {model_config.max_ik_count}')
 
     task_idx = 0
     for task_name, task_pose_tensor in model_config.tasks.items():
         print(f'Starting calculations for environment {task_name}: solutions will be save to {os.path.join(model_config.solution_path, f"{task_name}.pt")}')
-        sol_tensor = torch.empty((task_pose_tensor.size()[0], model_config.position_count, model_config.position_count, model_config.heading_count), dtype=bool)
+        sol_tensor = torch.empty((task_pose_tensor.size()[0], x_count, y_count, yaw_count), dtype=bool)
         for task_pose_idx, task_pose in enumerate(task_pose_tensor):
             task_idx += 1
             t1 = time.perf_counter()
@@ -245,7 +247,7 @@ def main():
             task_tform_world: cuRoboTransform = world_tform_task.inverse()
 
             base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
-            base_poses_in_world.position[:,2] = model_config.base_link_elevation
+            base_poses_in_world.position[:,2] = model_config.task_geometry.base_link_elevation
 
             base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
@@ -253,10 +255,10 @@ def main():
             valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
             num_valid_poses = torch.sum(valid_pose_indices)
 
-            if model_config.model.debug:
+            if model_config.debug:
                 visualize_task(task_pose_in_world, None, base_poses_in_world, valid_pose_indices)
 
-            if not model_config.check_environment_collisions or num_valid_poses == 0:
+            if num_valid_poses == 0:
                 solution_success = valid_pose_indices
                 t2 = time.perf_counter()
                 print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
@@ -269,6 +271,7 @@ def main():
 
                 pointcloud_in_world = copy.deepcopy(model_config.pointclouds[task_name])
                 pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
+                pointcloud_in_task = trim_pointcloud(model_config, pointcloud_in_task)
 
                 # Solve all remaining poses in batches
                 obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
@@ -276,7 +279,7 @@ def main():
                 revised_solutions, joint_states = solve_batched_ik(
                     ik_solver=obstacle_aware_ik_solver, 
                     num_poses=num_valid_poses, 
-                    batch_size=model_config.task_generation.max_ik_count,
+                    batch_size=model_config.max_ik_count,
                     poses=valid_base_poses_in_task,
                     model_config=model_config
                 )
@@ -288,10 +291,10 @@ def main():
                 solution_states[valid_pose_indices, :] = joint_states.cpu()
                 solution_success = torch.zeros(num_poses, dtype=bool)
                 solution_success[valid_pose_indices] = revised_solutions.cpu()
-                if model_config.model.debug:
+                if model_config.debug:
                     visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
 
-            sol_tensor[task_pose_idx, :, :, :] = solution_success.view(model_config.position_count, model_config.position_count, model_config.heading_count)
+            sol_tensor[task_pose_idx, :, :, :] = solution_success.view(x_count, y_count, yaw_count)
 
         if model_config.solution_path is not None:
             solution_path = os.path.join(model_config.solution_path, f'{task_name}.pt')

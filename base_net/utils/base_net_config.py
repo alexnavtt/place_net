@@ -31,17 +31,6 @@ def tensor_hash(tensor: Tensor):
 
 @dataclass
 class BaseNetModelConfig:
-    # The radial dimension of the robot's reachable space
-    robot_reach_radius: float
-
-    # The radial dimension of the workspace to consider from the task pose
-    workspace_radius: float
-
-    # The minimum height to consider for points in the input pointclouds
-    workspace_floor: float
-
-    # The maximum height to consider for points in the input pointclouds
-    workspace_height: float
 
     # The batch size to use for training
     batch_size: int = 1
@@ -53,7 +42,6 @@ class BaseNetModelConfig:
     loss_fn_type: Type[Union[BCEWithLogitsLoss, DiceLoss, FocalLoss]] = DiceLoss
 
     # Device to run on for PyTorch operations. 
-    # NOTE: cuRobo (and hence ground truth calculations) require a CUDA device 
     device: torch.device = torch.device("cuda:0")
 
     # Learning rate to use during training
@@ -67,9 +55,6 @@ class BaseNetModelConfig:
 
     # How many epochs between saving checkpoints. Set to zero or null to disable
     checkpoint_frequency: int | None = None
-
-    # Whether to print debug statements and show visualizations
-    debug: bool = False
 
     @staticmethod               
     def from_yaml_dict(yaml_config: dict):
@@ -101,14 +86,8 @@ class BaseNetModelConfig:
             # Otherwise use the string as-is
             torch_device = torch.device(model_settings['cuda_device'])
 
-        task_geometry = yaml_config['task_geometry']
         return BaseNetModelConfig(
-            robot_reach_radius=task_geometry['robot_reach_radius'],
-            workspace_radius=task_geometry['workspace_radius'],
-            workspace_height=task_geometry['base_link_elevation'] + task_geometry['robot_reach_radius'],
-            workspace_floor=task_geometry['min_pointcloud_elevation'],
             batch_size=model_settings['batch_size'],
-            debug=model_settings['debug'],
             learning_rate=model_settings['learning_rate'],
             encoder_type=pointcloud_encoder_type,
             loss_fn_type=loss_fn_type,
@@ -119,102 +98,131 @@ class BaseNetModelConfig:
         )
     
 @dataclass
+class TaskGeometryConfig:
+    # The elevation above the ground at which the manipulator base link lies
+    base_link_elevation: float
+
+    # The maximum reach of the robot in the plane of the manipulator base link
+    max_radial_reach: float
+
+    # The minimum elevation at which tasks can be queried
+    min_task_elevation: float
+
+    # The maximum elevation at which tasks can be queried
+    max_task_elevation: float
+
+    # The minimum elevation of points to include in the pointcloud. Useful for
+    # disregarding low profile obstacles and the floor which might otherwise 
+    # count as obstacles when the really shouldn't
+    min_pointcloud_elevation: float = 0.0
+
+    # The maximum elevation of points to include in the pointcloud. Set to None
+    # to have this automatically deduced as the base_link_elevation + max_vertical_reach
+    _max_pointcloud_elevation: float | None = None
+
+    # The planar radial distance from the task both in which to keep points in the 
+    # pointcloud. This can be larger than the max_radial_reach if the manipulator 
+    # base link has other collision links attached which need to be accounted for. 
+    # Set to None to have this automatically deduced as max_radial_reach
+    _max_pointcloud_radius: float | None = None
+
+    @property
+    def max_pointcloud_elevation(self):
+        if self._max_pointcloud_elevation is not None:
+            return self._max_pointcloud_elevation 
+        else:
+            return self.base_link_elevation + self.max_vertical_reach
+        
+    @property
+    def max_pointcloud_radius(self):
+        if self._max_pointcloud_radius is not None:
+            return self._max_pointcloud_radius
+        else:
+            return self.max_radial_reach
+
+    @staticmethod
+    def from_yaml_dict(yaml_dict: dict):
+        return TaskGeometryConfig(
+            base_link_elevation = yaml_dict['task_geometry']['base_link_elevation'],
+            max_radial_reach = yaml_dict['task_geometry']['max_radial_reach'],
+            max_task_elevation = yaml_dict['task_geometry']['max_task_elevation'],
+            min_task_elevation = yaml_dict['task_geometry']['min_task_elevation'],
+            min_pointcloud_elevation = yaml_dict['task_geometry'].get('min_pointcloud_elevation', 0.0),
+            _max_pointcloud_elevation = yaml_dict['task_geometry'].get('max_pointcloud_elevation', None),
+            _max_pointcloud_radius = yaml_dict['task_geometry'].get('max_pointcloud_radius', None),
+        )
+    
+@dataclass
 class TaskGenerationConfig:
-    @dataclass
-    class TaskGenerationCounts:
-        # Poses sampled with no obstacles (i.e. an empty environment)
-        # Represented as a list with the number of z sample, pitch
-        # samples, and roll samples respectively for a uniform
-        # grid sampling approach
-        empty: tuple[int]
+    # Whether or not to visualize each set of poses after sampling
+    visualize: bool = False
 
-        # Poses sampled at a very small offset from points
-        # in the pointcloud, and oriented with the end-effector
-        # facing the surface. Roll is sampled randomly
-        surface: int
+    # The offset from surfaces to place surface points
+    surface_point_offset: float | None = None
 
-        # Poses sampled at a small offset from points in the
-        # pointcloud with a completely random orientation
-        close: int
+    # The minimum clearance for a surface point to be considered valid
+    surface_point_clearance: float = 0.0
 
-        # Poses sampled at a large offset from points in the
-        # pointcloud with a completely random orientation. Note
-        # that this distance should be less than the obstacle 
-        # inclusion radius as there are other poses dedicated
-        # to sampling empty space
-        far: int
+    # The number of surface points to sample
+    surface_point_count: int = 0
 
-        # Poses sampled from other existing poses to have the
-        # same x, y, and heading but with different elevation,
-        # pitch and roll. This means that they will have 
-        # identical obstacle encoding to other poses but different
-        # pose encoding
-        offset: int
+    # A list of ranges from the environment at which to sample random poses
+    # Each entry has fields 'name', 'offset_bounds', 'count'
+    offset_points: list[dict] | None = None
 
-    # Max and min distance of the end-effector frame from the nearest
-    # point in the pointcloud for a sample to be considered valid
-    @dataclass
-    class TaskGenerationOffsets:
-        # Distance from point on surface to sample pose 
-        surface_offset: float
-
-        # If there are no points within this radius, a sampled pose
-        # is considered invalid 
-        close_max     : float
-        far_max       : float
-
-        # If there is a point within this radius, a sampled pose is
-        # considered invalid
-        surface_min   : float
-        close_min     : float
-        far_min       : float
-
-    counts: TaskGenerationCounts
-    offsets: TaskGenerationOffsets
-    max_ik_count: int | None = None
+    # The regions in which to sample poses
     regions: dict[str, PointcloudRegion] = field(default_factory=dict)
+
+    # Device to run on for PyTorch operations. Must be a CUDA device
+    device: torch.device = torch.device("cuda:0")
 
     @staticmethod
     def from_yaml_dict(yaml_config: dict, pointclouds: dict[str, open3d.geometry.PointCloud]):
-        config = yaml_config['task_generation']
-
-        if 'surface' in config['counts'] and 'surface_offset' not in config:
-            raise RuntimeError(f'You specified that you wanted {config["counts"]["surface"]} surface poses, but you did not specify a surface offset')
+        config: dict = yaml_config['task_generation']
         
-        pointcloud_regions: dict[str, PointcloudRegion] = {}
-        for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
-            pointcloud_regions[pointcloud_name] = PointcloudRegion(pointclouds[pointcloud_name])
-            if 'regions' in pointcloud_config:
-                for region in pointcloud_config['regions']:
-                    if 'min_bound' in region and 'max_bound' in region:
-                        center = 0.5*(np.array(region['min_bound']) + np.array(region['max_bound']))
-                        extent = np.array(region['max_bound']) - np.array(region['min_bound'])
-                    else:
-                        center = np.array(region['center'])
-                        extent = np.array(region['extent'])
-                    pointcloud_regions[pointcloud_name].add_region(center, extent, region.get('yaw', 0.0))
+        if 'surface_points' in config:
+            surface_point_offset = config['surface_points']['offset']
+            surface_point_clearance = config['surface_points'].get('min_clearance', 0.0)
+            surface_point_count = config['surface_points']['count']
+        else:
+            surface_point_offset = surface_point_clearance = surface_point_count = None
+
+        pointcloud_regions = {pointcloud_name: PointcloudRegion(pointcloud) for pointcloud_name, pointcloud in pointclouds.items()}
+        for pointcloud_name, region in pointcloud_regions.items():
+            if pointcloud_name not in config['pointcloud_regions']: continue
+
+            region_configs = config['pointcloud_regions'][pointcloud_name]
+            for region_config in region_configs:
+                if 'min_bound' in region_config and 'max_bound' in region_config:
+                    center = 0.5*(np.array(region_config['min_bound']) + np.array(region_config['max_bound']))
+                    extent = np.array(region_config['max_bound']) - np.array(region_config['min_bound'])
+                else:
+                    center = np.array(region_config['center'])
+                    extent = np.array(region_config['extent'])
+                region.add_region(center, extent, region_config.get('yaw', 0.0))
 
         return TaskGenerationConfig(
-            counts = TaskGenerationConfig.TaskGenerationCounts(
-                empty  = tuple(config['counts']['empty']) if 'empty' in config['counts'] else 0,
-                surface= config['counts']['surface'] if 'surface' in config['counts'] else 0,
-                close  = config['counts']['close'  ] if 'close'   in config['counts'] else 0,
-                far    = config['counts']['far'    ] if 'far'     in config['counts'] else 0,
-                offset = config['counts']['offset' ] if 'offset'  in config['counts'] else 0,
-            ),
-
-            offsets = TaskGenerationConfig.TaskGenerationOffsets(
-                surface_min = config['min_offsets']['surface'] if 'surface' in config['min_offsets'] else 0.0,
-                close_min   = config['min_offsets']['close'  ] if 'close'   in config['min_offsets'] else 0.0,
-                far_min     = config['min_offsets']['far'    ] if 'far'     in config['min_offsets'] else 0.0,
-                close_max   = config['max_offsets']['close'  ] if 'close'   in config['max_offsets'] else 1e10,
-                far_max     = config['max_offsets']['far'    ] if 'far'     in config['max_offsets'] else 1e10,
-                surface_offset = config['surface_offset'] if 'surface_offset' in config else 0.0
-            ),
-
-            max_ik_count = config['max_ik_count'],
-
+            visualize=config.get('visualize', False),
+            surface_point_offset=surface_point_offset,
+            surface_point_clearance=surface_point_clearance,
+            surface_point_count=surface_point_count,
+            offset_points=config.get('offset_points', None),
             regions=pointcloud_regions
+        )
+    
+@dataclass
+class InverseReachabilityMapConfig:
+    # The number of entries in the task directions [z, pitch, roll]
+    task_resolution: dict[str, int]
+
+    # The number of entries in the solution directions [x, y, yaw]
+    solution_resolution: dict[str, int]
+
+    @staticmethod
+    def from_yaml_dict(yaml_dict: dict):
+        return InverseReachabilityMapConfig(
+            task_resolution=yaml_dict['inverse_reachability_map']['task_resolution'],
+            solution_resolution=yaml_dict['inverse_reachability_map']['solution_resolution']
         )
 
 @dataclass
@@ -231,14 +239,17 @@ class BaseNetConfig:
     # inverted robot URDF stored as a tuple in the kinematics debug field
     robot: RobotConfig
 
-    # The configuration related specifically to the kinematics model, used
-    # for both the PyTorch model as well as the cuRobo ground truth calculations
+    # The configuration related the PyTorch model 
     model: BaseNetModelConfig
 
-    # Configurations for sampling poses given an input pointcloud, including
-    # distances to nearest obstacles, and proportions of poses at certain 
-    # distances
+    # The configuration related to the workspace bounds and robot geometry
+    task_geometry: TaskGeometryConfig
+
+    # Configurations for sampling poses given an input pointcloud
     task_generation: TaskGenerationConfig
+
+    # Configurations for calculating ground truth values 
+    inverse_reachability: InverseReachabilityMapConfig
 
     # Location from which to load or to which to save tasks 
     task_path: str | None = None
@@ -256,23 +267,14 @@ class BaseNetConfig:
     # regular 3D grid of x, y, heading
     solutions: dict[str, Tensor] | None = None
 
-    # Used in ground truth calculations. The number of position cells
-    # in the x and y directions when calculating inverse kinematics. This
-    # parameter is ignored by the PyTorch BaseNet model
-    position_count: int = 20
+    # The maximum number of IK solutions to work on in parallel. This 
+    # is useful for computers with limited VRAM. Set to None to allow
+    # unlimited parallel problems
+    max_ik_count: int | None  = None
 
-    # Used in ground truth calculations. The number of discretized cells
-    # in the heading direction when calculating inverse kinematics. This
-    # parameter is ignored by the PyTorch BaseNet model
-    heading_count: int = 20
-
-    # Used in ground truth calculations. The elevation above the floor
-    # plane at which the base link of the kinematic chain sits
-    base_link_elevation: float = 0.0
-
-    # Whether or not to include pointcloud information in the task generation
-    # and PyTorch model. Set to False to learn just the robot kinematics
-    check_environment_collisions: bool = True
+    # Whether or not to show debug visualizations during ground truth 
+    # calculations, training, and testing
+    debug: bool = False
 
     @staticmethod
     def from_yaml_file(filename: str, load_tasks = True, load_solutions = False):
@@ -283,13 +285,14 @@ class BaseNetConfig:
     @staticmethod
     def from_yaml_dict(yaml_config: dict, load_tasks = True, load_solutions = False):
         model_config = BaseNetModelConfig.from_yaml_dict(yaml_config)
+        task_geometry = TaskGeometryConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
         for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
             name, pointcloud = BaseNetConfig.load_pointcloud(
                 filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
-                min_elevation=model_config.workspace_floor, 
-                max_elevation=model_config.workspace_height, 
+                min_elevation=task_geometry.min_pointcloud_elevation, 
+                max_elevation=task_geometry.max_pointcloud_elevation, 
                 pointcloud_config=pointcloud_config
             )
 
@@ -304,17 +307,17 @@ class BaseNetConfig:
         return BaseNetConfig(
             yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
-            task_path=yaml_config.get('task_data_path', None),
-            tasks=tasks,
-            solution_path=yaml_config.get('solution_data_path', None),
-            solutions=solutions,
             robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
+            task_geometry=task_geometry,
             task_generation=task_generation_config,
-            position_count=yaml_config['task_geometry']['position_count'],
-            heading_count=yaml_config['task_geometry']['heading_count'],
-            base_link_elevation=yaml_config['task_geometry']['base_link_elevation'],
-            check_environment_collisions=yaml_config['task_geometry']['check_environment_collisions']
+            inverse_reachability=InverseReachabilityMapConfig.from_yaml_dict(yaml_config),
+            task_path=yaml_config.get('task_data_path', None),
+            solution_path=yaml_config.get('solution_data_path', None),
+            tasks=tasks,
+            solutions=solutions,
+            max_ik_count=yaml_config.get('max_ik_count', None),
+            debug=yaml_config.get('debug', False)
         )
 
     @staticmethod
@@ -367,14 +370,9 @@ class BaseNetConfig:
         filepath = yaml_config['task_data_path']
         tasks = {}
 
-        # Check if we should load the special case of no collisions
-        if not yaml_config['task_geometry']['check_environment_collisions']:
-            tasks = {'empty': BaseNetConfig.get_empty_env_task_grid(filepath)}
-
         # Then check if collision checked tasks are enabled
-        else:
-            for pointcloud_name in pointclouds.keys():
-                tasks[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}_task.pt'), map_location='cpu').float()
+        for pointcloud_name in pointclouds.keys():
+            tasks[pointcloud_name] = torch.load(os.path.join(filepath, f'{pointcloud_name}_task.pt'), map_location='cpu').float()
 
         return tasks
     
@@ -384,23 +382,23 @@ class BaseNetConfig:
         solution_filepath = yaml_config['solution_data_path']
         solutions = {}
 
-        num_pos = yaml_config['task_geometry']['position_count']
-        num_yaw = yaml_config['task_geometry']['heading_count']
+        num_x = yaml_config['inverse_reachability_map']['solution_resolution']['x']
+        num_y = yaml_config['inverse_reachability_map']['solution_resolution']['y']
+        num_yaw = yaml_config['inverse_reachability_map']['solution_resolution']['yaw']
 
         # Always load the empty solution
         solutions['empty'] = torch.load(os.path.join(solution_filepath, 'empty.pt'), map_location='cpu')
 
         # Then check if collision checked tasks are enabled
-        if yaml_config['task_geometry']['check_environment_collisions']:
-            for pointcloud_name in pointclouds.keys():
-                if fake_solutions:
-                    solutions[pointcloud_name] = torch.randint(0, 2, (tasks[pointcloud_name].size(0), num_pos, num_pos, num_yaw), dtype=bool)
-                else:
-                    solution_struct = torch.load(os.path.join(solution_filepath, f'{pointcloud_name}.pt'), map_location='cpu')
-                    current_task_hash = tensor_hash(tasks[pointcloud_name])
-                    if current_task_hash != solution_struct['task_hash']:
-                        raise RuntimeError(f'Your loaded tasks for the environment {pointcloud_name} do not match the version used to calculate the ground truth values!')
-                    solutions[pointcloud_name] = solution_struct['solution_tensor']
+        for pointcloud_name in pointclouds.keys():
+            if fake_solutions:
+                solutions[pointcloud_name] = torch.randint(0, 2, (tasks[pointcloud_name].size(0), num_x, num_y, num_yaw), dtype=bool)
+            else:
+                solution_struct = torch.load(os.path.join(solution_filepath, f'{pointcloud_name}.pt'), map_location='cpu')
+                current_task_hash = tensor_hash(tasks[pointcloud_name])
+                if current_task_hash != solution_struct['task_hash']:
+                    raise RuntimeError(f'Your loaded tasks for the environment {pointcloud_name} do not match the version used to calculate the ground truth values!')
+                solutions[pointcloud_name] = solution_struct['solution_tensor']
 
         return solutions
     

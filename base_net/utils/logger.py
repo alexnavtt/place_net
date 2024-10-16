@@ -18,8 +18,8 @@ from base_net.scripts.calculate_ground_truth import load_base_pose_array, flatte
 class Logger:
     def __init__(self, model_config: BaseNetConfig):
         # We log if paths are provided and we are not debugging
-        self._log = model_config.model.log_base_path is not None and not model_config.model.debug
-        self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.model.debug
+        self._log = model_config.model.log_base_path is not None and not model_config.debug
+        self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug
         self._model_config = model_config
         
         if self._log:
@@ -98,20 +98,14 @@ class Logger:
         # Retrieve the bases poses
         base_poses_in_flattened_task_frame = load_base_pose_array(self._model_config)
         base_poses_in_flattened_task_frame.position[:, :2] += task_pose[:2].to(base_poses_in_flattened_task_frame.position.device)
-        base_poses_in_flattened_task_frame.position[:, 2] = self._model_config.base_link_elevation
-
-        # We use this offset factor to view the pose arrays side to side if there are no pointclouds
-        offset_factor = 0.0 if self._model_config.check_environment_collisions is True else 1.0
+        base_poses_in_flattened_task_frame.position[:, 2] = self._model_config.task_geometry.base_link_elevation
 
         # Get the geometry for the ground truth, the model output, and their agreement metric
-        ground_truth_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, ground_truth.flatten(), prefix='ground_truth')
-        task_geometry = task_visualization.get_task_arrows(task_pose)
-        base_poses_in_flattened_task_frame.position[:, 0] += 2.2 * self._model_config.model.robot_reach_radius * offset_factor
-        output_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, model_labels, prefix='model_output')
-        base_poses_in_flattened_task_frame.position[:, 0] -= 1.1 * self._model_config.model.robot_reach_radius * offset_factor
-        base_poses_in_flattened_task_frame.position[:, 1] -= 2.2 * self._model_config.model.robot_reach_radius * offset_factor
         agreement = model_labels == ground_truth.flatten()
-        aggreement_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, agreement, prefix='agreement')
+        task_geometry         = task_visualization.get_task_arrows(task_pose)
+        ground_truth_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, ground_truth.flatten(), prefix='ground_truth')
+        output_geometry       = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, model_labels, prefix='model_output')
+        aggreement_geometry   = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, agreement, prefix='agreement')
 
         # Save the geometry to the SummaryWriter
         if self._log:
@@ -125,10 +119,10 @@ class Logger:
                 self._writer.add_3d('environment', to_dict_batch([entry['geometry'] for entry in task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config)]), step=step)
 
         # If debug is enabled, immediately show the geometry
-        if self._model_config.model.debug:
+        if self._model_config.debug:
             geometries = [*task_geometry, *ground_truth_geometry, *output_geometry, *aggreement_geometry]
             if pointcloud is not None:
-                geometries.append(task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config))
+                geometries += task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config)
             open3d.visualization.draw(geometries)
 
     def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int):

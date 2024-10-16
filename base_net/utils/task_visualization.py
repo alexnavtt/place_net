@@ -220,7 +220,7 @@ def get_robot_geometry_at_joint_state(
 def get_pointcloud(pointcloud_tensor: torch.Tensor, task: torch.Tensor, model_config: BaseNetConfig) -> list[open3d.geometry.Geometry]:
     # Filter the pointcloud to all points in the appropriate radius around the task
     distances = (pointcloud_tensor[:, :2] - task[:2]).norm(dim=1)
-    valid_points = pointcloud_tensor[distances < model_config.model.workspace_radius, :]
+    valid_points = pointcloud_tensor[distances < model_config.task_geometry.max_pointcloud_radius, :]
 
     pointcloud = open3d.geometry.PointCloud()
     pointcloud.points.extend(valid_points[:, :3].cpu().numpy())

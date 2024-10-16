@@ -92,7 +92,7 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: 
 
     open3d.visualization.draw(geometry=geometries)
 
-def sample_distant_poses(regions: PointcloudRegion, model_config: BaseNetConfig, count: int, min_offset: float, max_offset: float) -> Tensor:
+def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: BaseNetConfig, sample_config: dict) -> Tensor:
     """
     Generate poses at random locations in the environment and only accept those that contain obstacles 
     in a given 'maximum distance' sphere while having no obstacles within a 'minimum distance' sphere
@@ -100,8 +100,8 @@ def sample_distant_poses(regions: PointcloudRegion, model_config: BaseNetConfig,
     position_tensor = torch.empty([0, 3])
     quaternion_tensor = torch.empty([0, 4])
 
-    points_reminaing = count
-    max_attempt_count = 100 * points_reminaing
+    points_sampled = 0
+    max_attempt_count = 100 * sample_config['count']
     attempt_count = 0
 
     pointcloud = regions.pointcloud
@@ -110,7 +110,7 @@ def sample_distant_poses(regions: PointcloudRegion, model_config: BaseNetConfig,
     ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
 
-    while points_reminaing > 0 and attempt_count < max_attempt_count:
+    while points_sampled < sample_config['count'] and attempt_count < max_attempt_count:
         attempt_count += 1
 
         # Randomly sample a point within the pointcloud bounds
@@ -131,34 +131,35 @@ def sample_distant_poses(regions: PointcloudRegion, model_config: BaseNetConfig,
         quat = np.array([c1*sin2, c1*cos2, c2*sin3, c2*cos3])
 
         # Check to make syre there are no points within the minimum bound
-        if model_config.check_environment_collisions and are_spheres_in_collision(
+        if are_spheres_in_collision(
             kd_tree=kd_tree,
             ee_spheres=ee_spheres,
             ee_position_in_world=point,
             ee_orientation_in_world=scipy.spatial.transform.Rotation.from_quat(quat, scalar_first=True),
-            inflation=min_offset
+            inflation=sample_config['offset_bounds'][0]
         ): continue 
 
         # Check to make sure there are points within the maximum bound
-        if model_config.check_environment_collisions and not are_spheres_in_collision(
+        if not are_spheres_in_collision(
             kd_tree=kd_tree,
             ee_spheres=ee_spheres,
             ee_position_in_world=point,
             ee_orientation_in_world=scipy.spatial.transform.Rotation.from_quat(quat, scalar_first=True),
-            inflation=max_offset
+            inflation=sample_config['offset_bounds'][1]
         ): continue 
 
         # Append the pose to the samples
         position_tensor = torch.concatenate([position_tensor, torch.tensor(point).unsqueeze(0)], dim=0)
         quaternion_tensor = torch.concatenate([quaternion_tensor, torch.tensor(quat).unsqueeze(0)], dim=0)
-        points_reminaing -= 1
+        points_sampled += 1
 
-    if points_reminaing != 0:
-        print(f"WARNING: Out of the {model_config.task_generation.counts.close} points requested to be sampled, we could only find {model_config.task_generation.counts.close - points_reminaing}")
+    if points_sampled != sample_config['count']:
+        print(f"WARNING: Out of the {sample_config['count']} {sample_config['name']} points requested to be sampled, we could only find {points_sampled}")
 
+    print(f'{name} [{sample_config["name"]}]: {points_sampled}/{sample_config["count"]}')
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
-def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig) -> Tensor:
+def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: BaseNetConfig) -> Tensor:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -183,9 +184,9 @@ def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig)
 
     # List all points as available to sample
     available_point_labels = np.ones(len(pointcloud.points), dtype=bool)
-    points_remaining = model_config.task_generation.counts.surface
-    with tqdm(total=points_remaining) as pbar:
-        while points_remaining > 0 and any(available_point_labels):
+    points_sampled = 0
+    with tqdm(total=model_config.task_generation.surface_point_count) as pbar:
+        while points_sampled < model_config.task_generation.surface_point_count and any(available_point_labels):
             available_point_indices = np.nonzero(available_point_labels)[0]
             
             # Sample a point
@@ -201,7 +202,7 @@ def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig)
             normal = normal / np.linalg.norm(normal) # just in case
 
             # Project the surface normal to the end effector location
-            ee_location = point + normal * model_config.task_generation.offsets.surface_offset
+            ee_location = point + normal * model_config.task_generation.surface_point_offset
             if not regions.contains(ee_location) or not is_in_pointcloud_bbox(ee_location):
                 continue
 
@@ -230,21 +231,22 @@ def sample_surface_poses(regions: PointcloudRegion, model_config: BaseNetConfig)
             rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
 
             # Check for collisions with the environment
-            if model_config.check_environment_collisions and are_spheres_in_collision(
+            if are_spheres_in_collision(
                 kd_tree=kd_tree,
                 ee_spheres=ee_spheres,
                 ee_position_in_world=ee_location,
                 ee_orientation_in_world=scipy.spatial.transform.Rotation.from_matrix(rot_mat),
-                inflation=model_config.task_generation.offsets.surface_min
+                inflation=model_config.task_generation.surface_point_clearance
             ): continue
 
             # If not in collision, add this pose to the return set and decrement the remaining pose counter
             quaternion = scipy.spatial.transform.Rotation.from_matrix(rot_mat).as_quat(scalar_first=True)
             position_tensor = torch.concatenate([position_tensor, torch.Tensor(ee_location).unsqueeze(0)], dim=0)
             quaternion_tensor = torch.concatenate([quaternion_tensor, torch.Tensor(quaternion).unsqueeze(0)], dim=0)
-            points_remaining -= 1
+            points_sampled += 1
             pbar.update(1)
 
+    print(f'{name} [Surface]: {points_sampled}/{model_config.task_generation.surface_point_count}')
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
 def main():
@@ -252,31 +254,15 @@ def main():
     model_config = BaseNetConfig.from_yaml_file(args.config_file, load_tasks=False)
     task_config = model_config.task_generation
 
-    # In the case of no collisions, do a grid based generation on z, pitch, roll
-    if not model_config.check_environment_collisions:
-        num_z, num_pitch, num_roll = model_config.task_generation.counts.empty
-
-        z_range = torch.linspace(model_config.model.workspace_floor, model_config.model.workspace_height, num_z)
-        pitch_range = torch.linspace(-torch.pi/2, torch.pi/2, num_pitch)
-        roll_range = torch.linspace(-torch.pi, torch.pi, num_roll)
-
-        z_grid, pitch_grid, roll_grid = torch.meshgrid(z_range, pitch_range, roll_range, indexing='ij')
-        task_grid = torch.stack([z_grid, pitch_grid, roll_grid]).reshape(3, -1).T
-
-        filename = os.path.abspath(os.path.join(model_config.task_path, 'empty_task.pt'))
-        torch.save(task_grid, filename)
-        print(f'Saved {task_grid.numel() // 3} task poses to {filename}')
-
-        exit(0)
-
     # If we are checking collisions then we need to sample based on the pointcloud geometry
     for pointcloud_name, original_pointcloud in model_config.pointclouds.items():
         regions = model_config.task_generation.regions[pointcloud_name]
-        surface_poses = sample_surface_poses(regions, model_config)
-        close_poses = sample_distant_poses(regions, model_config, task_config.counts.close, task_config.offsets.close_min, task_config.offsets.close_max)
-        far_poses = sample_distant_poses(regions, model_config, task_config.counts.far, task_config.offsets.far_min, task_config.offsets.far_max)
 
-        sample_poses: Tensor = torch.concatenate([surface_poses, close_poses, far_poses], dim=0)
+        sampled_poses_list = [sample_surface_poses(pointcloud_name, regions, model_config)]
+        for offset_sample_config in task_config.offset_points:
+            sampled_poses_list += [sample_distant_poses(pointcloud_name, regions, model_config, offset_sample_config)]
+
+        sample_poses: Tensor = torch.concatenate(sampled_poses_list, dim=0)
 
         if model_config.task_path is not None:
             filename = os.path.join(model_config.task_path, f'{pointcloud_name}_task.pt')
@@ -285,8 +271,8 @@ def main():
         else:
             print("No output path provided, generated poses have not been saved")
     
-        if model_config.model.debug:
-            visualize_task_poses(original_pointcloud, surface_poses, close_poses, far_poses, model_config.robot, regions)
+        if model_config.task_generation.visualize:
+            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.robot, regions)
 
 if __name__ == "__main__":
     main()
