@@ -3,6 +3,7 @@ import os
 import copy
 import xacro
 import argparse
+import contextlib
 import numpy as np
 import scipy.spatial.transform
 from urdf_parser_py import urdf
@@ -73,7 +74,6 @@ def add_extra_link_chain(robot: Robot, new_robot: Robot, root_name: str, known_c
                 
             new_robot.add_aggregate(typeName='joint', elem=joint_elem)
             new_robot.add_aggregate(typeName='link', elem=link_elem)
-            print(f"Adding extra joint from {joint_elem.parent} to {joint_elem.child}")
             add_extra_link_chain(robot, new_robot, link_name, known_children)
 
 def invert_fixed_joint(joint: Joint) -> Joint:
@@ -118,7 +118,8 @@ def invert_dynamic_joint(joint: Joint) -> list:
 
 def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str) -> tuple[Robot, Robot]:
     prepare_urdf_file(urdf_path, xacro_args)
-    robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
+    with contextlib.redirect_stderr(open(os.devnull, 'w')):
+        robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
 
     # Get the relevant chains
     arm_joints = robot.get_chain(robot.get_root(), end_effector, joints=True, links=False)
@@ -136,14 +137,11 @@ def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str) -
         inverted_robot.add_link(robot.link_map[next_link_name])
 
         next_joint: Joint = robot.joint_map[next_joint_name]
-        print(f"Last link: {last_link_name}\nThis link: {next_link_name}\nJoint map: {next_joint.parent} -> {next_joint.child} ({next_joint.type})")
         assert (next_joint.parent == next_link_name and next_joint.child == last_link_name)
         if next_joint.type == 'fixed':
-            print("Processing fixed joint")
             inverted_robot.add_joint(invert_fixed_joint(next_joint))
 
         else:
-            print("Processing dynamic joint")
             joint1, intermediary_link, joint2 = invert_dynamic_joint(next_joint)
             inverted_robot.add_link(intermediary_link)
             inverted_robot.add_joint(joint1)
@@ -151,9 +149,8 @@ def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str) -
 
         last_link_name = next_link_name
         add_extra_link_chain(robot, inverted_robot, next_link_name, arm_links)
-        print(' ')
 
-    print("Finished adding manipulator chain")
+    print("Finished inverting URDF")
 
     with open(output_path, 'w') as f:
         f.write(inverted_robot.to_xml_string())
