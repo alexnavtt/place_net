@@ -280,3 +280,18 @@ def visualize(*args):
                 geometries = geometries + get_task_arrows(cuRoboPose(position=poses[:, :3].cuda(), quaternion=poses[:, 3:].cuda()))
 
     open3d.visualization.draw(geometries)
+
+def visualize_task(
+        task_pose: cuRoboPose, 
+        pointcloud: open3d.geometry.PointCloud | None, 
+        base_poses: cuRoboPose, 
+        valid_base_indices: torch.Tensor | None = None):
+    """
+    Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
+    base poses that we are solving for. All input must be defined in the world frame
+    """
+
+    geometries = [pointcloud] if pointcloud is not None else []
+    geometries = geometries + get_task_arrows(task_pose)
+    geometries = geometries + get_base_arrows(base_poses, valid_base_indices)
+    open3d.visualization.draw(geometry=geometries)
