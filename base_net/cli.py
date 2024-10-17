@@ -38,5 +38,13 @@ def estimate_pointcloud_normals(args):
     sys.argv = ['estimate_pointcloud_normals'] + list(args)
     pointcloud_normals_main()
 
+@main.command(context_settings=dict(ignore_unknown_options=True), add_help_option=False)
+@click.argument('args', nargs=-1, type=click.UNPROCESSED)
+def generate_inverse_reachability_map(args):
+    setproctitle.setproctitle('generate_inverse_reachability_map')
+    from base_net.scripts.generate_inverse_reachability_map import main as irm_main
+    sys.argv = ['generate_inverse_reachability_map'] + list(args)
+    irm_main()
+
 if __name__ == '__main__':
     main()
