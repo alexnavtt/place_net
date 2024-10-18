@@ -11,8 +11,8 @@ from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from .base_net_config import BaseNetConfig
-from base_net.utils import task_visualization
-from base_net.scripts.calculate_ground_truth import load_base_pose_array, flatten_task
+from base_net.utils import task_visualization, geometry
+from base_net.scripts.calculate_ground_truth import flatten_task
 
 
 class Logger:
@@ -89,14 +89,20 @@ class Logger:
         if not self._log: return
         self._writer.flush()
 
-    def log_visualization(self, model_output, ground_truth, step, task_pose, pointcloud = None):
+    def log_visualization(self, model_output: Tensor, ground_truth: Tensor, step: int, task_pose: Tensor, pointcloud: Tensor | None = None):
         # Convert output logits to binary classification values
         model_labels = torch.sigmoid(model_output.flatten())
         model_labels[model_labels > 0.5] = 1
         model_labels[model_labels < 0.5] = 0
 
         # Retrieve the bases poses
-        base_poses_in_flattened_task_frame = load_base_pose_array(self._model_config)
+        base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+            reach_radius=self._model_config.task_geometry.max_radial_reach,
+            x_res=self._model_config.inverse_reachability.solution_resolution['x'],
+            y_res=self._model_config.inverse_reachability.solution_resolution['y'],
+            yaw_res=self._model_config.inverse_reachability.solution_resolution['yaw'],
+            device=model_output.device
+        )
         base_poses_in_flattened_task_frame.position[:, :2] += task_pose[:2].to(base_poses_in_flattened_task_frame.position.device)
         base_poses_in_flattened_task_frame.position[:, 2] = self._model_config.task_geometry.base_link_elevation
 

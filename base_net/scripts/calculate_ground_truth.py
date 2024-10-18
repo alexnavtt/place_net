@@ -27,7 +27,7 @@ from curobo.geom.types import WorldConfig, Mesh
 cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
-from base_net.utils import task_visualization
+from base_net.utils import task_visualization, geometry
 from base_net.utils.base_net_config import BaseNetConfig, tensor_hash
 
 def load_arguments():
@@ -83,57 +83,6 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None
     ) 
 
     return IKSolver(ik_config)
-
-def load_base_pose_array(model_config: BaseNetConfig) -> cuRoboPose:
-    """
-    Define the array of manipulator base-link poses for which we are trying to solve the
-    reachability problem. The resulting array is defined centered around the origin and 
-    aligned with the gravity-aligned task frame
-    """
-    x_range = torch.linspace(-model_config.task_geometry.max_radial_reach, model_config.task_geometry.max_radial_reach, model_config.inverse_reachability.solution_resolution['x'])
-    y_range = torch.linspace(-model_config.task_geometry.max_radial_reach, model_config.task_geometry.max_radial_reach, model_config.inverse_reachability.solution_resolution['y'])
-    yaw_range = torch.linspace(0, 2*torch.pi, model_config.inverse_reachability.solution_resolution['yaw'])
-
-    y_grid, x_grid, yaw_grid = torch.meshgrid(y_range, x_range, yaw_range, indexing='ij')
-    base_pose_array = torch.stack([x_grid, y_grid, yaw_grid]).reshape(3, -1).T
-
-    x_pos, y_pos, yaw_pos = base_pose_array.split([1, 1, 1], dim=-1)
-
-    pos_grid = torch.concatenate([x_pos, y_pos, torch.zeros([x_pos.numel(), 1])], dim=1)
-    yaw_grid = torch.zeros((yaw_pos.numel(), 4))
-    yaw_grid[:, 0] = torch.cos(yaw_pos/2).squeeze()
-    yaw_grid[:, 3] = torch.sin(yaw_pos/2).squeeze()
-
-    curobo_pose = cuRoboPose(
-        position=pos_grid.to(model_config.model.device), 
-        quaternion=yaw_grid.to(model_config.model.device)
-    )
-
-    return curobo_pose
-
-def flatten_task(task: cuRoboPose):
-    """
-    Given a pose in 3D space, return a pose at the same position with roll and 
-    pitch components of the orientation removed
-    """
-    qw, qx, qy, qz = task.quaternion.squeeze().cpu().numpy()
-
-    # Yaw calculation
-    qwz = qw*qz
-    qxy = qx*qy
-    qyy = qy*qy
-    qzz = qz*qz
-
-    sin_yaw_cos_pitch = 2*(qwz + qxy)
-    cos_yaw_cos_pitch = 1 - 2*(qyy + qzz)
-    yaw = math.atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
-
-    # Reconstruct the quaternion with only the yaw component
-    flattened_quaternion = np.array([math.cos(yaw/2), 0, 0, math.sin(yaw/2)])
-
-    flattened_task = copy.deepcopy(task)
-    flattened_task.quaternion[0,:] = Tensor(flattened_quaternion) 
-    return flattened_task
 
 def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose, valid_base_indices: Tensor | None = None):
     """
@@ -213,7 +162,13 @@ def main():
     y_count = model_config.inverse_reachability.solution_resolution['y']
     yaw_count = model_config.inverse_reachability.solution_resolution['yaw']
 
-    base_poses_in_flattened_task_frame = load_base_pose_array(model_config)
+    _, base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+        reach_radius=model_config.task_geometry.max_radial_reach,
+        x_res=x_count,
+        y_res=y_count,
+        yaw_res=yaw_count,
+        device=model_config.model.device
+    )
     num_poses = base_poses_in_flattened_task_frame.batch
     empty_ik_solver = load_ik_solver(model_config)
 
@@ -239,7 +194,7 @@ def main():
             task_pose_in_world = cuRoboPose(position, quaternion)
 
             # Transform the base poses from the flattened task frame to the task frame
-            flattened_task_pose = flatten_task(task_pose_in_world)
+            flattened_task_pose = geometry.flatten_task(task_pose_in_world)
 
             # Assign transform names for clarity of calculations
             world_tform_flattened_task = flattened_task_pose
