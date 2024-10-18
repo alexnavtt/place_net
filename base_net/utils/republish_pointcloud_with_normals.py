@@ -14,6 +14,8 @@ fields = [PointField(name='x' , offset=0, datatype=PointField.FLOAT32, count=1),
           PointField(name='normal_y', offset=16, datatype=PointField.FLOAT32, count=1),
           PointField(name='normal_z', offset=20, datatype=PointField.FLOAT32, count=1)]
 
+z_bbox = open3d.geometry.AxisAlignedBoundingBox(min_bound=[-2.0, -1.0, -1.0], max_bound=[0.0, 1.0, 1.0])
+
 def pointcloud_callback(publisher: rclpy.publisher.Publisher, msg: PointCloud2):
     numpy_pointcloud = read_points(msg, field_names=['x', 'y', 'z'])
     numpy_pointcloud = structured_to_unstructured(numpy_pointcloud, dtype=float)
@@ -21,6 +23,7 @@ def pointcloud_callback(publisher: rclpy.publisher.Publisher, msg: PointCloud2):
     open3d_pointcloud = open3d.geometry.PointCloud()
     open3d_pointcloud.points.extend(numpy_pointcloud)
     open3d_pointcloud.remove_non_finite_points()
+    open3d_pointcloud = open3d_pointcloud.crop(z_bbox, invert=True)
     search = open3d.geometry.KDTreeSearchParamKNN(50)
     open3d_pointcloud.estimate_normals(search_param=search, fast_normal_computation=False)
     open3d_pointcloud.orient_normals_towards_camera_location()
