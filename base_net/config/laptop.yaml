@@ -5,11 +5,14 @@ pointclouds:
   geometry_env: {}
   office: {}
   nrg_map: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
+  hallways: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
+  apartment: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
+  kitchen: {elevation: 0.15}
 
 pointcloud_data_path: "base_net/data/pointclouds/"
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
-fake_solutions: False
+fake_solutions: True
 max_ik_count: 500
 debug: False
 
@@ -55,6 +58,22 @@ task_generation:
     nrg_map:
       - {center: [-4.2, 0.0, 1.1], extent: [9, 18, 1.8], yaw: -23}
       - {center: [-11.5, -1, 1.1], extent: [5.5, 6.0, 1.8], yaw: -23}
+    hallways:
+      - {center: [  3.0,  -7.6, 1.1], extent: [ 8.0,  2.2, 1.8], yaw:  12}
+      - {center: [  5.0,  -9.0, 1.1], extent: [ 4.0,  2.2, 1.8], yaw: -33}
+      - {center: [  7.0,  -9.0, 1.1], extent: [ 6.5,  1.2, 1.8], yaw: -78}
+      - {center: [  7.7, -20.0, 1.1], extent: [21.0,  2.2, 1.8], yaw: -80}
+      - {center: [  6.0, -22.4, 1.1], extent: [ 2.5,  1.5, 1.8], yaw:  12}
+      - {center: [ 10.0, -25.8, 1.1], extent: [ 1.5,  1.5, 1.8], yaw:  12}
+      - {center: [-14.5, -37.5, 1.1], extent: [ 6.0, 12.0, 1.8], yaw:  12}
+      - {center: [ -9.5, -34.0, 1.1], extent: [ 5.0,  7.0, 1.8], yaw:  12}
+      - {center: [  0.0, -34.5, 1.1], extent: [18.0,  2.0, 1.8], yaw:  12}
+      - {center: [ 10.8, -32.5, 1.1], extent: [ 4.0,  5.0, 1.8], yaw:  12}
+    apartment:
+      - {center: [12.0, -20.5, 1.1], extent: [18.0,  7.0, 1.8], yaw:  -78}
+    kitchen:
+      - {min_bound: [-1.5, -2.0, 1.0], max_bound: [1.5, 2.7, 2.0]}
+      - {min_bound: [-1.5, -1.5, 0.0], max_bound: [1.5, 2.7, 2.0]}
 
 inverse_reachability_map:
   task_resolution: 
