@@ -386,9 +386,6 @@ class BaseNetConfig:
         num_y = yaml_config['inverse_reachability_map']['solution_resolution']['y']
         num_yaw = yaml_config['inverse_reachability_map']['solution_resolution']['yaw']
 
-        # Always load the empty solution
-        solutions['empty'] = torch.load(os.path.join(solution_filepath, 'empty.pt'), map_location='cpu')
-
         # Then check if collision checked tasks are enabled
         for pointcloud_name in pointclouds.keys():
             if fake_solutions:

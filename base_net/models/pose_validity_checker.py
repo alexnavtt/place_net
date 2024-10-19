@@ -26,25 +26,25 @@ class PoseValidityChecker(torch.nn.Module):
 
         self.classification_seq = torch.nn.Sequential(
             torch.nn.Linear(1024, 32),
-            torch.nn.BatchNorm1d(1024),
+            torch.nn.BatchNorm1d(32),
             torch.nn.ReLU(),
 
             torch.nn.Linear(32, 1)
         )
 
-    def forward(self, pointcloud_embeddings: Tensor, pose_encodings: Tensor):
+    def forward(self, pointcloud_embeddings: Tensor, pose_encodings: Tensor, pointcloud_to_pose_mapping: Tensor):
         # Embed pose from x, y, z, R, P, Y to a higher dimensional representation
         pose_embeddings: Tensor = self.pose_embedder(pose_encodings)
 
         # Determine which parts of the pointcloud are important for this problem
         attended_pointcloud, _ = self.pointcloud_attention(
-            query=pointcloud_embeddings.unsqueeze(1),
+            query=pointcloud_embeddings[pointcloud_to_pose_mapping].unsqueeze(1),
             key=pose_embeddings.unsqueeze(1),
             value=pose_embeddings.unsqueeze(1)
         )
 
         # Now use these attended points to inform the robot reachability
-        hidden_state: Tensor = self.bilinear(pose_embeddings, attended_pointcloud)
+        hidden_state: Tensor = self.bilinear(pose_embeddings, attended_pointcloud.squeeze(1))
 
         # Classification network
         model_output = self.classification_seq(hidden_state)

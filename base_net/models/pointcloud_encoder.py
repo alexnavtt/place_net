@@ -16,13 +16,14 @@ def pad_pointclouds_to_same_size(pointclouds: list[torch.Tensor], device: torch.
     return pointcloud_tensor, padding_masks
 
 class PointNetEncoder(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, feature_size: int = 1024):
         super(PointNetEncoder, self).__init__()
         self.num_channels = 3 + 3 # xyz plus normals
 
         """ Note: We skip the geometry and feature transform steps
             because our problem is not invariant to transformations
         """
+        self.feature_size = feature_size
 
         # Pointnet Layers
         self.pointcloud_conv = torch.nn.Sequential(
@@ -44,8 +45,8 @@ class PointNetEncoder(torch.nn.Module):
             torch.nn.BatchNorm1d(128),
             torch.nn.ReLU(),
 
-            torch.nn.Conv1d(128, 1024, 1),
-            torch.nn.BatchNorm1d(1024),
+            torch.nn.Conv1d(128, self.feature_size, 1),
+            torch.nn.BatchNorm1d(self.feature_size),
         )
 
         # Feature T-Net Layers
@@ -100,15 +101,15 @@ class PointNetEncoder(torch.nn.Module):
 
         # features is size (batch_size, 64, num_points)
         features = self.pointnet_feature_conv(features)
-        # features is size (batch_size, 1024, num_points)
+        # features is size (batch_size, feature_size, num_points)
 
         # Apply the point mask to make sure invalid points cannot participate in max pooling
         features.masked_fill_(torch.logical_not(point_masks.unsqueeze(1)), -torch.inf)
 
         features = torch.max(features, 2, keepdim=True)[0]
-        # features is size (batch_size, 1024, 1)
-        features = features.view(batch_size, 1024)
-        # features is size (batch_size, 1024)
+        # features is size (batch_size, feature_size, 1)
+        features = features.view(batch_size, self.feature_size)
+        # features is size (batch_size, feature_size)
 
         return features
     

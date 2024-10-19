@@ -57,10 +57,10 @@ class InverseReachabilityMap:
         self.device = device
 
         self.task_grid = None
-        self.base_grid, self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
+        self.encoded_base_grid, self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
 
         if solution_file is not None:
-            self.solutions: Tensor = torch.load(solution_file)
+            self.solutions: Tensor = torch.load(solution_file, map_location='cpu')
             if not isinstance(self.solutions, Tensor):
                 raise RuntimeError(f'[InverseReachabilityMap]: Object loaded from {solution_file} is not a Tensor!')
             if not all(np.array(self.solutions.size()[1:]) == np.array([self.num_x, self.num_y, self.num_yaw])):
@@ -148,7 +148,7 @@ class InverseReachabilityMap:
         Output: flat_idx (B, 1)
         """
         z_idx, pitch_idx, roll_idx = grid_idx.split([1, 1, 1], dim=1)
-        return z_idx * self.num_pitch * self.num_roll + pitch_idx * self.num_roll + roll_idx
+        return (z_idx * self.num_pitch * self.num_roll + pitch_idx * self.num_roll + roll_idx).flatten()
 
     def get_task_indices(self, encoded_tasks: Tensor) -> Tensor | None:
         encoded_tasks = encoded_tasks.view(-1, 3)
@@ -163,18 +163,26 @@ class InverseReachabilityMap:
         pitch_idx = torch.round(pitch_coord).long()
         roll_idx  = torch.round(roll_coord).long()
 
-        if torch.any(z_idx >= self.num_z or z_idx < 0 or pitch_idx < 0 or pitch_idx >= self.num_pitch or roll_idx < 0 or roll_idx >= self.num_roll):
-            return None
-                
         grid_idx = torch.cat([z_idx, pitch_idx, roll_idx], dim=1)
 
-        return self.to_flat_idx(grid_idx)
+        invalid_mask = (z_idx >= self.num_z).logical_or \
+                       (z_idx < 0).logical_or \
+                       (pitch_idx < 0).logical_or \
+                       (pitch_idx >= self.num_pitch).logical_or \
+                       (roll_idx < 0).logical_or \
+                       (roll_idx >= self.num_roll)
+        valid_mask = torch.logical_not(invalid_mask).flatten()
 
-    def query_encoded_pose(self, encoded_tasks: Tensor) -> Tensor:            
-        flat_idx = self.get_task_indices(encoded_tasks)
+        return self.to_flat_idx(grid_idx), valid_mask
 
-        if flat_idx:
-            return self.solutions[flat_idx]
-        else:
-            print('Request lies outside IRM bounds, all poses are marked as unreachable')
-            return torch.zeros(self.solutions.size()[1:], dtype=bool, device=self.solutions.device)
+    def query_encoded_pose(self, encoded_tasks: Tensor) -> Tensor:
+        batch_size = encoded_tasks.size(0)          
+        flat_idx, valid_mask = self.get_task_indices(encoded_tasks)
+
+        false = torch.zeros((batch_size, *self.solutions.size()[1:]), dtype=bool, device=encoded_tasks.device)
+        flat_idx = torch.where(valid_mask, flat_idx, torch.zeros_like(flat_idx, device=encoded_tasks.device))
+        return torch.where(valid_mask.view(-1, 1, 1, 1), self.solutions[flat_idx], false)
+
+    def query_pose(self, task_poses: Tensor) -> Tensor:
+        encoded_poses = geometry.encode_tasks(task_poses)
+        return self.query_encoded_pose(encoded_poses)

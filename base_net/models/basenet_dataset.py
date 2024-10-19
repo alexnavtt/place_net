@@ -28,7 +28,6 @@ class BaseNetDataset(Dataset):
 
             train_size = int(split_tensor[0].item() * N)
             validation_size = int(split_tensor[1].item() * N)
-            test_size = N - train_size - validation_size
 
             if mode == 'training':
                 selected_indices = random_indices[:train_size]

@@ -1,3 +1,4 @@
+import os
 import copy
 
 import torch
@@ -5,13 +6,13 @@ from torch import Tensor
 from base_net.models.pose_encoder import PoseEncoder
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.models.pose_validity_checker import PoseValidityChecker
+from base_net.utils.inverse_reachability_map import InverseReachabilityMap
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
-        self.max_height = config.task_geometry.max_task_elevation
         self.collision = True
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
@@ -107,7 +108,7 @@ class BaseNet(torch.nn.Module):
 
         # Embed the task poses and get the transforms needed for the pointclouds
         tasks = tasks.to(self.config.device)
-        task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, max_height=self.max_height)
+        task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
         task_embedding: Tensor = self.pose_encoder(task_encoding)
 
         if self.collision:
@@ -140,52 +141,52 @@ class BaseNetLite(torch.nn.Module):
         super(BaseNetLite, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
-        self.max_height = config.task_geometry.max_task_elevation
 
         self._pose_encoder = PoseEncoder()
-        self._pointcloud_encoder = self.config.encoder_type()
+        self._pointcloud_encoder = self.config.encoder_type(feature_size=256)
         self._classifier = PoseValidityChecker()
 
-        self._base_solution_grid = config.solutions['empty']
-        num_solutions, self._num_z, self._num_pitch, self._num_roll = self._base_solution_grid.size()
-        self._min_z = config.task_geometry.min_task_elevation
-        self._max_z = config.task_geometry.max_task_elevation
+        irm_config = config.inverse_reachability
+        self.irm = InverseReachabilityMap(
+            min_elevation=config.task_geometry.min_task_elevation,
+            max_elevation=config.task_geometry.max_task_elevation,
+            reach_radius=config.task_geometry.max_radial_reach,
+            xyz_resolution=(irm_config.solution_resolution['x'], irm_config.solution_resolution['y'], irm_config.task_resolution['z']),
+            roll_pitch_yaw_resolution=(irm_config.task_resolution['roll'], irm_config.task_resolution['pitch'], irm_config.solution_resolution['yaw']),
+            solution_file=os.path.join(config.solution_path, 'base_net_irm.pt'),
+            device=self.config.device
+        )
 
-        # Generate a grid of relative poses from the center of the grid
-        x_range = torch.linspace(-1, 1, config.inverse_reachability.solution_resolution['x'])
-        y_range = torch.linspace(-1, 1, config.inverse_reachability.solution_resolution['y'])
-        yaw_range = torch.linspace(-torch.pi, torch.pi, config.inverse_reachability.solution_resolution['yaw'])
-        x_grid, y_grid, yaw_grid = self.relative_pose_grid = torch.meshgrid(x_range, y_range, yaw_range, indexing='ij')
-        self._relative_pose_grid = torch.stack([x_grid, y_grid, torch.sin(yaw_grid), torch.cos(yaw_grid)]).reshape(4, -1).T
+        self.to(self.config.device)
     
     def forward(self, pointclouds: list[Tensor] | Tensor, tasks: Tensor):
+        batch_size = tasks.size(0)
+
         # Remove preprocessing and indexing steps from gradient calculations
         with torch.no_grad():
             # Encode the pose and get its adjusted representation
-            task_rotation, adjusted_task_pose, task_encoding = self._pose_encoder.encode(tasks, max_height=self.max_height)
-            z, pitch, roll = adjusted_task_pose.split([1, 1, 1], dim=-1)
-
-            # Get the grid indices of this task pose
-            z_idx     = torch.floor((z - self._min_z) / (self._max_z - self._min_z) * self._num_z).long().squeeze()
-            pitch_idx = torch.floor((pitch + torch.pi/2) / torch.pi * self._num_pitch).long().squeeze()
-            roll_idx  = torch.floor((roll + torch.pi) / (2*torch.pi) * self._num_roll).long().squeeze()
-            flat_idx  = z_idx * self._num_pitch * self._num_roll + pitch_idx * self._num_roll + roll_idx
+            tasks = tasks.to(self.config.device)
+            task_rotation, adjusted_task_pose, task_encoding = self._pose_encoder.encode(tasks, self.task_geometry.min_task_elevation, self.task_geometry.max_task_elevation)
 
             # Retrieve only those poses which are valid without obstacles
-            valid_pose_masks = self._base_solution_grid[flat_idx, :, :, :].flatten(start_dim=1)
+            # Note that the IRM operates exclusively on the CPU for memory reasons
+            valid_pose_masks = self.irm.query_encoded_pose(adjusted_task_pose.cpu())
+            valid_pose_masks = valid_pose_masks.view(batch_size, -1)
             batch_indices, pose_indices = valid_pose_masks.nonzero(as_tuple=True)
-            valid_pose_encodings = self._relative_pose_grid[pose_indices]
+            valid_pose_encodings = self.irm.encoded_base_grid[pose_indices].to(self.config.device)
 
             # Append the task pose information to these relative poses
             valid_pose_encodings = torch.concat([valid_pose_encodings, task_encoding[batch_indices]], dim=1)
 
             # Preprocess the pointclouds to get them in a valid form
-            task_positions = tasks[:, :3]
+            task_positions = tasks[:, :3].to(self.config.device)
             pointcloud_tensor, padding_mask = self._pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, task_positions, self.task_geometry)
 
         pointcloud_embeddings: Tensor = self._pointcloud_encoder(pointcloud_tensor, padding_mask)
 
         # Pass these through the classification network
-        output_logit = self._classifier(pointcloud_embeddings, valid_pose_encodings)
-        return output_logit
+        output_logit = self._classifier(pointcloud_embeddings, valid_pose_encodings, batch_indices)
+        output = torch.zeros_like(valid_pose_masks, device=self.config.device, dtype=torch.float)
+        output[batch_indices, pose_indices] = output_logit.squeeze()
+        return output
     

@@ -26,9 +26,10 @@ def load_base_pose_array(reach_radius: float, x_res: int, y_res: int, yaw_res: i
     yaw_range = torch.linspace(0, 2*torch.pi, yaw_res)
 
     y_grid, x_grid, yaw_grid = torch.meshgrid(y_range, x_range, yaw_range, indexing='ij')
-    encoded_pose_array = torch.stack([x_grid, y_grid, yaw_grid]).reshape(3, -1).T
+    pose_array = torch.stack([x_grid, y_grid, yaw_grid]).reshape(3, -1).T
+    encoded_pose_array = torch.stack([x_grid, y_grid, torch.sin(yaw_grid), torch.cos(yaw_grid)]).reshape(4, -1).T
 
-    x_pos, y_pos, yaw_pos = encoded_pose_array.split([1, 1, 1], dim=-1)
+    x_pos, y_pos, yaw_pos = pose_array.split([1, 1, 1], dim=-1)
 
     pos_grid = torch.concatenate([x_pos, y_pos, torch.zeros([x_pos.numel(), 1])], dim=1)
     yaw_grid = torch.zeros((yaw_pos.numel(), 4))
@@ -64,7 +65,7 @@ def extract_yaw_from_quaternions(quats: Tensor) -> Tensor:
     cos_yaw_cos_pitch = 1 - 2*(qyy + qzz)
     yaw = torch.atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
     
-    return yaw
+    return yaw.flatten()
 
 def remove_roll_and_pitch_from_quaternions(quats: Tensor) -> Tensor:
     """

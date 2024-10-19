@@ -12,7 +12,6 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from .base_net_config import BaseNetConfig
 from base_net.utils import task_visualization, geometry
-from base_net.scripts.calculate_ground_truth import flatten_task
 
 
 class Logger:
@@ -96,7 +95,7 @@ class Logger:
         model_labels[model_labels < 0.5] = 0
 
         # Retrieve the bases poses
-        base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+        _, base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
             reach_radius=self._model_config.task_geometry.max_radial_reach,
             x_res=self._model_config.inverse_reachability.solution_resolution['x'],
             y_res=self._model_config.inverse_reachability.solution_resolution['y'],

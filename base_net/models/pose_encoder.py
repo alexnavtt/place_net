@@ -17,7 +17,7 @@ class PoseEncoder(torch.nn.Module):
             torch.nn.ReLU(),
         )
 
-    def encode(self, poses: Tensor, max_height: float) -> tuple[Tensor, Tensor, Tensor]:
+    def encode(self, poses: Tensor, min_height: float, max_height: float) -> tuple[Tensor, Tensor, Tensor]:
         """
         Given a tensor of input poses, provide an encoded feature vector for those poses, 
         as well as a transformation matrix which transforms points defined in the same
@@ -36,13 +36,13 @@ class PoseEncoder(torch.nn.Module):
                        of the adjusted pose with fields z, pitch, sin(roll), cos(roll)
         """
         # Handle the case of a 1D tensor
-        if isinstance(poses.size(), int) or len(poses.size()) == 1:
+        if len(poses.shape) == 1:
             poses = poses.unsqueeze(0)
 
         batch_size = poses.size()[0]
         _, task_orientations = poses.split([3, 4], dim=1)
         
-        yaw_angles = geometry.extract_yaw_from_quaternions(task_orientations)
+        yaw_angles = geometry.extract_yaw_from_quaternions(task_orientations).squeeze()
 
         cos_yaw = torch.cos(yaw_angles)
         sin_yaw = torch.sin(yaw_angles)
@@ -54,7 +54,10 @@ class PoseEncoder(torch.nn.Module):
 
         adjusted_pose = geometry.encode_tasks(poses)
         z, pitch, roll = adjusted_pose.split([1, 1, 1], dim=1)
-        task_encoding = torch.cat([(z - max_height/2)/max_height, pitch/(torch.pi/2), torch.sin(roll), torch.cos(roll)], dim=1)
+
+        elevation_range_0_to_1 = (z - min_height)/(max_height - min_height)
+        elevation_range_neg_1_to_1 = 2 * elevation_range_0_to_1 - 1
+        task_encoding = torch.cat([elevation_range_neg_1_to_1, pitch/(torch.pi/2), torch.sin(roll), torch.cos(roll)], dim=1)
         return task_rot_world, adjusted_pose, task_encoding
 
     def forward(self, encoded_poses: Tensor) -> Tensor:

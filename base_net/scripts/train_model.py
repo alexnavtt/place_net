@@ -1,13 +1,12 @@
 #!/bin/python
 import os
 import torch
-import open3d
 import argparse
 from tqdm import tqdm
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from base_net.models.base_net import BaseNet
+from base_net.models.base_net import BaseNetLite
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger
@@ -32,10 +31,10 @@ def load_test_pointcloud() -> list[Tensor]:
 def load_test_tasks() -> Tensor:
     return Tensor([[0.0, 0.0, 0.0, 0.4217103, 0.5662352, 0.4180669, -0.5716277]])
 
-def collate_fn(data_tuple) -> tuple[Tensor, list[open3d.geometry.PointCloud]]:
-    pointcloud_list, task_list, sol_list = map(list, zip(*(
-        (pointcloud, task.unsqueeze(0), sol.unsqueeze(0)) for task, pointcloud, sol in data_tuple
-    )))
+def collate_fn(data_tuple: list[tuple[Tensor, Tensor, Tensor]]) -> tuple[Tensor, list[Tensor], Tensor]:
+    pointcloud_list, task_list, sol_list = map(list, zip(
+        *((pointcloud, task.unsqueeze(0), sol.unsqueeze(0)) for task, pointcloud, sol in data_tuple)
+    ))
     task_tensor = torch.concatenate(task_list, dim=0)
     sol_tensor = torch.concatenate(sol_list, dim=0)
     return task_tensor, pointcloud_list, sol_tensor
@@ -50,7 +49,7 @@ def main():
         checkpoint_path, _ = os.path.split(args.checkpoint)
         base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True)
         
-    base_net_model = BaseNet(base_net_config)
+    base_net_model = BaseNetLite(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
     logger = Logger(base_net_config)
 
@@ -97,7 +96,7 @@ def main():
         base_net_model.train()
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
             optimizer.zero_grad()
-            output = base_net_model(pointcloud_list, task_tensor)      
+            output = base_net_model(pointcloud_list, task_tensor)   
             target = solution.to(base_net_config.model.device)          
             loss = loss_fn(output, target)
             loss.backward()
