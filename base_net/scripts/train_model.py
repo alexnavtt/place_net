@@ -6,7 +6,7 @@ from tqdm import tqdm
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from base_net.models.base_net import BaseNetLite
+from base_net.models.base_net import BaseNet, BaseNetLite
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger

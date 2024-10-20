@@ -38,6 +38,12 @@ class Logger:
         self._max_error = 0.0
         self._min_error = 1.0
         self._aggregate_error = 0.0
+        self._aggregate_false_positive = 0.0
+        self._aggregate_false_negative = 0.0
+        self._max_false_positive = 0.0
+        self._min_false_positive = 1.0
+        self._max_false_negative = 0.0
+        self._min_false_negative = 1.0
         self._num_batches = 0
 
     def clear_latest_run_dir(self):
@@ -66,11 +72,27 @@ class Logger:
         binary_output = torch.sigmoid(model_output)
         binary_output[binary_output > 0.5] = 1
         binary_output[binary_output < 0.5] = 0
+        binary_output = binary_output.bool()
+        model_output = model_output.bool()
         
-        error = (binary_output != ground_truth).float().mean().item()
+        false_positive_grid = torch.logical_and(binary_output, torch.logical_not(ground_truth))
+        false_negative_grid = torch.logical_and(ground_truth, torch.logical_not(binary_output))
+        error_grid = torch.logical_or(false_positive_grid, false_negative_grid)
+        num_positive = model_output.sum(dtype=torch.float).item()
+        num_negative = torch.logical_not(model_output).sum(dtype=torch.float).item()
+        error = error_grid.float().mean().item()
+        false_positive = false_positive_grid.sum(dtype=torch.float).item() / num_positive
+        false_negative = false_negative_grid.sum(dtype=torch.float).item() / num_negative
+
+        self._aggregate_false_positive += false_positive
+        self._aggregate_false_negative += false_negative
         self._aggregate_error += error
         self._max_error = max(error, self._max_error)
         self._min_error = min(error, self._min_error)
+        self._max_false_positive = max(false_positive, self._max_false_positive)
+        self._min_false_positive = min(false_positive, self._min_false_positive)
+        self._max_false_negative = max(false_negative, self._max_false_negative)
+        self._min_false_negative = min(false_negative, self._min_false_negative)
         self._num_batches += 1
 
     def log_statistics(self, epoch: int, label: str):
@@ -78,9 +100,15 @@ class Logger:
 
         self._last_loss = self._aggregate_loss/self._num_batches
         self._writer.add_scalar(f'Loss/{label}', self._last_loss, epoch)
-        self._writer.add_scalar(f'AvgError/{label}', self._aggregate_error*100/self._num_batches, epoch)
-        self._writer.add_scalar(f'MaxError/{label}', self._max_error*100, epoch)
-        self._writer.add_scalar(f'MinError/{label}', self._min_error*100, epoch)
+        self._writer.add_scalar(f'Error/Avg/{label}', self._aggregate_error*100/self._num_batches, epoch)
+        self._writer.add_scalar(f'Error/Max/{label}', self._max_error*100, epoch)
+        self._writer.add_scalar(f'Error/Min/{label}', self._min_error*100, epoch)
+        self._writer.add_scalar(f'FalsePositive/Avg/{label}', self._aggregate_false_positive*100/self._num_batches, epoch)
+        self._writer.add_scalar(f'FalsePositive/Max/{label}', self._max_false_positive*100, epoch)
+        self._writer.add_scalar(f'FalsePositive/Min/{label}', self._min_false_positive*100, epoch)
+        self._writer.add_scalar(f'FalseNegative/Avg/{label}', self._aggregate_false_negative*100/self._num_batches, epoch)
+        self._writer.add_scalar(f'FalseNegative/Max/{label}', self._max_false_negative*100, epoch)
+        self._writer.add_scalar(f'FalseNegative/Min/{label}', self._min_false_negative*100, epoch)
 
         self.reset_loss()
 
