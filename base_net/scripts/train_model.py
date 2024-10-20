@@ -96,8 +96,11 @@ def main():
         base_net_model.train()
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
             optimizer.zero_grad()
-            output = base_net_model(pointcloud_list, task_tensor)   
-            target = solution.to(base_net_config.model.device)          
+            output = base_net_model(pointcloud_list, task_tensor)
+            target = solution.to(base_net_config.model.device)
+            if isinstance(base_net_model, BaseNetLite):
+                output, batch_indices, pose_indices = output
+                target = target.flatten(start_dim=1)[batch_indices, pose_indices]
             loss = loss_fn(output, target)
             loss.backward()
             optimizer.step()
@@ -109,12 +112,22 @@ def main():
         with torch.no_grad():
             base_net_model.eval()
             for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
-                output = base_net_model(pointcloud_list, task_tensor)      
-                target = solution.to(base_net_config.model.device)          
+                output = base_net_model(pointcloud_list, task_tensor)
+                target = solution.to(base_net_config.model.device)
+                if isinstance(base_net_model, BaseNetLite):
+                    output, batch_indices, pose_indices = output
+                    target = target.flatten(start_dim=1)[batch_indices, pose_indices]
                 loss = loss_fn(output, target)
                 logger.add_data_point(loss, output, target)
 
         logger.log_statistics(epoch, 'validate')
+
+        # Reorganize elements for BaseNetLite to be placed in the visualizer
+        if isinstance(base_net_model, BaseNetLite):
+            first_batch_indices = pose_indices[batch_indices == 0]
+            reconstructed_output = torch.zeros(base_net_model.irm.solutions.shape[1:], dtype=torch.float).flatten()
+            reconstructed_output[first_batch_indices] = output[:first_batch_indices.size(0)].cpu()
+            output = reconstructed_output.view((1, *base_net_model.irm.solutions.shape[1:]))
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:

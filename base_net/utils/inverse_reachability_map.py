@@ -66,7 +66,7 @@ class InverseReachabilityMap:
             if not all(np.array(self.solutions.size()[1:]) == np.array([self.num_x, self.num_y, self.num_yaw])):
                 raise RuntimeError(f'[InverseReachabilityMap]: Size of loaded solution tensor is {self.solutions.size()} but the configured size is {[self.num_x, self.num_y, self.num_yaw]}')
             self.solved = True
-            print(f'Loaded inverse reachability solutions of shape {self.solutions.size()} from {solution_file} with {torch.sum(self.solutions)} valid poses in total')
+            print(f'Loaded inverse reachability solutions of shape {self.solutions.size()} from {solution_file}')
         else:
             self.solutions: Tensor = torch.zeros((self.num_z*self.num_pitch*self.num_roll, self.num_x, self.num_y, self.num_yaw), dtype=bool)
             self.solved = False

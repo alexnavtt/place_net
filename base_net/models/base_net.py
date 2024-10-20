@@ -186,7 +186,5 @@ class BaseNetLite(torch.nn.Module):
 
         # Pass these through the classification network
         output_logit = self._classifier(pointcloud_embeddings, valid_pose_encodings, batch_indices)
-        output = torch.zeros_like(valid_pose_masks, device=self.config.device, dtype=torch.float)
-        output[batch_indices, pose_indices] = output_logit.squeeze()
-        return output
+        return output_logit.squeeze(), batch_indices, pose_indices
     
