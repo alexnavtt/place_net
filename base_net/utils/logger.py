@@ -70,19 +70,21 @@ class Logger:
         self._aggregate_loss += loss.item()
 
         binary_output = torch.sigmoid(model_output)
-        binary_output[binary_output > 0.5] = 1
-        binary_output[binary_output < 0.5] = 0
+        binary_output[binary_output >= 0.5] = 1
+        binary_output[binary_output <  0.5] = 0
         binary_output = binary_output.bool()
-        model_output = model_output.bool()
+        ground_truth = ground_truth.bool()
         
         false_positive_grid = torch.logical_and(binary_output, torch.logical_not(ground_truth))
         false_negative_grid = torch.logical_and(ground_truth, torch.logical_not(binary_output))
         error_grid = torch.logical_or(false_positive_grid, false_negative_grid)
-        num_positive = model_output.sum(dtype=torch.float).item()
-        num_negative = torch.logical_not(model_output).sum(dtype=torch.float).item()
+
+        num_positive = ground_truth.sum(dtype=torch.float).item()
+        num_negative = torch.logical_not(ground_truth).sum(dtype=torch.float).item()
+
         error = error_grid.float().mean().item()
-        false_positive = false_positive_grid.sum(dtype=torch.float).item() / num_positive
-        false_negative = false_negative_grid.sum(dtype=torch.float).item() / num_negative
+        false_positive = false_positive_grid.sum(dtype=torch.float).item()/num_negative if num_negative > 0 else 0
+        false_negative = false_negative_grid.sum(dtype=torch.float).item()/num_positive if num_positive > 0 else 0
 
         self._aggregate_false_positive += false_positive
         self._aggregate_false_negative += false_negative

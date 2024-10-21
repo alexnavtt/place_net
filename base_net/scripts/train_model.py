@@ -10,6 +10,7 @@ from base_net.models.base_net import BaseNet, BaseNetLite
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger
+from base_net.models.loss import TverskyLoss
 
 def load_arguments():
     """
@@ -49,7 +50,7 @@ def main():
         checkpoint_path, _ = os.path.split(args.checkpoint)
         base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True)
         
-    base_net_model = BaseNetLite(base_net_config)
+    base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
     logger = Logger(base_net_config)
 

@@ -46,3 +46,48 @@ class FocalLoss(torch.nn.Module):
         # Compute focal loss
         focal_loss = alpha_t * focal_factor * 0.5*(dice_loss + bce_loss)
         return focal_loss.sum()
+
+class TverskyLoss(torch.nn.Module):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5, smooth: float = 1e-6):
+        """
+        Args:
+            alpha: Weight for false positives. Increasing this will decrease the
+                   rate of false positives
+            beta: Weight for false negatives. Increasing this will decrease the
+                  rate of false negatives
+            smooth: Smoothing factor to avoid division by zero.
+        """
+        super(TverskyLoss, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+
+    def forward(self, logits: Tensor, targets: Tensor):
+        """
+        Args:
+            logits: Predicted logits (before sigmoid), shape (N, *).
+            targets: Ground truth binary labels, shape (N, *).
+
+        Returns:
+            torch.Tensor: Computed Tversky loss.
+        """
+        # Apply sigmoid to get probabilities
+        probabilities = torch.sigmoid(logits)
+
+        # Flatten tensors to (N, -1)
+        probs_flat = probabilities.flatten(start_dim=1)
+        targets_flat = targets.flatten(start_dim=1)
+
+        # Calculate True Positives, False Positives, and False Negatives
+        TP = (probs_flat * targets_flat).sum(dim=1)
+        FP = (probs_flat * (1 - targets_flat)).sum(dim=1)
+        FN = ((1 - probs_flat) * targets_flat).sum(dim=1)
+
+        # Compute Tversky index
+        tversky_index = (TP + self.smooth) / (TP + self.alpha * FP + self.beta * FN + self.smooth)
+
+        # Compute Tversky loss
+        loss = 1 - tversky_index
+
+        # Return the mean loss over the batch
+        return loss.mean()
