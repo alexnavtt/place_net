@@ -25,14 +25,17 @@ class BaseNet(torch.nn.Module):
             batch_first=True,
         )
 
+        num_channels, width, bredth, height = 256, 4, 4, 4
+        num_features = num_channels * width * bredth * height
+
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
             torch.nn.Linear(in_features=2048, out_features=4096),
             torch.nn.BatchNorm1d(num_features=4096),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(in_features=4096, out_features=7168), # (2, 16, 16, 14)
-            torch.nn.BatchNorm1d(num_features=7168),
+            torch.nn.Linear(in_features=4096, out_features=num_features),
+            torch.nn.BatchNorm1d(num_features=num_features),
             torch.nn.ReLU()
         )
 
@@ -41,53 +44,57 @@ class BaseNet(torch.nn.Module):
         Note that we pad the yaw axis with circular padding to account for angle wrap-around
         For dilation of 1, dimensional change is as follows:
               D_out = (D_in - 1) x stride - 2 x padding + kernel_size + output_padding
-        Starting size is (B, 1, 8, 8, 8)
         """
         self.deconvolution = torch.nn.Sequential(
-            # Size is (B, 2, 16, 16, 14)
-            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
-            # Size is (B, 1, 16, 16, 16)
+            # Size is (B, 256, 4, 4, 4)
             torch.nn.ConvTranspose3d(
-                in_channels=2,
-                out_channels=3,
+                in_channels=256,
+                out_channels=128,
+                kernel_size=4,
+                stride=2,
+                padding=1
+            ),
+            torch.nn.BatchNorm3d(num_features=128),
+            torch.nn.ReLU(),
+
+            # Size is (B, 128, 8, 8, 8)
+            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+
+            # Size is (B, 128, 8, 8, 10)
+            torch.nn.ConvTranspose3d(
+                in_channels=128,
+                out_channels=64,
                 kernel_size=3,
                 stride=1,
-                padding=(1, 1, 2)
+                padding=(0, 0, 2)
             ),
-            torch.nn.BatchNorm3d(num_features=3),
+            torch.nn.BatchNorm3d(num_features=64),
             torch.nn.ReLU(),
-            # Size is (B, 1, 16, 16, 14)
+
+            # Size is (B, 64, 10, 10, 8)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
-            # Size is (B, 1, 16, 16, 16)
+
+            # Size is (B, 64, 10, 10, 10)
             torch.nn.ConvTranspose3d(
-                in_channels=3,
-                out_channels=5,
-                kernel_size=3,
-                stride=1,
-                padding=(1, 1, 2)
+                in_channels=64,
+                out_channels=32,
+                kernel_size=4,
+                stride=2,
+                padding=1
             ),
-            torch.nn.BatchNorm3d(num_features=5),
+            torch.nn.BatchNorm3d(num_features=32),
             torch.nn.ReLU(),
-            # Size is (B, 1, 16, 16, 14)
+
+            # Size is (B, 32, 20, 20, 20)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
+
+            # Size is (B, 32, 20, 20, 22)
             torch.nn.ConvTranspose3d(
-                in_channels=5,
-                out_channels=3,
-                kernel_size=5,
-                stride=1,
-                padding=(0, 0, 1)
-            ),
-            torch.nn.BatchNorm3d(num_features=3),
-            torch.nn.ReLU(),
-            # Size is (B, 1, 20, 20, 18)
-            torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
-            # Size is (B, 1, 20, 20, 20)
-            torch.nn.ConvTranspose3d(
-                in_channels=3,
+                in_channels=32,
                 out_channels=1,
                 kernel_size=3,
                 stride=1,
-                padding=1
+                padding=(1, 1, 2)
             )
             # Size is (B, 1, 20, 20, 20)
         )
@@ -135,7 +142,7 @@ class BaseNet(torch.nn.Module):
         final_vector: Tensor = self.linear_upscale(combined_vector)
 
         # Scale up to final 20x20x20 grid
-        first_3d_layer = final_vector.view([-1, 2, 16, 16, 14])
+        first_3d_layer = final_vector.view([-1, 256, 4, 4, 4])
         final_3d_grid = self.deconvolution(first_3d_layer)
 
         return final_3d_grid.squeeze(1)

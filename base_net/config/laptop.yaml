@@ -14,7 +14,7 @@ task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
 fake_solutions: True
 max_ik_count: 500
-debug: False
+debug: True
 
 curobo_config_file:
   ros_package: spot_curobo_config
