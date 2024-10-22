@@ -29,6 +29,7 @@ cuRoboTransform: TypeAlias = cuRoboPose
 # base_net
 from base_net.utils import task_visualization, geometry
 from base_net.utils.base_net_config import BaseNetConfig, tensor_hash
+from base_net.utils.pose_scorer import PoseScorer
 
 def load_arguments():
     """
@@ -89,10 +90,12 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
     """
+    pose_scores = PoseScorer(max_angular_window=2*torch.pi).score_pose_array(valid_base_indices.view(1, 20, 20, 20)).flatten()
 
-    geometries = [pointcloud]
+    geometries = [pointcloud] if pointcloud is not None else []
     geometries = geometries + task_visualization.get_task_arrows(task_pose)
     geometries = geometries + task_visualization.get_base_arrows(base_poses, valid_base_indices)
+    geometries = geometries + task_visualization.get_base_arrows(base_poses, pose_scores, prefix='scores_')
     open3d.visualization.draw(geometry=geometries)
 
 def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: BaseNetConfig, pointcloud = None):
@@ -107,6 +110,8 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     # Render the base poses
     geometries += task_visualization.get_base_arrows(goal_poses, solution_success)
+    solution_scores = PoseScorer(max_angular_window=2*torch.pi).score_pose_array(solution_success.view(1, 20, 20, 20)).flatten()
+    geometries += task_visualization.get_base_arrows(goal_poses, solution_scores, prefix='scores_')
 
     # Render one of the successful poses randomly
     if torch.sum(solution_success) > 0:
