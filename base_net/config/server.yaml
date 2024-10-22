@@ -89,7 +89,7 @@ inverse_reachability_map:
 model_settings:
   model_type: 'BaseNetLite'
   pointcloud_encoder: 'PointNet'
-  loss_function: 'BCE' # BCE, Dice, Focal
+  loss_function: 'Dice' # BCE, Dice, Focal
   cuda_device: 1
   batch_size: 16
   learning_rate: 0.0005
