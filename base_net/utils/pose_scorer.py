@@ -28,9 +28,7 @@ class PoseScorer:
             position_offsets += [[1, 1, 0], [1, -1, 0], [-1, -1, 0], [-1, 1, 0]]
 
         # Algorithm for adding neighboring values in a grid
-        mean_divisor = 1
         for offset_vec in position_offsets:
-            mean_divisor += 1
             pads = []
             slices = []
             dist = torch.norm(torch.tensor(offset_vec, dtype=torch.float))
@@ -50,7 +48,7 @@ class PoseScorer:
             # Use the pose_array mask to only update valid poses, and weight by inverse distance
             augmented_pose_scores += pose_array * offset_tensor / (1 + dist)
 
-        augmented_pose_scores /= mean_divisor
+        augmented_pose_scores /= (len(position_offsets) + 1)
         return augmented_pose_scores
         
     def score_at_positions(self, valid_angle_mask: Tensor) -> Tensor:
@@ -71,7 +69,7 @@ class PoseScorer:
         batch_indices = torch.arange(batch_size, dtype=torch.int64, device=valid_angle_mask.device).unsqueeze(1).repeat(1, num_angles)
         current_index = torch.arange(num_angles, dtype=torch.int64, device=valid_angle_mask.device).unsqueeze(0).repeat(batch_size, 1)
         valid_mask = valid_angle_mask.clone().detach()
-        scores = torch.zeros_like(valid_angle_mask, dtype=torch.float32)
+        scores = torch.zeros_like(valid_angle_mask, dtype=torch.float32, requires_grad=False)
 
         index_offset = 0
         while index_offset <= index_offset_max and torch.any(valid_mask):
@@ -84,3 +82,19 @@ class PoseScorer:
             valid_mask = torch.logical_and(valid_mask, valid_angle_mask[batch_indices, negative_offset_indices])
 
         return scores / (index_offset_max + 1)
+    
+    def select_best_pose(self, pose_array: Tensor) -> Tensor:
+        pose_scores = self.score_pose_array(pose_array)
+        pose_scores = (pose_scores/torch.max(pose_scores) >= 0.99).float()
+
+        while True:
+            new_scores = self.score_pose_array(pose_scores)
+            new_scores = (new_scores/torch.max(new_scores) >= 0.99).float()
+
+            iteration_diff = torch.abs(new_scores - pose_scores)
+            pose_scores = new_scores
+            if torch.all(iteration_diff < 1e-2):
+                break
+                
+        pose_scores = self.score_pose_array(pose_scores)
+        return pose_scores.argmax()
