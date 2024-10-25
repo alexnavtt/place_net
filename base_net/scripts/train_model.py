@@ -23,6 +23,7 @@ def load_arguments():
     parser.add_argument('--config-file', default='base_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     parser.add_argument('--checkpoint', help='path to a model checkpoint from which to resume training or evaluate')
     parser.add_argument('--test', default=False, type=bool, help='Whether or not to evaluate the model on the test portion of the dataset')
+    parser.add_argument('--device', help='CUDA device override')
     return parser.parse_args()
 
 def load_test_pointcloud() -> list[Tensor]:
@@ -45,17 +46,17 @@ def main():
 
     # Load the model from a checkpoint if necessary        
     if args.checkpoint is None:
-        base_net_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=True)
+        base_net_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=True, device=args.device)
     else:
         checkpoint_path, _ = os.path.split(args.checkpoint)
-        base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True)
+        base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True, device=args.device)
         
     base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
     logger = Logger(base_net_config)
 
     if args.checkpoint is not None:
-        checkpoint = torch.load(args.checkpoint)
+        checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device)
         base_net_model.load_state_dict(checkpoint['base_net_model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         start_epoch = checkpoint['epoch']

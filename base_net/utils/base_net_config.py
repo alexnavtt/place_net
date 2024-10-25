@@ -277,9 +277,12 @@ class BaseNetConfig:
     debug: bool = False
 
     @staticmethod
-    def from_yaml_file(filename: str, load_tasks = True, load_solutions = False):
+    def from_yaml_file(filename: str, load_tasks = True, load_solutions = False, device=None):
         with open(filename, 'r') as f:
             yaml_config = yaml.safe_load(f)
+
+        if device is not None:
+            yaml_config['model_settings']['cuda_device'] = device
         return BaseNetConfig.from_yaml_dict(yaml_config, load_tasks, load_solutions)
 
     @staticmethod
