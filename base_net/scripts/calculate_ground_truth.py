@@ -268,7 +268,8 @@ def main():
                 if model_config.debug:
                     visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
 
-            sol_tensor[task_pose_idx, :, :, :] = solution_success.view(x_count, y_count, yaw_count)
+            # y-coordinate varies least frequently, yaw-coordinate varies most
+            sol_tensor[task_pose_idx, :, :, :] = solution_success.view(y_count, x_count, yaw_count)
 
         if model_config.solution_path is not None:
             solution_path = os.path.join(model_config.solution_path, f'{task_name}.pt')

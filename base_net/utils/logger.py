@@ -9,6 +9,7 @@ from torch import Tensor
 from open3d.visualization.tensorboard_plugin import summary
 from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 from torch.utils.tensorboard.writer import SummaryWriter
+from curobo.types.math import Pose as cuRoboPose
 
 from .base_net_config import BaseNetConfig
 from base_net.utils import task_visualization, geometry
@@ -118,7 +119,7 @@ class Logger:
         if not self._log: return
         self._writer.flush()
 
-    def log_visualization(self, model_output: Tensor, ground_truth: Tensor, step: int, task_pose: Tensor, pointcloud: Tensor | None = None):
+    def log_visualization(self, model_output: Tensor, ground_truth: Tensor, step: int, task_pose: Tensor, pointcloud: Tensor | None = None, device = 'cuda:0'):
         # Convert output logits to binary classification values
         model_labels = torch.sigmoid(model_output.flatten())
         model_labels[model_labels > 0.5] = 1
@@ -130,17 +131,24 @@ class Logger:
             x_res=self._model_config.inverse_reachability.solution_resolution['x'],
             y_res=self._model_config.inverse_reachability.solution_resolution['y'],
             yaw_res=self._model_config.inverse_reachability.solution_resolution['yaw'],
-            device=model_output.device
+            device=device
         )
-        base_poses_in_flattened_task_frame.position[:, :2] += task_pose[:2].to(base_poses_in_flattened_task_frame.position.device)
-        base_poses_in_flattened_task_frame.position[:, 2] = self._model_config.task_geometry.base_link_elevation
+
+        task_pose = task_pose.to(device)
+        world_tform_flattened_task = geometry.flatten_task(cuRoboPose(position=task_pose[:3].unsqueeze(0), quaternion=task_pose[3:].unsqueeze(0)))
+        base_poses_in_world = world_tform_flattened_task.repeat(base_poses_in_flattened_task_frame.batch).multiply(base_poses_in_flattened_task_frame)
+        base_poses_in_world.position[:, 2] = self._model_config.task_geometry.base_link_elevation
 
         # Get the geometry for the ground truth, the model output, and their agreement metric
         agreement = model_labels == ground_truth.flatten()
         task_geometry         = task_visualization.get_task_arrows(task_pose)
-        ground_truth_geometry = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, ground_truth.flatten(), prefix='ground_truth')
-        output_geometry       = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, model_labels, prefix='model_output')
-        aggreement_geometry   = task_visualization.get_base_arrows(base_poses_in_flattened_task_frame, agreement, prefix='agreement')
+        ground_truth_geometry = task_visualization.get_base_arrows(base_poses_in_world, ground_truth.flatten(), prefix='ground_truth')
+        output_geometry       = task_visualization.get_base_arrows(base_poses_in_world, model_labels, prefix='model_output')
+        aggreement_geometry   = task_visualization.get_base_arrows(base_poses_in_world, agreement, prefix='agreement')
+
+        # Additionally log the pointcloud if provided
+        if pointcloud is not None:
+            pointcloud_geometry = task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config)
 
         # Save the geometry to the SummaryWriter
         if self._log:
@@ -148,16 +156,14 @@ class Logger:
             self._writer.add_3d('ground_truth', to_dict_batch([entry['geometry'] for entry in ground_truth_geometry]), step=step)
             self._writer.add_3d('output', to_dict_batch([entry['geometry'] for entry in output_geometry]), step=step)
             self._writer.add_3d('agreement', to_dict_batch([entry['geometry'] for entry in aggreement_geometry]), step=step)
-
-            # Additionally log the pointcloud if provided
             if pointcloud is not None:
-                self._writer.add_3d('environment', to_dict_batch([entry['geometry'] for entry in task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config)]), step=step)
+                self._writer.add_3d('environment', to_dict_batch([entry['geometry'] for entry in pointcloud_geometry]), step=step)
 
         # If debug is enabled, immediately show the geometry
         if self._model_config.debug:
             geometries = [*task_geometry, *ground_truth_geometry, *output_geometry, *aggreement_geometry]
             if pointcloud is not None:
-                geometries += task_visualization.get_pointcloud(pointcloud, task_pose, self._model_config)
+                geometries += pointcloud_geometry
             open3d.visualization.draw(geometries)
 
     def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int):

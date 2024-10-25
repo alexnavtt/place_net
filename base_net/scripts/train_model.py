@@ -24,6 +24,7 @@ def load_arguments():
     parser.add_argument('--checkpoint', help='path to a model checkpoint from which to resume training or evaluate')
     parser.add_argument('--test', default=False, type=bool, help='Whether or not to evaluate the model on the test portion of the dataset')
     parser.add_argument('--device', help='CUDA device override')
+    parser.add_argument('--debug', help='Debug override flag')
     return parser.parse_args()
 
 def load_test_pointcloud() -> list[Tensor]:
@@ -51,6 +52,10 @@ def main():
         checkpoint_path, _ = os.path.split(args.checkpoint)
         base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True, device=args.device)
         
+    # Override the debug flag if necessary
+    if args.debug is not None:
+        base_net_config.debug = args.debug
+    
     base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
     logger = Logger(base_net_config)
@@ -66,7 +71,7 @@ def main():
     loss_fn = base_net_config.model.loss_fn_type()
 
     # Load the data
-    data_split = [60, 20, 20]
+    data_split = [80, 20, 0]
     if args.test:
         test_data = BaseNetDataset(base_net_config, mode='testing', split=data_split)
         test_loader = DataLoader(test_data, collate_fn=collate_fn)
@@ -78,17 +83,30 @@ def main():
         validate_data = BaseNetDataset(base_net_config, mode='validation', split=data_split)
         validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
+    # Convenience function for debug visualization
+    def visualize_if_debug(output, solution, task_tensor, pointcloud_list) -> None:
+        if not base_net_config.debug: return
+        logger.log_visualization(
+            model_output = output[0, :, :, :],
+            ground_truth = solution[0, :, :, :].to(base_net_config.model.device),
+            step         = 0,
+            task_pose    = task_tensor[0, :],
+            pointcloud   = pointcloud_list[0] if pointcloud_list[0] is not None else None,
+            device       = base_net_config.model.device
+        )
+
     if args.test:
         print('Testing:')
         idx = 0
         for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
             output = base_net_model(pointcloud_list, task_tensor)      
-            target = solution.to(base_net_config.model.device)          
-            loss = loss_fn(output, target)
+            loss = loss_fn(output, solution)
 
-            logger.add_data_point(loss, output, target)
+            logger.add_data_point(loss, output, solution)
             logger.log_statistics(idx, 'test')
             idx += 1
+
+            visualize_if_debug(output, solution, task_tensor, pointcloud_list)
         logger.flush()
         return
     
@@ -99,14 +117,14 @@ def main():
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
             optimizer.zero_grad()
             output = base_net_model(pointcloud_list, task_tensor)
-            target = solution.to(base_net_config.model.device)
             if isinstance(base_net_model, BaseNetLite):
                 output, batch_indices, pose_indices = output
-                target = target.flatten(start_dim=1)[batch_indices, pose_indices]
-            loss = loss_fn(output, target)
+                solution = solution.flatten(start_dim=1)[batch_indices, pose_indices]
+            loss = loss_fn(output, solution)
             loss.backward()
             optimizer.step()
-            logger.add_data_point(loss, output, target)
+            logger.add_data_point(loss, output, solution)
+            visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
         logger.log_statistics(epoch, 'train')
 
@@ -115,12 +133,12 @@ def main():
             base_net_model.eval()
             for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
                 output = base_net_model(pointcloud_list, task_tensor)
-                target = solution.to(base_net_config.model.device)
                 if isinstance(base_net_model, BaseNetLite):
                     output, batch_indices, pose_indices = output
-                    target = target.flatten(start_dim=1)[batch_indices, pose_indices]
-                loss = loss_fn(output, target)
-                logger.add_data_point(loss, output, target)
+                    solution = solution.flatten(start_dim=1)[batch_indices, pose_indices]
+                loss = loss_fn(output, solution)
+                logger.add_data_point(loss, output, solution)
+                visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
         logger.log_statistics(epoch, 'validate')
 
@@ -134,11 +152,12 @@ def main():
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
             logger.log_visualization(
-                model_output = output[0, :, :, :].cpu(),
-                ground_truth = solution[0, :, :, :].cpu(),
+                model_output = output[0, :, :, :],
+                ground_truth = solution[0, :, :, :],
                 step         = epoch//10,
                 task_pose    = task_tensor[0, :],
-                pointcloud   = pointcloud_list[0].cpu() if pointcloud_list[0] is not None else None
+                pointcloud   = pointcloud_list[0] if pointcloud_list[0] is not None else None,
+                device       = base_net_config.model.device
             )
 
         # At regular intervals, save the model checkpoint

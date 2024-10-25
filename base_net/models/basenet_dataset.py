@@ -9,6 +9,8 @@ from base_net.utils.base_net_config import BaseNetConfig
 
 class BaseNetDataset(Dataset):
     def __init__(self, model_config: BaseNetConfig, mode: str = 'training', split: list | Tensor = [60, 20, 20]):
+        self.device = model_config.model.device
+
         # Convert the training-testing-validation split into fractions from 0 to 1
         split_tensor = torch.Tensor(split).flatten()
         if split_tensor.numel() != 3:
@@ -50,4 +52,5 @@ class BaseNetDataset(Dataset):
         """
         Return the next items in the dataset, arranged as (task_tensor, pointcloud_tensor, solution_tensor)
         """
-        return self.data_points[index]
+        pose, pointcloud, sol = self.data_points[index]
+        return (pose.to(self.device), pointcloud.to(self.device), sol.to(self.device))
