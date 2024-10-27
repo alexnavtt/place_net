@@ -86,7 +86,7 @@ class Logger:
         ground_truth = ground_truth.bool()
 
         ground_truth_score_grid = self._scorer.score_pose_array(ground_truth)
-        model_pose_choice = self._scorer.select_best_pose(model_output)
+        model_pose_choice = self._scorer.select_best_pose(binary_output)
         model_score = ground_truth_score_grid.flatten()[model_pose_choice]
         model_score_error = ground_truth_score_grid.max() - model_score
         
