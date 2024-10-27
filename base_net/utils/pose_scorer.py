@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 
 class PoseScorer:
-    def __init__(self, max_angular_window = torch.pi/4, num_position_connections = 8):
+    def __init__(self, max_angular_window = torch.pi/2, num_position_connections = 8):
         if num_position_connections not in [0, 4, 8]:
             raise ValueError(f'num_position_connections must be 0, 4, or 8. You gave {num_position_connections}')
         

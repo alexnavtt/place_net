@@ -12,7 +12,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from curobo.types.math import Pose as cuRoboPose
 
 from .base_net_config import BaseNetConfig
-from base_net.utils import task_visualization, geometry
+from base_net.utils import task_visualization, geometry, pose_scorer
 
 
 class Logger:
@@ -21,6 +21,7 @@ class Logger:
         self._log = model_config.model.log_base_path is not None and not model_config.debug
         self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug
         self._model_config = model_config
+        self._scorer = pose_scorer.PoseScorer()
         
         if self._log:
             self.clear_latest_run_dir()
@@ -36,15 +37,23 @@ class Logger:
 
     def reset_loss(self):
         self._aggregate_loss = 0.0
+
         self._max_error = 0.0
         self._min_error = 1.0
         self._aggregate_error = 0.0
-        self._aggregate_false_positive = 0.0
-        self._aggregate_false_negative = 0.0
+        
+        self._max_score_error = 0.0
+        self._min_score_error = 1.0
+        self._aggregate_score_error = 0.0
+
         self._max_false_positive = 0.0
         self._min_false_positive = 1.0
+        self._aggregate_false_positive = 0.0
+
         self._max_false_negative = 0.0
         self._min_false_negative = 1.0
+        self._aggregate_false_negative = 0.0
+        
         self._num_batches = 0
 
     def clear_latest_run_dir(self):
@@ -75,6 +84,11 @@ class Logger:
         binary_output[binary_output <  0.5] = 0
         binary_output = binary_output.bool()
         ground_truth = ground_truth.bool()
+
+        ground_truth_score_grid = self._scorer.score_pose_array(ground_truth)
+        model_pose_choice = self._scorer.select_best_pose(model_output)
+        model_score = ground_truth_score_grid.flatten()[model_pose_choice]
+        model_score_error = ground_truth_score_grid.max() - model_score
         
         false_positive_grid = torch.logical_and(binary_output, torch.logical_not(ground_truth))
         false_negative_grid = torch.logical_and(ground_truth, torch.logical_not(binary_output))
@@ -90,12 +104,15 @@ class Logger:
         self._aggregate_false_positive += false_positive
         self._aggregate_false_negative += false_negative
         self._aggregate_error += error
+        self._aggregate_score_error += model_score_error
         self._max_error = max(error, self._max_error)
         self._min_error = min(error, self._min_error)
         self._max_false_positive = max(false_positive, self._max_false_positive)
         self._min_false_positive = min(false_positive, self._min_false_positive)
         self._max_false_negative = max(false_negative, self._max_false_negative)
         self._min_false_negative = min(false_negative, self._min_false_negative)
+        self._max_score_error = max(model_score_error, self._max_score_error)
+        self._min_score_error = min(model_score_error, self._min_score_error)
         self._num_batches += 1
 
     def log_statistics(self, epoch: int, label: str):
@@ -112,6 +129,9 @@ class Logger:
         self._writer.add_scalar(f'FalseNegative/Avg/{label}', self._aggregate_false_negative*100/self._num_batches, epoch)
         self._writer.add_scalar(f'FalseNegative/Max/{label}', self._max_false_negative*100, epoch)
         self._writer.add_scalar(f'FalseNegative/Min/{label}', self._min_false_negative*100, epoch)
+        self._writer.add_scalar(f'ScoreError/Avg/{label}', self._aggregate_score_error*100/self._num_batches, epoch)
+        self._writer.add_scalar(f'ScoreError/Max/{label}', self._max_score_error*100, epoch)
+        self._writer.add_scalar(f'ScoreError/Min/{label}', self._min_score_error*100, epoch)
 
         self.reset_loss()
 
