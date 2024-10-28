@@ -25,6 +25,7 @@ def load_arguments():
     parser.add_argument('--test', default=False, type=bool, help='Whether or not to evaluate the model on the test portion of the dataset')
     parser.add_argument('--device', help='CUDA device override')
     parser.add_argument('--debug', help='Debug override flag')
+    parser.add_argument('--num-epochs', help='Max epoch override')
     return parser.parse_args()
 
 def load_test_pointcloud() -> list[Tensor]:
@@ -55,6 +56,10 @@ def main():
     # Override the debug flag if necessary
     if args.debug is not None:
         base_net_config.debug = args.debug
+
+    # Override the number of training epochs if necessary
+    if args.num_epochs is not None:
+        base_net_config.model.num_epochs = args.num_epochs
     
     base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
@@ -71,16 +76,15 @@ def main():
     loss_fn = base_net_config.model.loss_fn_type()
 
     # Load the data
-    data_split = [80, 20, 0]
     if args.test:
-        test_data = BaseNetDataset(base_net_config, mode='testing', split=data_split)
+        test_data = BaseNetDataset(base_net_config, mode='testing')
         test_loader = DataLoader(test_data, collate_fn=collate_fn)
         base_net_model.eval()
     else:
-        train_data = BaseNetDataset(base_net_config, mode='training', split=data_split)
+        train_data = BaseNetDataset(base_net_config, mode='training')
         train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
         
-        validate_data = BaseNetDataset(base_net_config, mode='validation', split=data_split)
+        validate_data = BaseNetDataset(base_net_config, mode='validation')
         validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
     # Convenience function for debug visualization
@@ -110,7 +114,7 @@ def main():
         logger.flush()
         return
     
-    for epoch in range(start_epoch, 1000):
+    for epoch in range(start_epoch, base_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
         print('Training:')
         base_net_model.train()

@@ -8,13 +8,13 @@ from torch.utils.data import Dataset
 from base_net.utils.base_net_config import BaseNetConfig
 
 class BaseNetDataset(Dataset):
-    def __init__(self, model_config: BaseNetConfig, mode: str = 'training', split: list | Tensor = [60, 20, 20]):
+    def __init__(self, model_config: BaseNetConfig, mode: str = 'training'):
         self.device = model_config.model.device
 
         # Convert the training-testing-validation split into fractions from 0 to 1
-        split_tensor = torch.Tensor(split).flatten()
+        split_tensor = torch.Tensor(model_config.model.data_split).flatten()
         if split_tensor.numel() != 3:
-            raise RuntimeError(f"Train/Test/Validate split must have only 3 elements - you gave {split}")
+            raise RuntimeError(f"Train/Test/Validate split must have only 3 elements - you gave {model_config.model.data_split}")
         split_tensor /= torch.sum(split_tensor)
 
         open3d_to_tensor = lambda pointcloud: torch.tensor(np.concatenate([np.asarray(pointcloud.points), np.asarray(pointcloud.normals)], axis=1), device='cpu')

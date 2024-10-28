@@ -17,7 +17,7 @@ from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
 from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
 from base_net.utils.invert_robot_model import main as invert_urdf
 from base_net.utils.pointcloud_region import PointcloudRegion
-from base_net.models.loss import FocalLoss, DiceLoss
+from base_net.models.loss import FocalLoss, DiceLoss, TverskyLoss
 
 # Allow running even without ROS
 try:
@@ -34,6 +34,9 @@ class BaseNetModelConfig:
 
     # The batch size to use for training
     batch_size: int = 1
+
+    # Max number of epochs to use for training
+    num_epochs: int = 200
 
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
@@ -56,6 +59,9 @@ class BaseNetModelConfig:
     # How many epochs between saving checkpoints. Set to zero or null to disable
     checkpoint_frequency: int | None = None
 
+    # How the split the data into training, validation, and testing
+    data_split: list = field(default_factory=list)
+
     @staticmethod               
     def from_yaml_dict(yaml_config: dict):
         model_settings: dict = yaml_config['model_settings']
@@ -76,6 +82,10 @@ class BaseNetModelConfig:
                 loss_fn_type = DiceLoss
             case 'focal' | 'focal_loss' | 'focalloss':
                 loss_fn_type = FocalLoss
+            case 'tversky' | 'tversky_loss' | 'tverskyloss':
+                alpha = model_settings['tversky_loss'].get('alpha', 0.5) if 'tversky_loss' in model_settings else 0.5
+                beta = model_settings['tversky_loss'].get('beta', 0.5) if 'tversky_loss' in model_settings else 0.5
+                loss_fn_type = lambda alpha=alpha, beta=beta: TverskyLoss(alpha, beta)
             case _:
                 raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
 
@@ -87,14 +97,16 @@ class BaseNetModelConfig:
             torch_device = torch.device(model_settings['cuda_device'])
 
         return BaseNetModelConfig(
-            batch_size=model_settings['batch_size'],
-            learning_rate=model_settings['learning_rate'],
+            batch_size=model_settings.get('batch_size', 1),
+            num_epochs=model_settings.get('num_epochs', 200),
+            learning_rate=model_settings.get('learning_rate', 0.001),
             encoder_type=pointcloud_encoder_type,
             loss_fn_type=loss_fn_type,
             device=torch_device,
             log_base_path=model_settings.get('log_base_path', None),
             checkpoint_base_path=model_settings.get('checkpoint_base_path', None),
             checkpoint_frequency=model_settings.get('checkpoint_frequency', None),
+            data_split=model_settings.get('data_split', [60, 20, 20])
         )
     
 @dataclass
