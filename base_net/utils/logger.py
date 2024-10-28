@@ -36,26 +36,15 @@ class Logger:
             self._checkpoint_initialized = False
 
     def reset_loss(self):
-        self._aggregate_loss = 0.0
-
-        self._max_error = 0.0
-        self._min_error = 1.0
-        self._aggregate_error = 0.0
+        self._metrics = {
+            'Loss': [],
+            'Error': [],
+            'FalsePositive': [],
+            'FalseNegative': [],
+            'ScoreError': [],
+            'Success': []
+        }
         
-        self._max_score_error = 0.0
-        self._min_score_error = 1.0
-        self._aggregate_score_error = 0.0
-
-        self._max_false_positive = 0.0
-        self._min_false_positive = 1.0
-        self._aggregate_false_positive = 0.0
-
-        self._max_false_negative = 0.0
-        self._min_false_negative = 1.0
-        self._aggregate_false_negative = 0.0
-        
-        self._num_batches = 0
-
     def clear_latest_run_dir(self):
         try:
             if os.path.isdir(os.path.join(self._model_config.model.log_base_path, 'plugins/Open3D')):
@@ -77,15 +66,14 @@ class Logger:
     def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         if not self._log: return
 
-        self._aggregate_loss += loss.item()
-
         binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
 
         ground_truth_score_grid = self._scorer.score_pose_array(ground_truth)
-        model_pose_choice = self._scorer.select_best_pose(binary_output)
-        model_score = ground_truth_score_grid.flatten()[model_pose_choice]
+        model_pose_choice_index = self._scorer.select_best_pose(binary_output)
+        model_score = ground_truth_score_grid.flatten()[model_pose_choice_index]
         model_score_error = ground_truth_score_grid.max() - model_score
+        success = ground_truth.flatten()[model_pose_choice_index]
         
         false_positive_grid = torch.logical_and(binary_output, torch.logical_not(ground_truth))
         false_negative_grid = torch.logical_and(ground_truth, torch.logical_not(binary_output))
@@ -98,38 +86,30 @@ class Logger:
         false_positive = false_positive_grid.sum(dtype=torch.float).item()/num_negative if num_negative > 0 else 0
         false_negative = false_negative_grid.sum(dtype=torch.float).item()/num_positive if num_positive > 0 else 0
 
-        self._aggregate_false_positive += false_positive
-        self._aggregate_false_negative += false_negative
-        self._aggregate_error += error
-        self._aggregate_score_error += model_score_error
-        self._max_error = max(error, self._max_error)
-        self._min_error = min(error, self._min_error)
-        self._max_false_positive = max(false_positive, self._max_false_positive)
-        self._min_false_positive = min(false_positive, self._min_false_positive)
-        self._max_false_negative = max(false_negative, self._max_false_negative)
-        self._min_false_negative = min(false_negative, self._min_false_negative)
-        self._max_score_error = max(model_score_error, self._max_score_error)
-        self._min_score_error = min(model_score_error, self._min_score_error)
-        self._num_batches += 1
+        self._metrics['Loss'].append(loss)
+        self._metrics['Error'].append(error)
+        self._metrics['FalsePositive'].append(false_positive)
+        self._metrics['FalseNegative'].append(false_negative)
+        self._metrics['ScoreError'].append(model_score_error)
+        self._metrics['Success'].append(success)
 
     def log_statistics(self, epoch: int, label: str):
         if not self._log: return
 
-        self._last_loss = self._aggregate_loss/self._num_batches
-        self._writer.add_scalar(f'Loss/{label}', self._last_loss, epoch)
-        self._writer.add_scalar(f'Error/Avg/{label}', self._aggregate_error*100/self._num_batches, epoch)
-        self._writer.add_scalar(f'Error/Max/{label}', self._max_error*100, epoch)
-        self._writer.add_scalar(f'Error/Min/{label}', self._min_error*100, epoch)
-        self._writer.add_scalar(f'FalsePositive/Avg/{label}', self._aggregate_false_positive*100/self._num_batches, epoch)
-        self._writer.add_scalar(f'FalsePositive/Max/{label}', self._max_false_positive*100, epoch)
-        self._writer.add_scalar(f'FalsePositive/Min/{label}', self._min_false_positive*100, epoch)
-        self._writer.add_scalar(f'FalseNegative/Avg/{label}', self._aggregate_false_negative*100/self._num_batches, epoch)
-        self._writer.add_scalar(f'FalseNegative/Max/{label}', self._max_false_negative*100, epoch)
-        self._writer.add_scalar(f'FalseNegative/Min/{label}', self._min_false_negative*100, epoch)
-        self._writer.add_scalar(f'ScoreError/Avg/{label}', self._aggregate_score_error*100/self._num_batches, epoch)
-        self._writer.add_scalar(f'ScoreError/Max/{label}', self._max_score_error*100, epoch)
-        self._writer.add_scalar(f'ScoreError/Min/{label}', self._min_score_error*100, epoch)
+        for name, metric in self._metrics.items():
+            metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
+            self._writer.add_scalar(f'{name}/Avg/{label}', metric_tensor.mean().item(), epoch)
+            if name == 'Success' or name == 'Loss': continue
+            
+            self._writer.add_scalar(f'{name}/Max/{label}', metric_tensor.max().item(), epoch)
+            self._writer.add_scalar(f'{name}/Min/{label}', metric_tensor.min().item(), epoch)
+            self._writer.add_scalar(f'{name}/StdDev/{label}', metric_tensor.std(unbiased=True).item(), epoch)
+            self._writer.add_scalar(f'{name}/Q1/{label}', metric_tensor.quantile(0.25).item(), epoch)
+            self._writer.add_scalar(f'{name}/Q2/{label}', metric_tensor.quantile(0.50).item(), epoch)
+            self._writer.add_scalar(f'{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
+            self._writer.add_histogram(f'{name}/{label}', metric_tensor, epoch)
 
+        self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
         self.reset_loss()
 
     def flush(self):
