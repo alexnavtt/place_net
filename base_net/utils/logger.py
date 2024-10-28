@@ -79,10 +79,7 @@ class Logger:
 
         self._aggregate_loss += loss.item()
 
-        binary_output = torch.sigmoid(model_output)
-        binary_output[binary_output >= 0.5] = 1
-        binary_output[binary_output <  0.5] = 0
-        binary_output = binary_output.bool()
+        binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
 
         ground_truth_score_grid = self._scorer.score_pose_array(ground_truth)
