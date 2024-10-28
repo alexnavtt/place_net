@@ -1,0 +1,32 @@
+# QueryBaseLocation.srv
+
+## Request
+
+# The full set of poses for the robot end effector
+geometry_msgs/PoseArray end_effector_poses
+
+# The pointcloud representation of the collision environment. 
+# Must contain normals
+sensor_msgs/PointCloud2 pointcloud
+
+# The name of the link for which the base poses should be returned
+string base_link
+
+---
+
+## Response
+
+# Whether or not there was at least one valid pose
+bool has_valid_pose
+
+# The base pose with the optimal positioning
+geometry_msgs/PoseStamped optimal_base_pose
+
+# The score of the optimal pose in the range [0, 1]
+float32 optimal_score
+
+# All valid poses for the robot base link
+geometry_msgs/PoseArray valid_poses
+
+# Scores for each valid pose in order
+float32[] valid_pose_scores
