@@ -1,3 +1,4 @@
+import math
 import torch
 from torch import Tensor
 
@@ -5,6 +6,13 @@ class PoseScorer:
     def __init__(self, max_angular_window = torch.pi/2, num_position_connections = 8):
         if num_position_connections not in [0, 4, 8]:
             raise ValueError(f'num_position_connections must be 0, 4, or 8. You gave {num_position_connections}')
+        
+        if num_position_connections == 0:
+            self._max_score = 1.0
+        elif num_position_connections == 4:
+            self._max_score = (1.0 + 4/(1 + math.sqrt(1))) / 5
+        elif num_position_connections == 8:
+            self._max_score = (1.0 + 4/(1 + math.sqrt(1)) + 4/(1 + math.sqrt(2))) / 9
         
         self._max_angular_window = max_angular_window
         self._num_position_connections = num_position_connections
@@ -48,7 +56,7 @@ class PoseScorer:
             # Use the pose_array mask to only update valid poses, and weight by inverse distance
             augmented_pose_scores += pose_array * offset_tensor / (1 + dist)
 
-        augmented_pose_scores /= (len(position_offsets) + 1)
+        augmented_pose_scores /= (self._max_score * (len(position_offsets) + 1))
         return augmented_pose_scores
         
     def score_at_positions(self, valid_angle_mask: Tensor) -> Tensor:
