@@ -47,6 +47,7 @@ def main():
 
     # Load the model from a checkpoint if necessary        
     if args.checkpoint is None:
+        checkpoint_path = None
         base_net_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=True, device=args.device)
     else:
         checkpoint_path, _ = os.path.split(args.checkpoint)
@@ -58,11 +59,11 @@ def main():
 
     # Override the number of training epochs if necessary
     if args.num_epochs is not None:
-        base_net_config.model.num_epochs = args.num_epochs
+        base_net_config.model.num_epochs = int(args.num_epochs)
     
     base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
-    logger = Logger(base_net_config)
+    logger = Logger(base_net_config, checkpoint_path)
 
     if args.checkpoint is not None:
         checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device)

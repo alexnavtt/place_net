@@ -16,7 +16,7 @@ from base_net.utils import task_visualization, geometry, pose_scorer
 
 
 class Logger:
-    def __init__(self, model_config: BaseNetConfig):
+    def __init__(self, model_config: BaseNetConfig, existing_checkpoint_path: str = None):
         # We log if paths are provided and we are not debugging
         self._log = model_config.model.log_base_path is not None and not model_config.debug
         self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug
@@ -24,16 +24,21 @@ class Logger:
         self._scorer = pose_scorer.PoseScorer()
         
         if self._log:
-            self.clear_latest_run_dir()
+            if existing_checkpoint_path is None:
+                self.clear_latest_run_dir()
             self._writer = SummaryWriter(log_dir=model_config.model.log_base_path)
             self._last_loss = 0.0
             self.reset_loss()
 
         if self._record_checkpoints:
-            midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
-            label = f'{datetime.datetime.now().date()}-{(datetime.datetime.now() - midnight).seconds}'
-            self._checkpoint_path = os.path.join(self._model_config.model.checkpoint_base_path, label)
-            self._checkpoint_initialized = False
+            if existing_checkpoint_path is not None:
+                self._checkpoint_path = existing_checkpoint_path
+                self._checkpoint_initialized = True
+            else:
+                midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
+                label = f'{datetime.datetime.now().date()}-{(datetime.datetime.now() - midnight).seconds}'
+                self._checkpoint_path = os.path.join(self._model_config.model.checkpoint_base_path, label)
+                self._checkpoint_initialized = False
 
     def reset_loss(self):
         self._metrics = {
