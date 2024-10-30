@@ -97,17 +97,23 @@ class Logger:
         if not self._log: return
 
         for name, metric in self._metrics.items():
+            # Multiply by 100 to convert to percentages
             metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
+
+            # For success and loss we are only interested in the averages
             self._writer.add_scalar(f'{name}/Avg/{label}', metric_tensor.mean().item(), epoch)
             if name == 'Success' or name == 'Loss': continue
-            
+        
+            # We do not collect most scalar data for testing runs
+            self._writer.add_histogram(f'{name}/{label}', metric_tensor, epoch)
+            if label == 'test': continue
+
             self._writer.add_scalar(f'{name}/Max/{label}', metric_tensor.max().item(), epoch)
             self._writer.add_scalar(f'{name}/Min/{label}', metric_tensor.min().item(), epoch)
             self._writer.add_scalar(f'{name}/StdDev/{label}', metric_tensor.std(unbiased=True).item(), epoch)
             self._writer.add_scalar(f'{name}/Q1/{label}', metric_tensor.quantile(0.25).item(), epoch)
             self._writer.add_scalar(f'{name}/Q2/{label}', metric_tensor.quantile(0.50).item(), epoch)
             self._writer.add_scalar(f'{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
-            self._writer.add_histogram(f'{name}/{label}', metric_tensor, epoch)
 
         self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
         self.reset_loss()

@@ -10,7 +10,6 @@ from base_net.models.base_net import BaseNet, BaseNetLite
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger
-from base_net.models.loss import TverskyLoss
 
 def load_arguments():
     """
@@ -101,18 +100,17 @@ def main():
 
     if args.test:
         print('Testing:')
-        idx = 0
-        for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
-            output = base_net_model(pointcloud_list, task_tensor)      
-            loss = loss_fn(output, solution)
+        with torch.no_grad():
+            for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
+                output = base_net_model(pointcloud_list, task_tensor)      
+                loss = loss_fn(output, solution)
 
-            logger.add_data_point(loss, output, solution)
-            logger.log_statistics(idx, 'test')
-            idx += 1
+                logger.add_data_point(loss, output, solution)
 
-            visualize_if_debug(output, solution, task_tensor, pointcloud_list)
-        logger.flush()
-        return
+                visualize_if_debug(output, solution, task_tensor, pointcloud_list)
+            logger.log_statistics(0, 'test')
+            logger.flush()
+            return
     
     for epoch in range(start_epoch, base_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
