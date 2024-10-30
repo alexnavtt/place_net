@@ -29,21 +29,27 @@ services:
     extends: base_net
     container_name: base_net_task_pose_generation
     volumes:
-      - ${PWD}/../../base_net:/base_net
-    command: "/bin/bash -l -c 'base_net generate-task-poses --config-file base_net/config/${BASE_NET_CONFIG}'"
+      - ${PWD}/..:/base_net
+    entrypoint: docker/entrypoints/generate_task_poses.sh
+    environment:
+      - BASE_NET_CONFIG
 
   calculate_ground_truth:
     extends: base_net
     container_name: base_net_ground_truth_calculation
     volumes:
-      - ${PWD}/../../base_net:/base_net
-    command: "/bin/bash -l -c 'base_net calculate-ground-truth --config-file base_net/config/${BASE_NET_CONFIG}'"
+      - ${PWD}/..:/base_net
+    entrypoint: docker/entrypoints/calculate_ground_truth.sh
+    environment:
+      - BASE_NET_CONFIG
 
   train_model:
     extends: base_net
     container_name: base_net_training
     volumes:
-      - ${PWD}/../../base_net:/base_net
-    command: "/bin/bash -l -c 'base_net train --config-file base_net/config/${BASE_NET_CONFIG}'"
+      - ${PWD}/..:/base_net
+    entrypoint: docker/entrypoints/train_model.sh
+    environment:
+      - BASE_NET_CONFIG
 
   

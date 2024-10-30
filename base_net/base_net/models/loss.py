@@ -11,16 +11,16 @@ class DiceLoss(torch.nn.Module):
         outputs = torch.sigmoid(logits)
         
         # Flatten the tensors
-        outputs = outputs.flatten()
-        targets = targets.flatten()
+        outputs = outputs.flatten(start_dim=1)
+        targets = targets.flatten(start_dim=1)
         
         # Compute intersection and union
-        intersection = (outputs * targets).sum()
-        total = outputs.sum() + targets.sum()
+        intersection = (outputs * targets).sum(dim=1)
+        total = outputs.sum(dim=1) + targets.sum(dim=1)
         
         # Compute Dice loss
         dice_loss = 1 - (2 * intersection + self.smooth) / (total + self.smooth)
-        return dice_loss
+        return dice_loss.mean()
     
 class FocalLoss(torch.nn.Module):
     def __init__(self, gamma: float = 2.0, alpha: float = 0.25, device='cuda:0'):
@@ -45,7 +45,7 @@ class FocalLoss(torch.nn.Module):
 
         # Compute focal loss
         focal_loss = alpha_t * focal_factor * 0.5*(dice_loss + bce_loss)
-        return focal_loss.sum()
+        return focal_loss.mean()
 
 class TverskyLoss(torch.nn.Module):
     def __init__(self, alpha: float = 0.5, beta: float = 0.5, smooth: float = 1e-6):
