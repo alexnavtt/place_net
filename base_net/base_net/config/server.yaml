@@ -87,17 +87,18 @@ inverse_reachability_map:
     yaw: 20
 
 model_settings:
-  model_type: 'BaseNetLite'
+  model_type: 'BaseNet'
   pointcloud_encoder: 'PointNet'
-  loss_function: 'Tversky' # BCE, Dice, Focal, Tversky
+  use_normals: True
+  loss_function: 'Dice' # BCE, Dice, Focal, Tversky
   data_split: [60, 20, 20]
-  num_epochs: 2000
+  num_epochs: 1000
   cuda_device: 1
   batch_size: 16
-  learning_rate: 0.001
-  log_base_path: 'base_net/data/runs/v0.4.2/tversky_2_8/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.4.2/tversky_2_8/'
-  checkpoint_frequency: 200
+  learning_rate: 0.0001
+  log_base_path: 'base_net/data/runs/v0.4.2/no_normals/tversky_3_7/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.4.2/no_normals/tversky_3_7/'
+  checkpoint_frequency: 100
 
   tversky_loss:
     alpha: 0.2

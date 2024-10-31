@@ -32,6 +32,9 @@ def tensor_hash(tensor: Tensor):
 @dataclass
 class BaseNetModelConfig:
 
+    # Whether or not to use pointcloud normals for training and inference
+    use_normals: bool = True
+
     # The batch size to use for training
     batch_size: int = 1
 
@@ -97,6 +100,7 @@ class BaseNetModelConfig:
             torch_device = torch.device(model_settings['cuda_device'])
 
         return BaseNetModelConfig(
+            use_normals=model_settings.get('use_normals', True),
             batch_size=model_settings.get('batch_size', 1),
             num_epochs=model_settings.get('num_epochs', 200),
             learning_rate=model_settings.get('learning_rate', 0.001),

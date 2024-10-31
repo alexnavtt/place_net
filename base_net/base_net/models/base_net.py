@@ -15,7 +15,7 @@ class BaseNet(torch.nn.Module):
         self.task_geometry = copy.deepcopy(config.task_geometry)
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
-        self.pointcloud_encoder = self.config.encoder_type()
+        self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals)
         self.pose_encoder = PoseEncoder()
 
         # Define a cross-attention layer between the pose embedding and the pointcloud embedding

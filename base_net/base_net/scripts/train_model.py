@@ -27,13 +27,6 @@ def load_arguments():
     parser.add_argument('--num-epochs', help='Max epoch override')
     return parser.parse_args()
 
-def load_test_pointcloud() -> list[Tensor]:
-    test_pointcloud = Tensor([[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]]])
-    return [test_pointcloud]
-
-def load_test_tasks() -> Tensor:
-    return Tensor([[0.0, 0.0, 0.0, 0.4217103, 0.5662352, 0.4180669, -0.5716277]])
-
 def collate_fn(data_tuple: list[tuple[Tensor, Tensor, Tensor]]) -> tuple[Tensor, list[Tensor], Tensor]:
     pointcloud_list, task_list, sol_list = map(list, zip(
         *((pointcloud, task.unsqueeze(0), sol.unsqueeze(0)) for task, pointcloud, sol in data_tuple)
@@ -117,7 +110,7 @@ def main():
         print(f'Epoch {epoch}:')
         print('Training:')
         base_net_model.train()
-        for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):                
+        for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
             optimizer.zero_grad()
             output = base_net_model(pointcloud_list, task_tensor)
             if isinstance(base_net_model, BaseNetLite):
