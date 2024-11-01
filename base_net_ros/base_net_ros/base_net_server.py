@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 
 import rclpy
@@ -13,6 +14,8 @@ from base_net.utils.base_net_config import BaseNetConfig
 from base_net_msgs.srv import QueryBaseLocation
 from base_net.utils import geometry
 
+from .base_net_visualizer import BaseNetVisualizer
+
 class BaseNetServer(Node):
     def __init__(self):
         super(BaseNetServer).__init__('base_net_server')
@@ -21,7 +24,7 @@ class BaseNetServer(Node):
 
         # Load the model from the checkpoint path
         checkpoint_path: str = self.declare_parameter('checkpoint_path').value
-        device_param: str = self.declare_parameter('device').value
+        device_param: str | int | None = self.declare_parameter('device').value
         self.max_batch_size: int = self.declare_parameter('max_batch_size').value
 
         base_path, _ = os.path.split(checkpoint_path)
@@ -33,18 +36,21 @@ class BaseNetServer(Node):
         self.base_net_model.eval()
 
         # Load the model geometry
-        _, self.base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
-            reach_radius=self.base_net_config.task_geometry.max_radial_reach,
+        self.base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+            half_x_range=self.base_net_config.task_geometry.max_radial_reach,
+            half_y_range=self.base_net_config.task_geometry.max_radial_reach,
             x_res=self.base_net_config.inverse_reachability.solution_resolution['x'],
             y_res=self.base_net_config.inverse_reachability.solution_resolution['y'],
             yaw_res=self.base_net_config.inverse_reachability.solution_resolution['yaw'],
             device=self.base_net_config.model.device
         )
+        self.base_net_viz = BaseNetVisualizer(self, self.base_net_config)
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
 
     def base_location_callback(self, req: QueryBaseLocation.Request) -> QueryBaseLocation.Response:
+        self.base_net_viz.visualize_query(req)
         batch_size = len(req.end_effector_poses.poses)
 
         # Make sure the task poses and pointclouds are represented in the same frame
@@ -69,24 +75,36 @@ class BaseNetServer(Node):
             task_slice = task_poses[index_start:index_end]
             model_output[index_start:index_end] = self.base_net_model.forward(pointcloud_slice, task_slice)
 
-        """TODO: Place all solutions into a master grid"""
         """TODO: Move this to its own function"""
-        min_x = torch.min(task_poses[:, 0])
-        max_x = torch.max(task_poses[:, 0])
-        min_y = torch.min(task_poses[:, 1])
-        max_y = torch.max(task_poses[:, 1])
-        min_z = torch.min(task_poses[:, 2])
-        max_z = torch.max(task_poses[:, 2])
+        min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
+        max_x, max_y = torch.amax(task_poses[:, :2], dim=0)
 
-        x_res = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['x'] - 1)
-        y_res = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['y'] - 1)
-        yaw_res = 2*torch.pi / self.base_net_config.inverse_reachability.solution_resolution['yaw']
+        x_cell_size: float = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['x'] - 1)
+        y_cell_size: float = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['y'] - 1)
+
+        x_range: float = max_x - min_x + 2*self.base_net_config.task_geometry.max_radial_reach
+        y_range: float = max_y - min_y + 2*self.base_net_config.task_geometry.max_radial_reach
+        x_res: int = math.floor(x_range / x_cell_size) + 1
+        y_res: int = math.floor(y_range / y_cell_size) + 1
+        yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
+
+        score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device='cpu')
+        master_grid_poses = geometry.load_base_pose_array(x_range/2, y_range/2, x_res, y_res, yaw_res, 'cpu')
+
+        """TODO: Place all solutions into a master grid"""
 
         """TODO: Score the master grid and select the highest score"""
+
+        resp = QueryBaseLocation.Response()
+        resp.has_valid_pose = torch.any(score_tensor > 0)
+
+        self.base_net_viz.visualize_response(resp, master_grid_poses, score_tensor, pointcloud_frame)
+        return resp
 
 def main():
     rclpy.init()
     base_net_server = BaseNetServer('base_net_server')
+    base_net_server.get_logger().info('BaseNet server online')
     rclpy.spin(base_net_server)
 
 if __name__ == '__main__':
