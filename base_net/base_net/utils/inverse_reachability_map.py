@@ -57,7 +57,7 @@ class InverseReachabilityMap:
         self.device = device
 
         self.task_grid = None
-        self.encoded_base_grid, self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
+        self.encoded_base_grid, self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
 
         if solution_file is not None:
             self.solutions: Tensor = torch.load(solution_file, map_location='cpu')

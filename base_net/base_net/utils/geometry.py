@@ -15,14 +15,15 @@ from curobo.types.math import Pose as cuRoboPose
 
 cuRoboTransform: TypeAlias = cuRoboPose
 
-def load_base_pose_array(reach_radius: float, x_res: int, y_res: int, yaw_res: int, device: torch.device) -> tuple[Tensor, cuRoboPose]:
+def load_base_pose_array(half_x_range: float, half_y_range: float, x_res: int, y_res: int, yaw_res: int, device: torch.device) -> cuRoboPose:
     """
     Define the array of manipulator base-link poses for which we are trying to solve the
     reachability problem. The resulting array is defined centered around the origin and 
     aligned with the gravity-aligned task frame
     """
-    x_range = torch.linspace(-reach_radius, reach_radius, x_res)
-    y_range = torch.linspace(-reach_radius, reach_radius, y_res)
+
+    x_range = torch.linspace(-half_x_range, half_x_range, x_res)
+    y_range = torch.linspace(-half_y_range, half_y_range, y_res)
     yaw_range = torch.linspace(0, 2*torch.pi, yaw_res)
 
     y_grid, x_grid, yaw_grid = torch.meshgrid(y_range, x_range, yaw_range, indexing='ij')
@@ -41,7 +42,7 @@ def load_base_pose_array(reach_radius: float, x_res: int, y_res: int, yaw_res: i
         quaternion=yaw_grid.to(device)
     )
 
-    return encoded_pose_array, curobo_pose_array
+    return curobo_pose_array
 
 def quaternion_multiply(q1: Tensor, q2: Tensor):
     w1, x1, y1, z1 = q1.split([1, 1, 1, 1], dim=1)

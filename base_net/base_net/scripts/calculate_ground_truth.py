@@ -181,8 +181,9 @@ def main():
     y_count = model_config.inverse_reachability.solution_resolution['y']
     yaw_count = model_config.inverse_reachability.solution_resolution['yaw']
 
-    _, base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
-        reach_radius=model_config.task_geometry.max_radial_reach,
+    base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+        half_x_range=model_config.task_geometry.max_radial_reach,
+        half_y_range=model_config.task_geometry.max_radial_reach,
         x_res=x_count,
         y_res=y_count,
         yaw_res=yaw_count,

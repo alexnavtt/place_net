@@ -134,8 +134,9 @@ class Logger:
         model_labels[model_labels < 0.5] = 0
 
         # Retrieve the bases poses
-        _, base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
-            reach_radius=self._model_config.task_geometry.max_radial_reach,
+        base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+            half_x_range=self._model_config.task_geometry.max_radial_reach,
+            half_y_range=self._model_config.task_geometry.max_radial_reach,
             x_res=self._model_config.inverse_reachability.solution_resolution['x'],
             y_res=self._model_config.inverse_reachability.solution_resolution['y'],
             yaw_res=self._model_config.inverse_reachability.solution_resolution['yaw'],
