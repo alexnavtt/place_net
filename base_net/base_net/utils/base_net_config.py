@@ -307,17 +307,18 @@ class BaseNetConfig:
         task_geometry = TaskGeometryConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
-        for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
-            name, pointcloud = BaseNetConfig.load_pointcloud(
-                filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
-                min_elevation=task_geometry.min_pointcloud_elevation, 
-                max_elevation=task_geometry.max_pointcloud_elevation, 
-                pointcloud_config=pointcloud_config
-            )
+        if load_tasks:
+            for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
+                name, pointcloud = BaseNetConfig.load_pointcloud(
+                    filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
+                    min_elevation=task_geometry.min_pointcloud_elevation, 
+                    max_elevation=task_geometry.max_pointcloud_elevation, 
+                    pointcloud_config=pointcloud_config
+                )
 
-            if name in pointclouds:
-                raise RuntimeError(f"Duplicate pointcloud name detected: {name}")
-            pointclouds[name] = pointcloud
+                if name in pointclouds:
+                    raise RuntimeError(f"Duplicate pointcloud name detected: {name}")
+                pointclouds[name] = pointcloud
 
         task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config, pointclouds)
         tasks     = BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None
