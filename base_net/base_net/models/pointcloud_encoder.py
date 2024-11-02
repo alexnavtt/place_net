@@ -87,7 +87,7 @@ class PointNetEncoder(torch.nn.Module):
         assert point_dim==self.num_channels, "Points must be structured as xyz or normal-xyz tuples"
 
         if num_points == 0:
-            return torch.zeros((batch_size, 1024), device=pointclouds.device, requires_grad=False)
+            return torch.zeros((batch_size, self.feature_size), device=pointclouds.device, requires_grad=False)
 
         # pointclouds is size (batch_size, num_points, 6)
         pointclouds = pointclouds.permute((0, 2, 1))
@@ -133,9 +133,9 @@ class PointNetEncoder(torch.nn.Module):
 
         # Step 2: Determine which ones are within the allowable elevations
         task_xy, task_z = task_position.view([-1, 1, 3]).split([2, 1], dim=-1)
-        if self.num_channels == 6:
+        if self.use_normals:
             pointcloud_xy, pointcloud_z, pointcloud_normals_xy, pointcloud_normals_z = pointcloud_tensor.split([2, 1, 2, 1], dim=-1)
-        elif self.num_channels == 3:
+        else:
             pointcloud_xy, pointcloud_z = pointcloud_tensor.split([2, 1], dim=-1)
         valid_elevations = ((pointcloud_z < geometry_config.max_pointcloud_elevation) & (pointcloud_z > geometry_config.min_pointcloud_elevation)).squeeze()
 
@@ -143,7 +143,7 @@ class PointNetEncoder(torch.nn.Module):
         # TODO: Reorder these steps so that matrix multiplication happens after distance filtering
         pointcloud_xy -= task_xy
         torch.matmul(pointcloud_xy, task_rotation, out=pointcloud_xy)
-        if self.num_channels == 6:
+        if self.use_normals:
             torch.matmul(pointcloud_normals_xy, task_rotation, out=pointcloud_normals_xy)
 
         # Step 4: Filter out all points too far from the task pose and pad these again
