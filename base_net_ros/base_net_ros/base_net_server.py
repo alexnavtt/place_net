@@ -1,24 +1,27 @@
 import os
+import time
 import math
 import torch
 
 import rclpy
 import rclpy.duration
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
-from sensor_msgs_py.point_cloud2 import read_points
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py.point_cloud2 import read_points_numpy, create_cloud_xyz32
 
 from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net_msgs.srv import QueryBaseLocation
-from base_net.utils import geometry
+from base_net.utils import geometry, pose_scorer
 
 from .base_net_visualizer import BaseNetVisualizer
 
 class BaseNetServer(Node):
     def __init__(self):
-        super(BaseNetServer).__init__('base_net_server')
+        super().__init__(node_name='base_net_server')
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
 
@@ -30,6 +33,7 @@ class BaseNetServer(Node):
         base_path, _ = os.path.split(checkpoint_path)
         self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_solutions=False, load_tasks=False, device=device_param)
         self.base_net_model = BaseNet(self.base_net_config)
+        self.pose_scorer = pose_scorer.PoseScorer()
 
         checkpoint_config = torch.load(checkpoint_path, map_location=self.base_net_config.model.device)
         self.base_net_model.load_state_dict(checkpoint_config['base_net_model'])
@@ -48,8 +52,10 @@ class BaseNetServer(Node):
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
+        # latching_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
+        # self.debug_pointcloud_pub = self.create_publisher(PointCloud2, '~/query/debug_pointcloud', latching_qos)
 
-    def base_location_callback(self, req: QueryBaseLocation.Request) -> QueryBaseLocation.Response:
+    def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.base_net_viz.visualize_query(req)
         batch_size = len(req.end_effector_poses.poses)
 
@@ -59,21 +65,31 @@ class BaseNetServer(Node):
         task_poses = torch.zeros((len(req.end_effector_poses.poses), 7))
         for idx, pose in enumerate(req.end_effector_poses.poses):
             pose_stamped = PoseStamped(pose=pose, header=req.end_effector_poses.header)
-            transfomed_pose: PoseStamped = self.tf_buffer.transform(pose_stamped, pointcloud_frame, timeout=rclpy.duration.Duration(1.0))
-            task_poses[idx, :3] = [transfomed_pose.pose.position.x, transfomed_pose.pose.position.y, transfomed_pose.pose.position.z]
-            task_poses[idx, 3:] = [transfomed_pose.pose.orientation.w, transfomed_pose.pose.orientation.x, transfomed_pose.pose.orientation.y, transfomed_pose.pose.orientation.z]
+            transfomed_pose: PoseStamped = self.tf_buffer.transform(pose_stamped, pointcloud_frame, timeout=rclpy.duration.Duration(seconds=1.0))
+            task_poses[idx, :3] = torch.tensor([transfomed_pose.pose.position.x, transfomed_pose.pose.position.y, transfomed_pose.pose.position.z])
+            task_poses[idx, 3:] = torch.tensor([transfomed_pose.pose.orientation.w, transfomed_pose.pose.orientation.x, transfomed_pose.pose.orientation.y, transfomed_pose.pose.orientation.z])
 
         # Encode the pointcloud into a tensor
-        pointcloud_points = read_points(req.pointcloud, 'xyz', skip_nans=True)
+        pointcloud_points = read_points_numpy(req.pointcloud, ['x', 'y', 'z'], skip_nans=True)
         pointcloud_list = [torch.tensor(pointcloud_points)]*batch_size
 
         # Get the output from the model
-        model_output = torch.zeros(batch_size, self.base_net_config.inverse_reachability.solution_resolution['y'], self.base_net_config.inverse_reachability.solution_resolution['x'], self.base_net_config.inverse_reachability.solution_resolution['yaw'])
-        for index_start in range(0, batch_size+self.max_batch_size, self.max_batch_size):
-            index_end = min(index_start + self.max_batch_size, batch_size)
-            pointcloud_slice = pointcloud_list[index_start:index_end]
-            task_slice = task_poses[index_start:index_end]
-            model_output[index_start:index_end] = self.base_net_model.forward(pointcloud_slice, task_slice)
+        t1 = time.perf_counter()
+        model_output = torch.zeros(batch_size, self.base_net_config.inverse_reachability.solution_resolution['y'], self.base_net_config.inverse_reachability.solution_resolution['x'], self.base_net_config.inverse_reachability.solution_resolution['yaw'], dtype=bool)
+        with torch.no_grad():
+            for index_start in range(0, batch_size, self.max_batch_size):
+                index_end = min(index_start + self.max_batch_size, batch_size)
+                pointcloud_slice = pointcloud_list[index_start:index_end]
+                task_slice = task_poses[index_start:index_end]
+                logits = self.base_net_model(pointcloud_slice, task_slice)
+                model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
+        t2 = time.perf_counter()
+        print(f'Model forward pass took {t2 - t1} seconds')
+
+        # pointcloud = self.base_net_model.last_pointcloud.cpu()
+        # pointcloud[:, :, :2] += task_poses[:, :2].unsqueeze(1)
+        # ros_pointcloud = create_cloud_xyz32(req.pointcloud.header, pointcloud.cpu().numpy().astype(float))
+        # self.debug_pointcloud_pub.publish(ros_pointcloud)
 
         """TODO: Move this to its own function"""
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
@@ -88,22 +104,25 @@ class BaseNetServer(Node):
         y_res: int = math.floor(y_range / y_cell_size) + 1
         yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
 
-        score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device='cpu')
         master_grid_poses = geometry.load_base_pose_array(x_range/2, y_range/2, x_res, y_res, yaw_res, 'cpu')
+        master_grid_poses.position[:, :2] += task_poses[:, :2].mean(dim=0)
+        score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device='cpu')
 
         """TODO: Place all solutions into a master grid"""
 
         """TODO: Score the master grid and select the highest score"""
 
-        resp = QueryBaseLocation.Response()
-        resp.has_valid_pose = torch.any(score_tensor > 0)
+        resp.has_valid_pose = torch.any(model_output).item()
+        print(f'Has valid pose: {resp.has_valid_pose}')
 
+        pose_scores = self.pose_scorer.score_pose_array(model_output.cpu()).squeeze(0)
+        # self.base_net_viz.visualize_response(resp, master_grid_poses, pose_scores, pointcloud_frame)
         self.base_net_viz.visualize_response(resp, master_grid_poses, score_tensor, pointcloud_frame)
         return resp
 
 def main():
     rclpy.init()
-    base_net_server = BaseNetServer('base_net_server')
+    base_net_server = BaseNetServer()
     base_net_server.get_logger().info('BaseNet server online')
     rclpy.spin(base_net_server)
 
