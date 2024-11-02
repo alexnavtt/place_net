@@ -40,24 +40,31 @@ class BaseNetVisualizer:
         final_base_grid_tensor = torch.concatenate([final_base_grid.position, final_base_grid.quaternion, scored_grid.flatten().unsqueeze(1)], dim=1)
         final_grid_marker = MarkerArray()
 
+        delete_marker = Marker()
+        delete_marker.action = Marker.DELETEALL
+        delete_marker.id = -1
+        final_grid_marker.markers.append(delete_marker)
+
         arrow_marker = Marker()
         arrow_marker.action = Marker.ADD
         arrow_marker.header.frame_id = frame_id
         arrow_marker.header.stamp = self.ros_node.get_clock().now().to_msg()
         arrow_marker.id = 0
-        arrow_marker.scale = Vector3(x=0.03, y=0.01, z=0.01)
+        arrow_marker.scale = Vector3(x=0.05, y=0.005, z=0.01)
         arrow_marker.type = Marker.ARROW
 
         for pose_vec in final_base_grid_tensor:
             position, quaternion, score = torch.split(pose_vec, [3, 4, 1])
 
             new_pose = Pose()
-            new_pose.position.x, new_pose.position.y, new_pose.position.z = position.cpu().numpy()
-            new_pose.orientation.w, new_pose.orientation.x, new_pose.orientation.y, new_pose.orientation.z = quaternion.cpu().numpy()
+            new_pose.position.x, new_pose.position.y, new_pose.position.z = position.cpu().numpy().astype(float)
+            new_pose.orientation.w, new_pose.orientation.x, new_pose.orientation.y, new_pose.orientation.z = quaternion.cpu().numpy().astype(float)
             arrow_marker.pose = new_pose
 
             arrow_marker.color.g = score.item()
             arrow_marker.color.r = 1 - score.item()
+            arrow_marker.color.a = 0.5 +  0.5*score.item()
             final_grid_marker.markers.append(copy.deepcopy(arrow_marker))
+            arrow_marker.id += 1
 
         self.response_aggregate_scores_pub.publish(final_grid_marker)
