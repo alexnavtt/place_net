@@ -137,7 +137,7 @@ class PointNetEncoder(torch.nn.Module):
             pointcloud_xy, pointcloud_z, pointcloud_normals_xy, pointcloud_normals_z = pointcloud_tensor.split([2, 1, 2, 1], dim=-1)
         elif self.num_channels == 3:
             pointcloud_xy, pointcloud_z = pointcloud_tensor.split([2, 1], dim=-1)
-        valid_elevations = (pointcloud_z < geometry_config.max_pointcloud_elevation).squeeze()
+        valid_elevations = ((pointcloud_z < geometry_config.max_pointcloud_elevation) & (pointcloud_z > geometry_config.min_pointcloud_elevation)).squeeze()
 
         # Step 3: Transform the pointclouds to the task invariant frame
         # TODO: Reorder these steps so that matrix multiplication happens after distance filtering
