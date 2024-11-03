@@ -20,7 +20,7 @@ class PoseScorer:
     def score_pose_array(self, pose_array: Tensor) -> Tensor:
         """
         Args:
-            pose_array: Boolean tensor of base poses aranged as (N, nx, ny, nt) 
+            pose_array: Boolean tensor of base poses aranged as (N, ny, nx, nt) 
                         for batch size N, and coordinates x, y, theta
         Returns:
             torch.Tensor: Same size as the input with floating point values 

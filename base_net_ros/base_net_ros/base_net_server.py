@@ -87,6 +87,8 @@ class BaseNetServer(Node):
         t2 = time.perf_counter()
         print(f'Model forward pass took {t2 - t1} seconds')
 
+        pose_scores = self.pose_scorer.score_pose_array(model_output)
+
         self.base_net_viz.visualize_model_output(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame)
         self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_list[0], pointcloud_frame)
 
@@ -120,7 +122,7 @@ class BaseNetServer(Node):
         grid_lower_bound = torch.tensor([min_grid_x, min_grid_y], device=self.base_net_config.model.device)
         grid_extents = torch.tensor([x_range, y_range], device=self.base_net_config.model.device)
         grid_size = torch.tensor([x_res, y_res], device=self.base_net_config.model.device)
-        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, model_output):
+        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, pose_scores):
             # Transform the results grid to this tasks base pose
             task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
             world_tform_flattened_task = geometry.flatten_task(task_pose_curobo)
@@ -155,7 +157,8 @@ class BaseNetServer(Node):
             y_indices = layer_indices[:, 0]
             x_indices = layer_indices[:, 1]
             t_indices = layer_indices[:, 2]
-            score_tensor[y_indices, x_indices, t_indices] = model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
+            score_tensor[y_indices, x_indices, t_indices] += model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
+        score_tensor /= batch_size
         t6 = time.perf_counter()
         print(f'Score grid population took {t6 - t5} seconds')
             
