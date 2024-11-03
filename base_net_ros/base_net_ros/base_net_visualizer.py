@@ -114,7 +114,7 @@ class BaseNetVisualizer:
         self.model_output_pub.publish(markers)
 
     def visualize_task_pointclouds(self, tasks: torch.Tensor, pointcloud: torch.Tensor, frame_id: str):
-        point_mask = torch.zeros(pointcloud.size(0), dtype=bool)
+        point_mask = torch.zeros(pointcloud.size(0), dtype=bool, device=pointcloud.device)
         for task in tasks:
             point_mask |= (pointcloud[:, :2] - task[:2]).norm(dim=-1) < self.base_net_config.task_geometry.max_pointcloud_radius
         point_mask &= pointcloud[:, 2] > self.base_net_config.task_geometry.min_pointcloud_elevation

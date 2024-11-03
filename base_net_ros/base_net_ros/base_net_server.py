@@ -12,6 +12,7 @@ from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py.point_cloud2 import read_points_numpy, create_cloud_xyz32
 
+from curobo.types.math import Pose as cuRoboPose
 from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net_msgs.srv import QueryBaseLocation
@@ -66,10 +67,11 @@ class BaseNetServer(Node):
             transfomed_pose: PoseStamped = self.tf_buffer.transform(pose_stamped, pointcloud_frame, timeout=rclpy.duration.Duration(seconds=1.0))
             task_poses[idx, :3] = torch.tensor([transfomed_pose.pose.position.x, transfomed_pose.pose.position.y, transfomed_pose.pose.position.z])
             task_poses[idx, 3:] = torch.tensor([transfomed_pose.pose.orientation.w, transfomed_pose.pose.orientation.x, transfomed_pose.pose.orientation.y, transfomed_pose.pose.orientation.z])
+        task_poses = task_poses.to(self.base_net_config.model.device)
 
         # Encode the pointcloud into a tensor
         pointcloud_points = read_points_numpy(req.pointcloud, ['x', 'y', 'z'], skip_nans=True)
-        pointcloud_list = [torch.tensor(pointcloud_points)]*batch_size
+        pointcloud_list = [torch.tensor(pointcloud_points, device=self.base_net_config.model.device)]*batch_size
 
         # Get the output from the model
         t1 = time.perf_counter()
@@ -81,6 +83,7 @@ class BaseNetServer(Node):
                 task_slice = task_poses[index_start:index_end]
                 logits = self.base_net_model(pointcloud_slice, task_slice)
                 model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
+        model_output = model_output.to(self.base_net_config.model.device)
         t2 = time.perf_counter()
         print(f'Model forward pass took {t2 - t1} seconds')
 
@@ -88,6 +91,8 @@ class BaseNetServer(Node):
         self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_list[0], pointcloud_frame)
 
         """TODO: Move this to its own function"""
+        # Create a score tensor which covers all poses
+        t3 = time.perf_counter()
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
         max_x, max_y = torch.amax(task_poses[:, :2], dim=0)
 
@@ -100,19 +105,66 @@ class BaseNetServer(Node):
         y_res: int = math.floor(y_range / y_cell_size) + 1
         yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
 
-        master_grid_poses = geometry.load_base_pose_array(x_range/2, y_range/2, x_res, y_res, yaw_res, 'cpu')
-        master_grid_poses.position[:, :2] += task_poses[:, :2].mean(dim=0)
-        score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device='cpu')
+        master_grid_poses = geometry.load_base_pose_array(x_range/2, y_range/2, x_res, y_res, yaw_res, device=self.base_net_config.model.device)
+        task_pose_max = task_poses[:, :2].max(dim=0)[0]
+        task_pose_min = task_poses[:, :2].min(dim=0)[0]
+        master_grid_poses.position[:, :2] += (task_pose_max + task_pose_min)/2
+        min_grid_x, min_grid_y = torch.amin(master_grid_poses.position[:, :2], dim=0)
+        score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device=self.base_net_config.model.device)
+        t4 = time.perf_counter()
+        print(f'Score grid creation took {t4 - t3} seconds')
 
-        """TODO: Place all solutions into a master grid"""
+        # Place all solutions into a master grid
+        t5 = time.perf_counter()
+        yaw_angles = geometry.extract_yaw_from_quaternions(task_poses[:, 3:])
+        grid_lower_bound = torch.tensor([min_grid_x, min_grid_y], device=self.base_net_config.model.device)
+        grid_extents = torch.tensor([x_range, y_range], device=self.base_net_config.model.device)
+        grid_size = torch.tensor([x_res, y_res], device=self.base_net_config.model.device)
+        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, model_output):
+            # Transform the results grid to this tasks base pose
+            task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
+            world_tform_flattened_task = geometry.flatten_task(task_pose_curobo)
+            base_poses_in_world: cuRoboPose = world_tform_flattened_task.repeat(self.base_poses_in_flattened_task_frame.batch).multiply(self.base_poses_in_flattened_task_frame)
 
+            # We only need to update entries that have reachable poses
+            valid_model_indices = model_output_layer.view(-1, yaw_res).sum(dim=1, dtype=bool)
+
+            # Calculate the indices into the yaw angles
+            yaw_index_offset: int = round(yaw_angle.item() / (2*math.pi / yaw_res))
+            yaw_indices = torch.arange(yaw_res, device=self.base_net_config.model.device) + yaw_index_offset
+            yaw_indices = torch.remainder(yaw_indices, yaw_res)
+            yaw_indices = yaw_indices.long()
+
+            # Calculate the indices into the positions
+            xy_positions = base_poses_in_world.position[:, :2][::yaw_res]
+            offsets = ((xy_positions - grid_lower_bound)) / grid_extents
+            grid_indices = torch.round(offsets * grid_size)
+            valid_indices = ((grid_indices >= 0) & (grid_indices < grid_size)).prod(dim=1, dtype=bool)
+            valid_indices = valid_indices & valid_model_indices
+            grid_indices = grid_indices[valid_indices]
+            grid_indices = grid_indices[:, [1, 0]] # grid is arranged (y, x, yaw)
+            grid_indices = grid_indices.long()
+
+            # Interleave the position and yaw indices
+            yaw_indices_interleaved = yaw_indices.view(1, -1, 1).expand(grid_indices.size(0), -1, 1)
+            grid_indices_interleaved = grid_indices.unsqueeze(1).expand(-1, yaw_res, 2)
+            layer_indices = torch.concatenate([grid_indices_interleaved, yaw_indices_interleaved], dim=-1)
+            layer_indices = layer_indices.view(-1, 3)
+
+            # Assign to the score tensor
+            y_indices = layer_indices[:, 0]
+            x_indices = layer_indices[:, 1]
+            t_indices = layer_indices[:, 2]
+            score_tensor[y_indices, x_indices, t_indices] = model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
+        t6 = time.perf_counter()
+        print(f'Score grid population took {t6 - t5} seconds')
+            
         """TODO: Score the master grid and select the highest score"""
 
         resp.has_valid_pose = torch.any(model_output).item()
         print(f'Has valid pose: {resp.has_valid_pose}')
 
         pose_scores = self.pose_scorer.score_pose_array(model_output.cpu()).squeeze(0)
-        # self.base_net_viz.visualize_response(resp, master_grid_poses, pose_scores, pointcloud_frame)
         self.base_net_viz.visualize_response(resp, master_grid_poses, score_tensor, pointcloud_frame)
         return resp
 
