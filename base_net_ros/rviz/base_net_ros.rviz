@@ -8,6 +8,7 @@ Panels:
         - /Status1
         - /Query1
         - /Response1
+        - /Debug1
       Splitter Ratio: 0.7147058844566345
     Tree Height: 746
   - Class: rviz_common/Selection
@@ -165,6 +166,56 @@ Visualization Manager:
           Value: true
       Enabled: true
       Name: Response
+    - Class: rviz_common/Group
+      Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: false
+          Name: IndividualPoseReachability
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /base_net_server/model_output
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 3.394740104675293
+            Min Value: -0.09042700380086899
+            Value: true
+          Axis: Z
+          Channel Name: z
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 1.6999964714050293
+          Min Color: 0; 0; 0
+          Min Intensity: 0.20024700462818146
+          Name: PointsInRange
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic:
+            Depth: 5
+            Durability Policy: Transient Local
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /base_net_server/points_in_range
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+      Enabled: true
+      Name: Debug
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -211,25 +262,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 8.606118202209473
+      Distance: 6.035959243774414
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -1.1063650846481323
-        Y: -0.9860926270484924
-        Z: -0.5104085206985474
+        X: 0.5882968306541443
+        Y: 1.6305338144302368
+        Z: -0.045978136360645294
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.814796507358551
+      Pitch: 0.8397970795631409
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.2322633266448975
+      Yaw: 5.045907020568848
     Saved: ~
 Window Geometry:
   Displays:

@@ -13,7 +13,6 @@ class BaseNet(torch.nn.Module):
         super(BaseNet, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
-        self.last_pointcloud = None
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
         self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals)
@@ -125,7 +124,6 @@ class BaseNet(torch.nn.Module):
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.task_geometry)
-            self.last_pointcloud = pointcloud_tensor
 
         # Encode the points into a feature vector
         task_embedding: Tensor = self.pose_encoder(task_encoding)

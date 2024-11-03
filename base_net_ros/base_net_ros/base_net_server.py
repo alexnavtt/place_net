@@ -52,8 +52,6 @@ class BaseNetServer(Node):
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
-        # latching_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
-        # self.debug_pointcloud_pub = self.create_publisher(PointCloud2, '~/query/debug_pointcloud', latching_qos)
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.base_net_viz.visualize_query(req)
@@ -86,10 +84,8 @@ class BaseNetServer(Node):
         t2 = time.perf_counter()
         print(f'Model forward pass took {t2 - t1} seconds')
 
-        # pointcloud = self.base_net_model.last_pointcloud.cpu()
-        # pointcloud[:, :, :2] += task_poses[:, :2].unsqueeze(1)
-        # ros_pointcloud = create_cloud_xyz32(req.pointcloud.header, pointcloud.cpu().numpy().astype(float))
-        # self.debug_pointcloud_pub.publish(ros_pointcloud)
+        self.base_net_viz.visualize_model_output(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame)
+        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_list[0], pointcloud_frame)
 
         """TODO: Move this to its own function"""
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
