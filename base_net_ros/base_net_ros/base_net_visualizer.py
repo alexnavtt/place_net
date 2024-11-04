@@ -1,5 +1,6 @@
 import copy
 import torch
+from tqdm import tqdm
 
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from rclpy.node import Node
@@ -40,11 +41,42 @@ class BaseNetVisualizer:
         self.query_task_pub.publish(req.end_effector_poses)
         self.query_pointcloud_pub.publish(req.pointcloud)
 
+    def pose_array_to_marker(self, pose_array: cuRoboPose, scores: torch.Tensor, frame_id: str) -> Marker:
+        arrow_marker = Marker()
+        arrow_marker.action = Marker.ADD
+        arrow_marker.header.frame_id = frame_id
+        arrow_marker.header.stamp = self.ros_node.get_clock().now().to_msg()
+        arrow_marker.scale = Vector3(x=0.005)
+        arrow_marker.type = Marker.LINE_LIST
+
+        qw, qx, qy, qz = pose_array.quaternion.split([1, 1, 1, 1], dim=-1)
+        fx = 1 - 2*(qy**2 + qz**2)
+        fy = 2*(qx*qy + qw*qz)
+        fz = 2*(qx*qz - qw*qy)
+        forward_vectors = torch.cat([fx, fy, fz], dim=1)
+
+        start_points = pose_array.position
+        end_points = start_points + 0.05*forward_vectors
+        arrow_points = torch.empty(2*pose_array.batch, 3, dtype=float)
+        arrow_points[::2, :]  = start_points
+        arrow_points[1::2, :] = end_points
+
+        scores = scores.flatten().float()
+        colors = torch.zeros(2*scores.size(0), 4, dtype=float)
+        colors[::2, 0] = 1 - scores
+        colors[::2, 1] = scores
+        colors[::2, 2] = 0.5 + 0.5 * scores
+        colors[1::2] = colors[::2]
+
+        arrow_marker.points.extend([Point(x=pt[0], y=pt[1], z=pt[2]) for pt in arrow_points.cpu().numpy()])
+        arrow_marker.colors.extend([ColorRGBA(r=cl[0], g=cl[1], a=cl[2]) for cl in colors.cpu().numpy()])
+
+        return arrow_marker
+
     def visualize_response(self, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, frame_id: str) -> None:
         self.response_optimal_pub.publish(resp.optimal_base_pose)
         self.response_valid_pub.publish(resp.valid_poses)
 
-        final_base_grid_tensor = torch.concatenate([final_base_grid.position, final_base_grid.quaternion, scored_grid.flatten().unsqueeze(1)], dim=1)
         final_grid_marker = MarkerArray()
 
         delete_marker = Marker()
@@ -52,28 +84,7 @@ class BaseNetVisualizer:
         delete_marker.id = -1
         final_grid_marker.markers.append(delete_marker)
 
-        arrow_marker = Marker()
-        arrow_marker.action = Marker.ADD
-        arrow_marker.header.frame_id = frame_id
-        arrow_marker.header.stamp = self.ros_node.get_clock().now().to_msg()
-        arrow_marker.id = 0
-        arrow_marker.scale = Vector3(x=0.005)
-        arrow_marker.type = Marker.LINE_LIST
-
-        for pose_vec in final_base_grid_tensor:
-            position, quaternion, score = torch.split(pose_vec, [3, 4, 1])
-            qw, qx, qy, qz = quaternion
-            forward_vector = torch.tensor([1 - 2*(qy**2 + qz**2), 2*(qx*qy + qw*qz), 2*(qx*qz - qw*qy)], device=position.device, dtype=float)
-
-            arrow_marker.points.append(Point(x=float(position[0]), y=float(position[1]), z=float(position[2])))
-            end_point = position + forward_vector*0.05
-            arrow_marker.points.append(Point(x=float(end_point[0]), y=float(end_point[1]), z=float(end_point[2])))
-
-            color = ColorRGBA()
-            color.g = score.item()
-            color.r = 1 - score.item()
-            color.a = 0.5 +  0.5*score.item()
-            arrow_marker.colors.extend([color]*2)
+        arrow_marker = self.pose_array_to_marker(final_base_grid, scored_grid, frame_id)
 
         final_grid_marker.markers.append(copy.deepcopy(arrow_marker))
         self.response_aggregate_scores_pub.publish(final_grid_marker)
@@ -86,34 +97,17 @@ class BaseNetVisualizer:
         delete_marker.id = -1
         markers.markers.append(delete_marker)
 
-        arrow_marker = Marker()
-        arrow_marker.action = Marker.ADD
-        arrow_marker.header.frame_id = frame_id
-        arrow_marker.header.stamp = self.ros_node.get_clock().now().to_msg()
-        arrow_marker.id = 0
-        arrow_marker.scale = Vector3(x=0.005)
-        arrow_marker.type = Marker.LINE_LIST
-
         tasks = tasks.to(self.base_net_config.model.device)
         tasks[:, 2] = self.base_net_config.task_geometry.base_link_elevation
-        for output_layer, task in zip(model_output, tasks):
+        model_output = model_output.cpu()
+        for idx, (output_layer, task) in tqdm(enumerate(zip(model_output, tasks)), total=tasks.size(0)):
             task_pose = cuRoboPose(position=task[:3], quaternion=task[3:])
             world_tform_flattened_task = geometry.flatten_task(task_pose)
             base_pose_in_world: cuRoboPose = world_tform_flattened_task.repeat(base_pose_array.batch).multiply(base_pose_array)
 
-            for position, quaternion, score in zip(base_pose_in_world.position, base_pose_in_world.quaternion, output_layer.flatten()):
-                qw, qx, qy, qz = quaternion
-                forward_vector = torch.tensor([1 - 2*(qy**2 + qz**2), 2*(qx*qy + qw*qz), 2*(qx*qz - qw*qy)], device=position.device, dtype=float)
-                arrow_marker.points.append(Point(x=float(position[0]), y=float(position[1]), z=float(position[2])))
-                end_point = position + forward_vector*0.05
-                arrow_marker.points.append(Point(x=float(end_point[0]), y=float(end_point[1]), z=float(end_point[2])))
-
-                color = ColorRGBA()
-                color.g = float(score.item())
-                color.r = 1 - float(score.item())
-                color.a = 0.5 +  0.5*float(score.item())
-                arrow_marker.colors.extend([color]*2)
-        markers.markers.append(arrow_marker)
+            new_arrows = self.pose_array_to_marker(base_pose_in_world, output_layer, frame_id)
+            new_arrows.id = idx
+            markers.markers.append(new_arrows)
 
         self.model_output_pub.publish(markers)
 
