@@ -167,7 +167,7 @@ class BaseNetServer(Node):
         yaw_res: int = master_grid.yaw_res
         yaw_angles = geometry.extract_yaw_from_quaternions(task_poses[:, 3:])
 
-        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, pose_scores):
+        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, model_output):
             # Transform the results grid to this tasks base pose
             task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
             world_tform_flattened_task = geometry.flatten_task(task_pose_curobo)
@@ -185,24 +185,40 @@ class BaseNetServer(Node):
             # Calculate the indices into the positions
             xy_positions = base_poses_in_world.position[:, :2][::yaw_res]
             offsets = ((xy_positions - master_grid.lower_bound)) / master_grid.extent
-            grid_indices = torch.round(offsets * master_grid.grid_size)
-            valid_indices = ((grid_indices >= 0) & (grid_indices < master_grid.grid_size)).prod(dim=1, dtype=bool)
-            valid_indices = valid_indices & valid_model_indices
-            grid_indices = grid_indices[valid_indices]
-            grid_indices = grid_indices[:, [1, 0]] # grid is arranged (y, x, yaw)
-            grid_indices = grid_indices.long()
+            float_grid_indices = offsets * master_grid.grid_size
+            grid_indices = torch.floor(float_grid_indices)
 
-            # Interleave the position and yaw indices
-            yaw_indices_interleaved = yaw_indices.view(1, -1, 1).expand(grid_indices.size(0), -1, 1)
-            grid_indices_interleaved = grid_indices.unsqueeze(1).expand(-1, yaw_res, 2)
-            layer_indices = torch.concatenate([grid_indices_interleaved, yaw_indices_interleaved], dim=-1)
-            layer_indices = layer_indices.view(-1, 3)
+            # Calculate the offsets from the nearest grid cells
+            fractional_offsets = torch.frac(float_grid_indices)
+            for grid_offset in torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], device=self.base_net_config.model.device):
+                # Get the indices for this particular corner of the grid cell
+                offset_grid_indices = grid_indices + grid_offset
+                valid_indices = ((offset_grid_indices >= 0) & (offset_grid_indices < master_grid.grid_size)).prod(dim=1, dtype=bool)
+                valid_indices = valid_indices & valid_model_indices
+                offset_grid_indices = offset_grid_indices[valid_indices]
+                offset_grid_indices = offset_grid_indices[:, [1, 0]] # grid is arranged (y, x, yaw)
+                offset_grid_indices = offset_grid_indices.long()
 
-            # Assign to the score tensor
-            y_indices = layer_indices[:, 0]
-            x_indices = layer_indices[:, 1]
-            t_indices = layer_indices[:, 2]
-            master_grid_scores[y_indices, x_indices, t_indices] += model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
+                # Weight using bilinear interpolation
+                weight_components = torch.abs(fractional_offsets - grid_offset)
+                weights = torch.prod(1 - weight_components, dim=-1)
+                weights = weights[valid_indices]
+                weights = weights.repeat_interleave(yaw_res)
+                
+                # Interleave the position and yaw indices
+                yaw_indices_interleaved = yaw_indices.view(1, -1, 1).expand(offset_grid_indices.size(0), -1, 1)
+                grid_indices_interleaved = offset_grid_indices.unsqueeze(1).expand(-1, yaw_res, 2)
+                layer_indices = torch.concatenate([grid_indices_interleaved, yaw_indices_interleaved], dim=-1)
+                layer_indices = layer_indices.view(-1, 3)
+
+                # Assign to the score tensor
+                y_indices = layer_indices[:, 0]
+                x_indices = layer_indices[:, 1]
+                t_indices = layer_indices[:, 2]
+                
+                layer_scores = model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
+                master_grid_scores[y_indices, x_indices, t_indices] += weights * layer_scores
+
         master_grid_scores /= master_grid_scores.max().item()
         t6 = time.perf_counter()
         print(f'Score grid population took {t6 - t5:.3f} seconds')
