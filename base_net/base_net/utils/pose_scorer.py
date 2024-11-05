@@ -91,13 +91,13 @@ class PoseScorer:
 
         return scores / (index_offset_max + 1)
     
-    def select_best_pose(self, pose_array: Tensor) -> Tensor:
-        pose_scores = self.score_pose_array(pose_array)
-        pose_scores = (pose_scores/torch.max(pose_scores) >= 0.99).float()
+    def select_best_pose(self, pose_array: Tensor, already_scored: bool = False) -> Tensor:
+        pose_scores = pose_array if already_scored else self.score_pose_array(pose_array) 
+        pose_scores = (pose_scores/torch.max(pose_scores) >= 0.9).float()
 
         while True:
             new_scores = self.score_pose_array(pose_scores)
-            new_scores = (new_scores/torch.max(new_scores) >= 0.99).float()
+            new_scores = (new_scores/torch.max(new_scores) >= 0.9).float()
 
             iteration_diff = torch.abs(new_scores - pose_scores)
             pose_scores = new_scores

@@ -219,16 +219,36 @@ class BaseNetServer(Node):
                 layer_scores = model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
                 master_grid_scores[y_indices, x_indices, t_indices] += weights * layer_scores
 
-        master_grid_scores /= master_grid_scores.max().item()
+        master_grid_scores /= task_poses.size(0)
         t6 = time.perf_counter()
         print(f'Score grid population took {t6 - t5:.3f} seconds')
-            
-        """TODO: Score the master grid and select the highest score"""
 
         resp.has_valid_pose = torch.any(model_output).item()
-        print(f'Has valid pose: {resp.has_valid_pose}')
 
-        pose_scores = self.pose_scorer.score_pose_array(model_output.cpu()).squeeze(0)
+        if resp.has_valid_pose:
+            best_pose_idx = self.pose_scorer.select_best_pose(master_grid_scores.unsqueeze(0), already_scored=True)
+            best_pose = master_grid.poses[best_pose_idx]
+            """ TODO: make a function curobo_pose_to_pose_list """ 
+            pos  = best_pose.position.cpu().double().squeeze(0)
+            quat = best_pose.quaternion.cpu().double().squeeze(0)
+
+            resp.optimal_base_pose.header.frame_id = pointcloud_frame
+            resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
+            resp.optimal_base_pose.pose.position.x = pos[0].item()
+            resp.optimal_base_pose.pose.position.y = pos[1].item()
+            resp.optimal_base_pose.pose.position.z = pos[2].item()
+
+            resp.optimal_base_pose.pose.orientation.w = quat[0].item()
+            resp.optimal_base_pose.pose.orientation.x = quat[1].item()
+            resp.optimal_base_pose.pose.orientation.y = quat[2].item()
+            resp.optimal_base_pose.pose.orientation.z = quat[3].item()
+
+            resp.optimal_score = float(master_grid_scores.flatten()[best_pose_idx])
+            print(f'Optimal score is {resp.optimal_score}')
+
+            """TODO: """
+            # resp.valid_poses
+            # resp.valid_pose_scores
 
         print(f'Visualizing final scores')
         self.base_net_viz.visualize_response(resp, master_grid.poses, master_grid_scores, pointcloud_frame)
