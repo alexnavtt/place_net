@@ -55,7 +55,7 @@ class BaseNetServer(Node):
         self.max_batch_size: int = self.declare_parameter('max_batch_size').value
 
         base_path, _ = os.path.split(checkpoint_path)
-        self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_solutions=False, load_tasks=False, device=device_param)
+        self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=device_param)
         self.base_net_model = BaseNet(self.base_net_config)
         self.pose_scorer = pose_scorer.PoseScorer()
 

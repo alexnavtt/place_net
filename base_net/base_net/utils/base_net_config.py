@@ -293,21 +293,21 @@ class BaseNetConfig:
     debug: bool = False
 
     @staticmethod
-    def from_yaml_file(filename: str, load_tasks = True, load_solutions = False, device=None):
+    def from_yaml_file(filename: str, load_pointclouds = True, load_tasks = True, load_solutions = False, device=None):
         with open(filename, 'r') as f:
             yaml_config = yaml.safe_load(f)
 
         if device is not None:
             yaml_config['model_settings']['cuda_device'] = device
-        return BaseNetConfig.from_yaml_dict(yaml_config, load_tasks, load_solutions)
+        return BaseNetConfig.from_yaml_dict(yaml_config, load_pointclouds, load_tasks, load_solutions)
 
     @staticmethod
-    def from_yaml_dict(yaml_config: dict, load_tasks = True, load_solutions = False):
+    def from_yaml_dict(yaml_config: dict, load_pointclouds = True, load_tasks = True, load_solutions = False):
         model_config = BaseNetModelConfig.from_yaml_dict(yaml_config)
         task_geometry = TaskGeometryConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
-        if load_tasks:
+        if load_pointclouds:
             for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
                 name, pointcloud = BaseNetConfig.load_pointcloud(
                     filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
