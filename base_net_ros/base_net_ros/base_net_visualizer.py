@@ -100,7 +100,11 @@ class BaseNetVisualizer:
         tasks = tasks.to(self.base_net_config.model.device)
         tasks[:, 2] = self.base_net_config.task_geometry.base_link_elevation
         model_output = model_output.cpu()
-        for idx, (output_layer, task) in tqdm(enumerate(zip(model_output, tasks)), total=tasks.size(0)):
+
+        # Only show a loading bar for larger batch sizes
+        wrapper = tqdm if tasks.size(0) > 10 else lambda x, total: x
+
+        for idx, (output_layer, task) in wrapper(enumerate(zip(model_output, tasks)), total=tasks.size(0)):
             task_pose = cuRoboPose(position=task[:3], quaternion=task[3:])
             world_tform_flattened_task = geometry.flatten_task(task_pose)
             base_pose_in_world: cuRoboPose = world_tform_flattened_task.repeat(base_pose_array.batch).multiply(base_pose_array)

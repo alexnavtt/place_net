@@ -4,14 +4,12 @@ import math
 import torch
 
 import rclpy
+import rclpy.time
 import rclpy.duration
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy
 from tf2_ros import Buffer, TransformListener
-from geometry_msgs.msg import PoseArray
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
-from sensor_msgs.msg import PointCloud2
-from sensor_msgs_py.point_cloud2 import read_points_numpy, create_cloud_xyz32
+from sensor_msgs_py.point_cloud2 import read_points_numpy
 
 from curobo.types.math import Pose as cuRoboPose
 from base_net.models.base_net import BaseNet
@@ -20,6 +18,7 @@ from base_net_msgs.srv import QueryBaseLocation
 from base_net.utils import geometry, pose_scorer
 
 from .base_net_visualizer import BaseNetVisualizer
+from . import base_net_conversions
 
 class PoseGrid:
     def __init__(self, x_range: float, y_range: float, x_res: int, y_res: int, yaw_res: int, device):
@@ -121,7 +120,6 @@ class BaseNetServer(Node):
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.base_net_viz.visualize_query(req)
-        batch_size = len(req.end_effector_poses.poses)
 
         # Make sure the task poses and pointclouds are represented in the same frame
         pointcloud_frame: str = req.pointcloud.header.frame_id
@@ -143,38 +141,31 @@ class BaseNetServer(Node):
         model_output = self.run_model(task_poses, pointcloud_tensor)
         t2 = time.perf_counter()
         pose_scores = self.pose_scorer.score_pose_array(model_output)
-        t3 = time.perf_counter()
         print(f'Model forward pass took {t2 - t1:.3f} seconds')
-        print(f'Scoring took {t3 - t2:.3f} seconds')
 
         print(f'Visualizing model output')
         self.base_net_viz.visualize_model_output(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame)
-        print(f'Visualizing task pointclouds')
         self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, pointcloud_frame)
-        print(f'Done')
 
         # Create a score tensor which covers all poses
-        t3 = time.perf_counter()
         master_grid, master_grid_scores = self.create_master_score_grid(task_poses)
         task_pose_max = task_poses[:, :2].max(dim=0)[0]
         task_pose_min = task_poses[:, :2].min(dim=0)[0]
         master_grid.translate((task_pose_max + task_pose_min)/2)
-        t4 = time.perf_counter()
-        print(f'Score grid creation took {t4 - t3} seconds')
 
         # Place all solutions into a master grid
         t5 = time.perf_counter()
         yaw_res: int = master_grid.yaw_res
         yaw_angles = geometry.extract_yaw_from_quaternions(task_poses[:, 3:])
 
-        for task_pose, yaw_angle, model_output_layer in zip(task_poses, yaw_angles, model_output):
+        for task_pose, yaw_angle, layer_scores in zip(task_poses, yaw_angles, pose_scores):
             # Transform the results grid to this tasks base pose
             task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
             world_tform_flattened_task = geometry.flatten_task(task_pose_curobo)
             base_poses_in_world: cuRoboPose = world_tform_flattened_task.repeat(self.base_poses_in_flattened_task_frame.batch).multiply(self.base_poses_in_flattened_task_frame)
 
             # We only need to update entries that have reachable poses
-            valid_model_indices = model_output_layer.view(-1, yaw_res).sum(dim=1, dtype=bool)
+            valid_model_indices = layer_scores.view(-1, yaw_res).sum(dim=1, dtype=bool)
 
             # Calculate the indices into the yaw angles
             yaw_index_offset: int = round(yaw_angle.item() / (2*math.pi / yaw_res))
@@ -216,9 +207,10 @@ class BaseNetServer(Node):
                 x_indices = layer_indices[:, 1]
                 t_indices = layer_indices[:, 2]
                 
-                layer_scores = model_output_layer.view(-1, yaw_res)[valid_indices, :].flatten().float()
-                master_grid_scores[y_indices, x_indices, t_indices] += weights * layer_scores
+                valid_layer_scores = layer_scores.view(-1, yaw_res)[valid_indices, :].flatten()
+                master_grid_scores[y_indices, x_indices, t_indices] += weights * valid_layer_scores
 
+        relative_scores = master_grid_scores / master_grid_scores.max()
         master_grid_scores /= task_poses.size(0)
         t6 = time.perf_counter()
         print(f'Score grid population took {t6 - t5:.3f} seconds')
@@ -226,32 +218,34 @@ class BaseNetServer(Node):
         resp.has_valid_pose = torch.any(model_output).item()
 
         if resp.has_valid_pose:
+            # Transform poses to the requested base link frame
+            manipulation_tform_base_link_ros = self.tf_buffer.lookup_transform(
+                target_frame=self.base_net_config.robot.kinematics.kinematics_config.ee_link, # The robot is inverted here so ee is actually base_link
+                source_frame=req.base_link,
+                time=rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.25)
+            ).transform
+            manipulation_tform_base_link_ros: cuRoboPose = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
+
+            base_link_poses = master_grid.poses.multiply(manipulation_tform_base_link_ros.repeat(master_grid.poses.batch))
+
             best_pose_idx = self.pose_scorer.select_best_pose(master_grid_scores.unsqueeze(0), already_scored=True)
-            best_pose = master_grid.poses[best_pose_idx]
-            """ TODO: make a function curobo_pose_to_pose_list """ 
-            pos  = best_pose.position.cpu().double().squeeze(0)
-            quat = best_pose.quaternion.cpu().double().squeeze(0)
+            best_pose = base_link_poses[best_pose_idx]
 
             resp.optimal_base_pose.header.frame_id = pointcloud_frame
             resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
-            resp.optimal_base_pose.pose.position.x = pos[0].item()
-            resp.optimal_base_pose.pose.position.y = pos[1].item()
-            resp.optimal_base_pose.pose.position.z = pos[2].item()
+            resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
-            resp.optimal_base_pose.pose.orientation.w = quat[0].item()
-            resp.optimal_base_pose.pose.orientation.x = quat[1].item()
-            resp.optimal_base_pose.pose.orientation.y = quat[2].item()
-            resp.optimal_base_pose.pose.orientation.z = quat[3].item()
-
-            resp.optimal_score = float(master_grid_scores.flatten()[best_pose_idx])
+            resp.optimal_score = master_grid_scores.flatten()[best_pose_idx].double().item()
             print(f'Optimal score is {resp.optimal_score}')
 
-            """TODO: """
-            # resp.valid_poses
-            # resp.valid_pose_scores
+            valid_pose_mask = master_grid_scores.bool()
+            resp.valid_poses.header = resp.optimal_base_pose.header
+            resp.valid_poses.poses = base_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
+            resp.valid_pose_scores = master_grid_scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
 
         print(f'Visualizing final scores')
-        self.base_net_viz.visualize_response(resp, master_grid.poses, master_grid_scores, pointcloud_frame)
+        self.base_net_viz.visualize_response(resp, base_link_poses, relative_scores, pointcloud_frame)
         print(f'Done')
         return resp
 

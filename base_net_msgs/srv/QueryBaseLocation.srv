@@ -16,6 +16,8 @@ string base_link
 
 ## Response
 
+# Response poses will be defined in the same frame as the request pointcloud
+
 # Whether or not there was at least one valid pose
 bool has_valid_pose
 
