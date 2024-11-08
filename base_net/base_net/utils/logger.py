@@ -1,4 +1,5 @@
 import os
+import math
 import yaml
 import shutil
 import datetime
@@ -47,7 +48,9 @@ class Logger:
             'FalsePositive': [],
             'FalseNegative': [],
             'ScoreError': [],
-            'Success': []
+            'Success': [],
+            'PositiveSuccess': [],
+            'NegativeSuccess': [],
         }
         
     def clear_latest_run_dir(self):
@@ -71,25 +74,45 @@ class Logger:
     def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         if not self._log: return
 
+        # Reshape the inputs to a better form for logging
         binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
+        ground_truth_scores = self._scorer.score_pose_array(ground_truth).flatten(start_dim=1)
+        ground_truth = ground_truth.flatten(start_dim=1)
 
-        ground_truth_score_grid = self._scorer.score_pose_array(ground_truth)
-        model_pose_choice_index = self._scorer.select_best_pose(binary_output)
-        model_score = ground_truth_score_grid.flatten()[model_pose_choice_index]
-        model_score_error = ground_truth_score_grid.max() - model_score
-        success = ground_truth.flatten()[model_pose_choice_index]
+        # Determine which pose the model chose for each item in the batch
+        model_pose_choice_indices = self._scorer.select_best_pose(binary_output).unsqueeze(1)
+        binary_output = binary_output.flatten(start_dim=1)
         
+        # Now we see if the model predicted either a valid pose or correctly stated that there was none
+        negative_choices = model_pose_choice_indices.squeeze() == -1
+        true_negatives = torch.all(ground_truth_scores == 0.0, dim=1)
+        correct_negatives = negative_choices & true_negatives
+        correct_positives = torch.gather(ground_truth, 1, model_pose_choice_indices).squeeze(1)
+        batch_success = correct_positives | correct_negatives
+        success = batch_success.float().mean().item()
+
+        # How close is the score of the model pose choice to the optimal score
+        model_score = torch.gather(ground_truth_scores, 1, model_pose_choice_indices).squeeze(1)
+        model_score[negative_choices] = 0.0
+        optimal_scores = ground_truth_scores.max(dim=1)[0]
+        model_score_error = (optimal_scores - model_score).mean().item()
+
+        # What is the success rate for examples that had a valid pose and for those that didn't
+        positive_success = batch_success[torch.logical_not(true_negatives)].float().mean().item()
+        negative_success = batch_success[true_negatives].float().mean().item()
+        
+        # How many poses did the model classify correctly and in what way did it make errors
         false_positive_grid = torch.logical_and(binary_output, torch.logical_not(ground_truth))
+        num_negative_per_batch = torch.logical_not(ground_truth).sum(dtype=torch.float, dim=1)
+        false_positive = torch.where(num_negative_per_batch > 0, false_positive_grid.sum(dtype=torch.float, dim=1)/num_negative_per_batch, torch.zeros_like(num_negative_per_batch)).mean().item()
+
         false_negative_grid = torch.logical_and(ground_truth, torch.logical_not(binary_output))
+        num_positive_per_batch = ground_truth.sum(dtype=torch.float, dim=1)
+        false_negative = torch.where(num_positive_per_batch > 0, false_negative_grid.sum(dtype=torch.float, dim=1)/num_positive_per_batch, torch.zeros_like(num_positive_per_batch)).mean().item()
+
         error_grid = torch.logical_or(false_positive_grid, false_negative_grid)
-
-        num_positive = ground_truth.sum(dtype=torch.float).item()
-        num_negative = torch.logical_not(ground_truth).sum(dtype=torch.float).item()
-
-        error = error_grid.float().mean().item()
-        false_positive = false_positive_grid.sum(dtype=torch.float).item()/num_negative if num_negative > 0 else 0
-        false_negative = false_negative_grid.sum(dtype=torch.float).item()/num_positive if num_positive > 0 else 0
+        error = error_grid.float().mean(dim=1).mean().item()
 
         self._metrics['Loss'].append(loss)
         self._metrics['Error'].append(error)
@@ -97,6 +120,10 @@ class Logger:
         self._metrics['FalseNegative'].append(false_negative)
         self._metrics['ScoreError'].append(model_score_error)
         self._metrics['Success'].append(success)
+        if not math.isnan(positive_success):
+            self._metrics['PositiveSuccess'].append(positive_success)
+        if not math.isnan(negative_success):
+            self._metrics['NegativeSuccess'].append(negative_success)
 
     def log_statistics(self, epoch: int, label: str):
         if not self._log: return

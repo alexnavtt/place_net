@@ -26,9 +26,18 @@ class PoseScorer:
             torch.Tensor: Same size as the input with floating point values 
                           indicating the scores of each pose
         """
+        # We only score layers that have valid poses
+        output_scores = torch.zeros_like(pose_array, dtype=torch.float32)
+        valid_layer_mask = torch.any(pose_array.flatten(start_dim=1), dim=1)
+        if not torch.any(valid_layer_mask):
+            return output_scores
+        pose_array = pose_array[valid_layer_mask]
+
+        # Start by getting the score for every orientation at each position
         pose_scores = self.score_at_positions(pose_array.view(-1, pose_array.size(3))).reshape(pose_array.shape)
         augmented_pose_scores = pose_scores.clone().detach()
 
+        # Then incorporate neighboring scores based on the number of neighbors to consider
         position_offsets = []
         if self._num_position_connections > 0:
             position_offsets = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0]]
@@ -56,8 +65,9 @@ class PoseScorer:
             # Use the pose_array mask to only update valid poses, and weight by inverse distance
             augmented_pose_scores += pose_array * offset_tensor / (1 + dist)
 
-        augmented_pose_scores /= (self._max_score * (len(position_offsets) + 1))
-        return augmented_pose_scores
+        # Normalize and reshape to the same as the input shape
+        output_scores[valid_layer_mask] = augmented_pose_scores / (self._max_score * (len(position_offsets) + 1))
+        return output_scores
         
     def score_at_positions(self, valid_angle_mask: Tensor) -> Tensor:
         """
@@ -93,16 +103,20 @@ class PoseScorer:
     
     def select_best_pose(self, pose_array: Tensor, already_scored: bool = False) -> Tensor:
         pose_scores = pose_array if already_scored else self.score_pose_array(pose_array) 
-        pose_scores = (pose_scores/torch.max(pose_scores) >= 0.9).float()
+        
+        index_tensor = -1*torch.ones(pose_array.size(0), dtype=int, device=pose_array.device)
+        for idx, layer_pose_scores in enumerate(pose_scores):
+            layer_pose_scores = (layer_pose_scores/torch.max(layer_pose_scores) >= 0.99).float()
 
-        while True:
-            new_scores = self.score_pose_array(pose_scores)
-            new_scores = (new_scores/torch.max(new_scores) >= 0.9).float()
+            iteration_diff = torch.ones_like(layer_pose_scores, dtype=torch.float32)
+            while torch.any(iteration_diff > 1e-2):
+                new_scores = self.score_pose_array(layer_pose_scores.unsqueeze(0)).squeeze(0)
+                new_scores = (new_scores/torch.max(new_scores) >= 0.99).float()
 
-            iteration_diff = torch.abs(new_scores - pose_scores)
-            pose_scores = new_scores
-            if torch.all(iteration_diff < 1e-2):
-                break
-                
-        pose_scores = self.score_pose_array(pose_scores)
-        return pose_scores.argmax()
+                iteration_diff = torch.abs(new_scores - layer_pose_scores)
+                layer_pose_scores = new_scores
+                    
+            layer_pose_scores = self.score_pose_array(layer_pose_scores.unsqueeze(0)).squeeze(0)
+            index_tensor[idx] = layer_pose_scores.argmax()
+
+        return index_tensor
