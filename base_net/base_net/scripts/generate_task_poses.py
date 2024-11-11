@@ -106,6 +106,15 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
 
     pointcloud = regions.pointcloud
     bounding_box = pointcloud.get_axis_aligned_bounding_box()
+    min_bound = np.array(bounding_box.min_bound)
+    min_bound[0] -= model_config.task_geometry.max_radial_reach
+    min_bound[1] -= model_config.task_geometry.max_radial_reach
+
+    max_bound = np.array(bounding_box.max_bound)
+    max_bound[0] += model_config.task_geometry.max_radial_reach
+    max_bound[1] += model_config.task_geometry.max_radial_reach
+    max_bound[2] = max(model_config.task_geometry.base_link_elevation + model_config.task_geometry.max_radial_reach, max_bound[2])
+    bounding_box = open3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
 
     ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
