@@ -76,11 +76,20 @@ class BaseNetModelConfig:
         elif pointcloud_encoder_lable.lower() in ['cnn', 'cnnencoder']:
             pointcloud_encoder_type = CNNEncoder
 
+        try:
+            # If the device is an integer, interpret it as a cuda device index
+            torch_device = torch.device(f"cuda:{(int(model_settings['cuda_device']))}")
+        except ValueError:
+            # Otherwise use the string as-is
+            torch_device = torch.device(model_settings['cuda_device'])
+
         # Determine which loss function to use
         loss_fn_label: str = model_settings.get('loss_function', 'dice').lower()
         match loss_fn_label:
             case 'bce' | 'bce_loss' | 'bceloss' | 'binary_cross_entropy' | 'binary-cross-entropy':
-                loss_fn_type = BCEWithLogitsLoss
+                pos_weight = model_settings['bce'].get('pos_weight', 1.0) if 'bce' in model_settings else 1.0
+                pos_weight_tensor = torch.tensor([pos_weight], device=torch_device)
+                loss_fn_type = lambda pos_weight=pos_weight_tensor: BCEWithLogitsLoss(pos_weight=pos_weight)
             case 'dice' | 'dice_loss' | 'diceloss':
                 loss_fn_type = DiceLoss
             case 'focal' | 'focal_loss' | 'focalloss':
@@ -91,13 +100,6 @@ class BaseNetModelConfig:
                 loss_fn_type = lambda alpha=alpha, beta=beta: TverskyLoss(alpha, beta)
             case _:
                 raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
-
-        try:
-            # If the device is an integer, interpret it as a cuda device index
-            torch_device = torch.device(f"cuda:{(int(model_settings['cuda_device']))}")
-        except ValueError:
-            # Otherwise use the string as-is
-            torch_device = torch.device(model_settings['cuda_device'])
 
         return BaseNetModelConfig(
             use_normals=model_settings.get('use_normals', True),
