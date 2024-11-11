@@ -74,27 +74,31 @@ class Logger:
     def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         if not self._log: return
 
-        # Reshape the inputs to a better form for logging
         binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
         ground_truth_scores = self._scorer.score_pose_array(ground_truth).flatten(start_dim=1)
-        ground_truth = ground_truth.flatten(start_dim=1)
 
         # Determine which pose the model chose for each item in the batch
-        model_pose_choice_indices = self._scorer.select_best_pose(binary_output).unsqueeze(1)
+        batch_indices, model_pose_choice_indices = self._scorer.select_best_pose(binary_output)
+
+        # Flatten model output and ground truth for processing
+        ground_truth = ground_truth.flatten(start_dim=1)
         binary_output = binary_output.flatten(start_dim=1)
+
+        # Determine which batch entries have any valid poses at all
+        true_positives = torch.any(ground_truth, dim=1)
+        true_negatives = torch.logical_not(true_positives)
         
         # Now we see if the model predicted either a valid pose or correctly stated that there was none
-        negative_choices = model_pose_choice_indices.squeeze() == -1
-        true_negatives = torch.all(ground_truth_scores == 0.0, dim=1)
+        negative_choices = model_pose_choice_indices == -1
+        positive_choices = torch.logical_not(negative_choices)
         correct_negatives = negative_choices & true_negatives
-        correct_positives = torch.gather(ground_truth, 1, model_pose_choice_indices).squeeze(1)
+        correct_positives = ground_truth[batch_indices, model_pose_choice_indices] & positive_choices & true_positives
         batch_success = correct_positives | correct_negatives
         success = batch_success.float().mean().item()
 
         # How close is the score of the model pose choice to the optimal score
-        model_score = torch.gather(ground_truth_scores, 1, model_pose_choice_indices).squeeze(1)
-        model_score[negative_choices] = 0.0
+        model_score = ground_truth_scores[batch_indices, model_pose_choice_indices]
         optimal_scores = ground_truth_scores.max(dim=1)[0]
         model_score_error = (optimal_scores - model_score).mean().item()
 

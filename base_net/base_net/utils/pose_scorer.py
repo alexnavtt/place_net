@@ -106,6 +106,9 @@ class PoseScorer:
         
         index_tensor = -1*torch.ones(pose_array.size(0), dtype=int, device=pose_array.device)
         for idx, layer_pose_scores in enumerate(pose_scores):
+            if not torch.any(layer_pose_scores):
+                continue
+            
             layer_pose_scores = (layer_pose_scores/torch.max(layer_pose_scores) >= 0.99).float()
 
             iteration_diff = torch.ones_like(layer_pose_scores, dtype=torch.float32)
@@ -119,4 +122,5 @@ class PoseScorer:
             layer_pose_scores = self.score_pose_array(layer_pose_scores.unsqueeze(0)).squeeze(0)
             index_tensor[idx] = layer_pose_scores.argmax()
 
-        return index_tensor
+        batch_indices = torch.arange(pose_scores.size(0), device=index_tensor.device)
+        return batch_indices, index_tensor
