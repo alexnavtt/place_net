@@ -23,12 +23,14 @@ class DiceLoss(torch.nn.Module):
         return dice_loss.mean()
     
 class FocalLoss(torch.nn.Module):
-    def __init__(self, gamma: float = 2.0, alpha: float = 0.25, device='cuda:0'):
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.25, pos_weight = None, device = None):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        self.bce = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5.0]).to(device))
-        self.dice = DiceLoss()
+        if pos_weight is not None:
+            self.bce = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([pos_weight]).to(device))
+        else:
+            self.bce = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, logits: Tensor, targets: Tensor):
         # Flatten the input
@@ -36,7 +38,6 @@ class FocalLoss(torch.nn.Module):
 
         # Get the BCE loss of the model output
         bce_loss = self.bce(logits.flatten(), targets.float())
-        dice_loss = self.dice(logits.flatten(), targets.float())
     
         probabilities = torch.sigmoid(logits).flatten()
         p_t = probabilities * targets + (1 - probabilities) * (1 - targets)
@@ -44,7 +45,7 @@ class FocalLoss(torch.nn.Module):
         focal_factor = (1 - p_t) ** self.gamma
 
         # Compute focal loss
-        focal_loss = alpha_t * focal_factor * 0.5*(dice_loss + bce_loss)
+        focal_loss = alpha_t * focal_factor * bce_loss
         return focal_loss.mean()
 
 class TverskyLoss(torch.nn.Module):
