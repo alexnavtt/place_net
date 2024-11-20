@@ -162,6 +162,27 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /base_net_server/response/valid_poses
           Value: false
+        - Alpha: 1
+          Arrow Length: 0.30000001192092896
+          Axes Length: 0.30000001192092896
+          Axes Radius: 0.009999999776482582
+          Class: rviz_default_plugins/PoseArray
+          Color: 28; 113; 216
+          Enabled: true
+          Head Length: 0.07000000029802322
+          Head Radius: 0.03500000014901161
+          Name: ReachableTasks
+          Shaft Length: 0.23000000417232513
+          Shaft Radius: 0.014999999664723873
+          Shape: Arrow (3D)
+          Topic:
+            Depth: 5
+            Durability Policy: Transient Local
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /base_net_server/response/reachable_tasks
+          Value: true
       Enabled: true
       Name: Response
     - Class: rviz_common/Group
@@ -260,25 +281,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/XYOrbit
-      Distance: 9.154830932617188
+      Distance: 12.759674072265625
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -1.3384222984313965
-        Y: -1.4074692726135254
-        Z: 2.0090010366402566e-06
+        X: -0.8679511547088623
+        Y: -1.7247509956359863
+        Z: -1.0388765076640993e-05
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8897969722747803
+      Pitch: 0.9997968077659607
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz_default_plugins)
-      Yaw: 3.940610647201538
+      Yaw: 4.262454509735107
     Saved: ~
 Window Geometry:
   Displays:

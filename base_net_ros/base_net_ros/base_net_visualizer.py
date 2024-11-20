@@ -78,8 +78,9 @@ class BaseNetVisualizer:
         self.response_optimal_pub.publish(resp.optimal_base_pose)
         self.response_valid_pub.publish(resp.valid_poses)
 
-        valid_task_pose_array = copy.deepcopy(req.end_effector_poses)
-        valid_task_pose_array.poses = [req.end_effector_poses[idx] for idx in resp.valid_task_indices]
+        valid_task_pose_array = PoseArray()
+        valid_task_pose_array.header = req.end_effector_poses.header
+        valid_task_pose_array.poses = [req.end_effector_poses.poses[idx] for idx in resp.valid_task_indices]
         self.response_reachable_task_pub.publish(valid_task_pose_array)
 
         final_grid_marker = MarkerArray()
