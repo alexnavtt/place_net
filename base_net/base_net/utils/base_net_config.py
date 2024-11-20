@@ -93,7 +93,8 @@ class BaseNetModelConfig:
             case 'dice' | 'dice_loss' | 'diceloss':
                 loss_fn_type = DiceLoss
             case 'focal' | 'focal_loss' | 'focalloss':
-                loss_fn_type = FocalLoss
+                pos_weight = model_settings['focal_loss'].get('pos_weight', 1.0) if 'focal_loss' in model_settings else 1.0
+                loss_fn_type = lambda pos_weight=pos_weight, device=torch_device: FocalLoss(pos_weight=pos_weight, device=device)
             case 'tversky' | 'tversky_loss' | 'tverskyloss':
                 alpha = model_settings['tversky_loss'].get('alpha', 0.5) if 'tversky_loss' in model_settings else 0.5
                 beta = model_settings['tversky_loss'].get('beta', 0.5) if 'tversky_loss' in model_settings else 0.5

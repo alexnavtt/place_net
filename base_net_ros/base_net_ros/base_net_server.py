@@ -2,6 +2,7 @@ import os
 import time
 import math
 import torch
+from threading import Thread
 
 import rclpy
 import rclpy.time
@@ -119,6 +120,7 @@ class BaseNetServer(Node):
         return grid_poses, score_tensor
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
+        self.get_logger().info("Received base location request. Visualizing request now.")
         self.base_net_viz.visualize_query(req)
 
         # Make sure the task poses and pointclouds are represented in the same frame
@@ -139,13 +141,9 @@ class BaseNetServer(Node):
         # Get the output from the model
         t1 = time.perf_counter()
         model_output = self.run_model(task_poses, pointcloud_tensor)
-        t2 = time.perf_counter()
         pose_scores = self.pose_scorer.score_pose_array(model_output)
-        print(f'Model forward pass took {t2 - t1:.3f} seconds')
-
-        print(f'Visualizing model output')
-        self.base_net_viz.visualize_model_output(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame)
-        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, pointcloud_frame)
+        t2 = time.perf_counter()
+        self.get_logger().info(f'Model forward pass took {t2 - t1:.3f} seconds')
 
         # Create a score tensor which covers all poses
         master_grid, master_grid_scores = self.create_master_score_grid(task_poses)
@@ -213,12 +211,15 @@ class BaseNetServer(Node):
         relative_scores = master_grid_scores / master_grid_scores.max()
         master_grid_scores /= task_poses.size(0)
         t6 = time.perf_counter()
-        print(f'Score grid population took {t6 - t5:.3f} seconds')
+        self.get_logger().info(f'Score grid population took {t6 - t5:.3f} seconds')
 
         resp.has_valid_pose = torch.any(model_output).item()
 
         if resp.has_valid_pose:
+            self.get_logger().info("There is a valid pose")
+            
             # Transform poses to the requested base link frame
+            self.get_logger().info(f'Transforming calculated poses from native frame {self.base_net_config.robot.kinematics.kinematics_config.ee_link} to requested frame {req.base_link}')
             try:
                 manipulation_tform_base_link_ros = self.tf_buffer.lookup_transform(
                     target_frame=self.base_net_config.robot.kinematics.kinematics_config.ee_link, # The robot is inverted here so ee is actually base_link
@@ -234,7 +235,7 @@ class BaseNetServer(Node):
             manipulation_tform_base_link_ros: cuRoboPose = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
 
             base_link_poses = master_grid.poses.multiply(manipulation_tform_base_link_ros.repeat(master_grid.poses.batch))
-
+            base_link_poses.position[:, 2] = 0
             _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid_scores.unsqueeze(0), already_scored=True)
             best_pose = base_link_poses[best_pose_idx]
 
@@ -243,16 +244,29 @@ class BaseNetServer(Node):
             resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
             resp.optimal_score = master_grid_scores.flatten()[best_pose_idx].double().item()
-            print(f'Optimal score is {resp.optimal_score}')
+            self.get_logger().info(f'Optimal score is {resp.optimal_score}')
+
+            # TODO: Validate individual task poses based on the optimal pose
+            # Step 1: Transform optimal pose into each task pose (flattened?) frame
+            # Step 2: Calculate the nearest grid index for that task
+            # Step 3: Check if the value in the model output tensor is True or False
 
             valid_pose_mask = master_grid_scores.bool()
             resp.valid_poses.header = resp.optimal_base_pose.header
             resp.valid_poses.poses = base_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
             resp.valid_pose_scores = master_grid_scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
 
-        print(f'Visualizing final scores')
-        self.base_net_viz.visualize_response(resp, base_link_poses, relative_scores, pointcloud_frame)
-        print(f'Done')
+            self.get_logger().info(f'Visualizing final scores')
+            self.base_net_viz.visualize_response(resp, base_link_poses, relative_scores, pointcloud_frame)
+            self.get_logger().info(f'Done')
+        else:
+            self.get_logger().info("There are no valid poses")
+        
+        self.get_logger().info(f'Visualizing model output')
+        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, pointcloud_frame)
+        model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame))
+        model_output_thread.start()
+
         return resp
 
 def main():

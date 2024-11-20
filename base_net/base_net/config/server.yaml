@@ -24,7 +24,7 @@ curobo_config_file:
 urdf_file:
   ros_package: spot_description
   path: urdf/spot.urdf.xacro
-  xacro_args: 'has_eap:=True has_arm:=True'
+  xacro_args: 'has_rl_kit:=True has_arm:=True'
 
 task_geometry:
   base_link_elevation: 0.709
@@ -93,19 +93,22 @@ model_settings:
   model_type: 'BaseNet'
   pointcloud_encoder: 'PointNet'
   use_normals: False
-  loss_function: 'Tversky' # BCE, Dice, Focal, Tversky
+  loss_function: 'Focal' # BCE, Dice, Focal, Tversky
   data_split: [60, 20, 20]
   num_epochs: 1000
-  cuda_device: 0
+  cuda_device: 2
   batch_size: 16
   learning_rate: 0.0001
-  log_base_path: 'base_net/data/runs/v0.5.0/nn_tversky_2_8/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.5.0/nn_tversky_2_8/'
+  log_base_path: 'base_net/data/runs/v0.5.0/nn_focal_lr1e-4/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.5.0/nn_focal_lr1e-4/'
   checkpoint_frequency: 100
 
   tversky_loss:
-    alpha: 0.2
-    beta: 0.8
+    alpha: 0.8
+    beta: 0.2
 
   bce:
+    pos_weight: 5.0
+
+  focal_loss:
     pos_weight: 5.0

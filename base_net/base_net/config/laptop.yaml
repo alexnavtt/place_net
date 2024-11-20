@@ -23,7 +23,7 @@ curobo_config_file:
 urdf_file:
   ros_package: spot_description
   path: urdf/spot.urdf.xacro
-  xacro_args: 'has_eap:=True has_arm:=True'
+  xacro_args: 'has_rl_kit:=True has_arm:=True'
 
 task_geometry:
   base_link_elevation: 0.709

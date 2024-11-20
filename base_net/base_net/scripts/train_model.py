@@ -160,6 +160,7 @@ def main():
         if epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0:
             logger.save_checkpoint(base_net_model, optimizer, epoch)
 
+    logger.save_checkpoint(base_net_model, optimizer, epoch)
     logger.flush()
 
 if __name__ == "__main__":
