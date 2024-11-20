@@ -7,7 +7,7 @@ import rclpy
 import rclpy.time
 import rclpy.duration
 from rclpy.node import Node
-from tf2_ros import Buffer, TransformListener
+from tf2_ros import Buffer, TransformListener, LookupException
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 from sensor_msgs_py.point_cloud2 import read_points_numpy
 
@@ -219,17 +219,23 @@ class BaseNetServer(Node):
 
         if resp.has_valid_pose:
             # Transform poses to the requested base link frame
-            manipulation_tform_base_link_ros = self.tf_buffer.lookup_transform(
-                target_frame=self.base_net_config.robot.kinematics.kinematics_config.ee_link, # The robot is inverted here so ee is actually base_link
-                source_frame=req.base_link,
-                time=rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.25)
-            ).transform
+            try:
+                manipulation_tform_base_link_ros = self.tf_buffer.lookup_transform(
+                    target_frame=self.base_net_config.robot.kinematics.kinematics_config.ee_link, # The robot is inverted here so ee is actually base_link
+                    source_frame=req.base_link,
+                    time=rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=0.25)
+                ).transform
+            except LookupException as e:
+                self.get_logger().warn(f'Unable to transform base_net results to requested link frame "{req.base_link}": {e}')
+                resp.has_valid_pose = False
+                return resp
+
             manipulation_tform_base_link_ros: cuRoboPose = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
 
             base_link_poses = master_grid.poses.multiply(manipulation_tform_base_link_ros.repeat(master_grid.poses.batch))
 
-            best_pose_idx = self.pose_scorer.select_best_pose(master_grid_scores.unsqueeze(0), already_scored=True)
+            _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid_scores.unsqueeze(0), already_scored=True)
             best_pose = base_link_poses[best_pose_idx]
 
             resp.optimal_base_pose.header.frame_id = pointcloud_frame
