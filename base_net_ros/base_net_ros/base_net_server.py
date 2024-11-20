@@ -199,9 +199,12 @@ class BaseNetServer(Node):
         Returns:
             - A tensor of indices of the tasks that are reachable from the optimal pose
         """
+        batch_size = task_poses_in_world.size(0)
+        device = task_poses_in_world.device
         
         world_tform_task = cuRoboPose(position=task_poses_in_world[:, :3], quaternion=task_poses_in_world[:, 3:])
-        task_tform_world: cuRoboPose = world_tform_task.inverse()
+        world_tform_flattened_task = geometry.flatten_task(world_tform_task)
+        task_tform_world: cuRoboPose = world_tform_flattened_task.inverse()
 
         optimal_pose_in_tasks: cuRoboPose = task_tform_world.multiply(optimal_pose_in_world.repeat(task_tform_world.batch))
 
@@ -224,14 +227,15 @@ class BaseNetServer(Node):
         y_indices = (y_res - 1) * ((y_pos - y_min) / (y_max - y_min))
 
         valid_indices = (x_indices >= 0) & (x_indices < x_res) & (y_indices >= 0) & (y_indices < y_res)
-        batch_indices = torch.arange(optimal_pose_in_world.batch, dtype=int, device=task_poses_in_world.device)[valid_indices]
+        batch_indices = torch.arange(batch_size, dtype=int, device=device)
+        valid_batch_indices = batch_indices[valid_indices]
 
         x_indices = x_indices[valid_indices].long()
         y_indices = y_indices[valid_indices].long()
         yaw_indices = yaw_indices[valid_indices].long()
 
-        reachable_mask = valid_poses[batch_indices, y_indices, x_indices, yaw_indices]
-        return batch_indices[reachable_mask]
+        reachable_mask = valid_poses[valid_batch_indices, y_indices, x_indices, yaw_indices]
+        return valid_batch_indices[reachable_mask]
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.get_logger().info("Received base location request. Visualizing request now.")
@@ -304,7 +308,7 @@ class BaseNetServer(Node):
             resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
             resp.optimal_score = master_grid.scores.flatten()[best_pose_idx].double().item()
-            self.get_logger().info(f'Optimal score is {resp.optimal_score}')
+            self.get_logger().info(f'Optimal score is {resp.optimal_score:.3f}')
 
             reachable_pose_indices = self.get_reachable_pose_indices(
                 optimal_pose_in_world   = master_grid.poses[best_pose_idx],
@@ -320,7 +324,7 @@ class BaseNetServer(Node):
             resp.valid_pose_scores = master_grid.scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
 
             self.get_logger().info(f'Visualizing final scores')
-            self.base_net_viz.visualize_response(resp, base_link_poses, relative_scores, pointcloud_frame)
+            self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, pointcloud_frame)
             self.get_logger().info(f'Done')
         else:
             self.get_logger().info("There are no valid poses")
