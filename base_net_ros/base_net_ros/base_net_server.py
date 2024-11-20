@@ -2,6 +2,7 @@ import os
 import time
 import math
 import torch
+from torch import Tensor
 from threading import Thread
 
 import rclpy
@@ -39,7 +40,7 @@ class PoseGrid:
         self.extent = torch.tensor([max_grid_x-min_grid_x, max_grid_y-min_grid_y], device=device)
         self.grid_size = torch.tensor([x_res, y_res], device=device)
 
-    def translate(self, translation: torch.Tensor) -> None:
+    def translate(self, translation: Tensor) -> None:
         self.poses.position[:, :2] += translation
         self.lower_bound += translation
         self.upper_bound += translation
@@ -78,7 +79,7 @@ class BaseNetServer(Node):
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
 
-    def run_model(self, task_poses: torch.Tensor, pointcloud: torch.Tensor) -> torch.Tensor:
+    def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
         pointcloud_list = [pointcloud]*batch_size
 
@@ -101,7 +102,7 @@ class BaseNetServer(Node):
 
         return model_output
     
-    def create_master_score_grid(self, task_poses: torch.Tensor) -> tuple[PoseGrid, torch.Tensor]:
+    def create_master_score_grid(self, task_poses: Tensor) -> tuple[PoseGrid, Tensor]:
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
         max_x, max_y = torch.amax(task_poses[:, :2], dim=0)
 
@@ -118,6 +119,51 @@ class BaseNetServer(Node):
         score_tensor = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device=self.base_net_config.model.device)
 
         return grid_poses, score_tensor
+    
+    def get_reachable_pose_indices(self, optimal_pose_in_world: cuRoboPose, task_poses_in_world: Tensor, reference_poses_in_task: cuRoboPose, valid_poses: Tensor) -> Tensor:
+        """ Given the optimal pose, determine which task poses can be reached by the robot
+        
+        Args:
+            - optimal_pose_in_world: The chosen base pose for the robot. Shape (1)
+            - task_poses_in_world: The task poses for which we have calculated reachability. Shape (B, 7)
+            - reference_poses_in_task: The array of sample poses reachability was calculated for, defined in the flattened task frame. Shape (ny*nx*ntheta)
+            - valid_poses: The boolean model output indicating which poses can be reached. Shape (B, ny, nx, ntheta) 
+        Returns:
+            - A tensor of indices of the tasks that are reachable from the optimal pose
+        """
+        
+        world_tform_task = cuRoboPose(position=task_poses_in_world[:, :3], quaternion=task_poses_in_world[:, 3:])
+        task_tform_world: cuRoboPose = world_tform_task.inverse()
+
+        optimal_pose_in_tasks: cuRoboPose = task_tform_world.multiply(optimal_pose_in_world.repeat(task_tform_world.batch))
+
+        two_pi: float = 2*torch.pi
+
+        yaw_angles: Tensor = geometry.extract_yaw_from_quaternions(optimal_pose_in_tasks.quaternion)
+        yaw_angles = (yaw_angles + two_pi) % (two_pi)
+        x_pos: Tensor = optimal_pose_in_tasks.position[:, 0]
+        y_pos: Tensor = optimal_pose_in_tasks.position[:, 1]
+
+        x_min, y_min = torch.amin(reference_poses_in_task.position[:, :2], dim=0)
+        x_max, y_max = torch.amax(reference_poses_in_task.position[:, :2], dim=0)
+
+        yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
+        x_res: int = self.base_net_config.inverse_reachability.solution_resolution['x']
+        y_res: int = self.base_net_config.inverse_reachability.solution_resolution['y']
+
+        yaw_indices: Tensor = torch.round(yaw_angles / (two_pi / (yaw_res-1)))
+        x_indices = (x_res - 1) * ((x_pos - x_min) / (x_max - x_min))
+        y_indices = (y_res - 1) * ((y_pos - y_min) / (y_max - y_min))
+
+        valid_indices = (x_indices >= 0) & (x_indices < x_res) & (y_indices >= 0) & (y_indices < y_res)
+        batch_indices = torch.arange(optimal_pose_in_world.batch, dtype=int, device=task_poses_in_world.device)[valid_indices]
+
+        x_indices = x_indices[valid_indices].long()
+        y_indices = y_indices[valid_indices].long()
+        yaw_indices = yaw_indices[valid_indices].long()
+
+        reachable_mask = valid_poses[batch_indices, y_indices, x_indices, yaw_indices]
+        return batch_indices[reachable_mask]
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.get_logger().info("Received base location request. Visualizing request now.")
@@ -217,7 +263,7 @@ class BaseNetServer(Node):
 
         if resp.has_valid_pose:
             self.get_logger().info("There is a valid pose")
-            
+
             # Transform poses to the requested base link frame
             self.get_logger().info(f'Transforming calculated poses from native frame {self.base_net_config.robot.kinematics.kinematics_config.ee_link} to requested frame {req.base_link}')
             try:
@@ -246,10 +292,13 @@ class BaseNetServer(Node):
             resp.optimal_score = master_grid_scores.flatten()[best_pose_idx].double().item()
             self.get_logger().info(f'Optimal score is {resp.optimal_score}')
 
-            # TODO: Validate individual task poses based on the optimal pose
-            # Step 1: Transform optimal pose into each task pose (flattened?) frame
-            # Step 2: Calculate the nearest grid index for that task
-            # Step 3: Check if the value in the model output tensor is True or False
+            reachable_pose_indices = self.get_reachable_pose_indices(
+                optimal_pose_in_world   = master_grid.poses[best_pose_idx],
+                task_poses_in_world     = task_poses,
+                reference_poses_in_task = self.base_poses_in_flattened_task_frame,
+                valid_poses             = model_output
+            )
+            resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
 
             valid_pose_mask = master_grid_scores.bool()
             resp.valid_poses.header = resp.optimal_base_pose.header

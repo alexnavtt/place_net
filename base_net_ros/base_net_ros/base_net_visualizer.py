@@ -31,6 +31,7 @@ class BaseNetVisualizer:
         self.response_optimal_pub          = ros_node.create_publisher(PoseStamped, '~/response/optimal_pose'         , latching_qos)
         self.response_valid_pub            = ros_node.create_publisher(PoseArray  , '~/response/valid_poses'          , latching_qos)
         self.response_scores_pub           = ros_node.create_publisher(MarkerArray, '~/response/pose_scores'          , latching_qos)
+        self.response_reachable_task_pub   = ros_node.create_publisher(PoseArray  , '~/response/reachable_tasks'      , latching_qos)
         self.response_aggregate_scores_pub = ros_node.create_publisher(MarkerArray, '~/response/aggregate_pose_scores', latching_qos)
 
         # Other visualization
@@ -73,9 +74,13 @@ class BaseNetVisualizer:
 
         return arrow_marker
 
-    def visualize_response(self, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, frame_id: str) -> None:
+    def visualize_response(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, frame_id: str) -> None:
         self.response_optimal_pub.publish(resp.optimal_base_pose)
         self.response_valid_pub.publish(resp.valid_poses)
+
+        valid_task_pose_array = copy.deepcopy(req.end_effector_poses)
+        valid_task_pose_array.poses = [req.end_effector_poses[idx] for idx in resp.valid_task_indices]
+        self.response_reachable_task_pub.publish(valid_task_pose_array)
 
         final_grid_marker = MarkerArray()
 
