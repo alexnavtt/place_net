@@ -6,7 +6,10 @@ import numpy as np
 import scipy.spatial
 import collada.triangleset
 import open3d.visualization
-from urdf_parser_py.urdf import Robot, Pose as urdfPose, Joint
+from PIL import Image
+from collections import defaultdict
+from typing_extensions import Iterable
+from urdf_parser_py.urdf import Robot, Pose as urdfPose, Joint, Mesh
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
@@ -137,25 +140,63 @@ def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.
 
     return transform_from_ee
 
-def collada_to_open3d(collada_geom: collada.Collada):    
+def collada_to_open3d(collada_geom: collada.Collada, file_folder_path: str):    
     o3d_mesh = open3d.geometry.TriangleMesh()
+
     vertices_offset = 0
+    materials = {mat.id: mat.effect.diffuse for mat in collada_geom.materials}
+
     for geom in collada_geom.geometries:
         for prim in geom.primitives:
+            vertices = prim.vertex
+
             if isinstance(prim, collada.triangleset.TriangleSet):
-                o3d_mesh.vertices.extend(prim.vertex)
+                o3d_mesh.vertices.extend(vertices)
                 o3d_mesh.triangles.extend(prim.indices[:, :, 0] + vertices_offset)
-                vertices_offset += len(prim.vertex)
+                vertices_offset += len(vertices)
 
                 if hasattr(prim, 'colors') and prim.colors is not None:
                     o3d_mesh.vertex_colors.extend(prim.colors)
 
+                elif prim.material is not None and prim.material in materials:
+                    if isinstance(materials[prim.material], Iterable):
+                        material_color = np.array(materials[prim.material][:3])
+                        o3d_mesh.vertex_colors.extend(np.tile(material_color, (len(vertices), 1)))
+                        
+                    elif len(prim.texcoordset) > 0 and hasattr(materials[prim.material], 'sampler'):
+                        mat = materials[prim.material]                        
+                        texture_path = mat.sampler.surface.image.path
+                        texture = np.array(Image.open(os.path.join(file_folder_path, texture_path))) / 255.0
+
+                        vertex_color_map = defaultdict(list)
+                        uv_coords = prim.texcoordset[0]
+
+                        for tri_idx, (u, v) in enumerate(uv_coords):
+                            v = 1 - v   # different image conventions
+                            row = int(v * (texture.shape[0] - 1))
+                            col = int(u * (texture.shape[1] - 1))
+                            color = texture[row, col, :3]
+
+                            vertex_index = prim.indices.flatten()[tri_idx]
+                            vertex_color_map[vertex_index].append(color)
+
+                        uv_colors = []
+                        for idx in range(len(vertices)):
+                            if idx in vertex_color_map:
+                                # Temporary hack, just take the first color. Weighted average by triangle area is probably best 
+                                mode_color = vertex_color_map[idx][0]
+                                uv_colors.append(np.array(mode_color))
+                            else:
+                                uv_colors.append(np.array([0.5, 0.5, 0.5]))
+
+                        o3d_mesh.vertex_colors.extend(uv_colors)
+
+    # Get the scene transform for the mesh
+    if collada_geom.scene and len(collada_geom.scene.nodes) > 0 and hasattr(collada_geom.scene.nodes[0], 'matrix'):
+        o3d_mesh.transform(collada_geom.scene.nodes[0].matrix)
+
     if not o3d_mesh.has_vertex_normals():
         o3d_mesh.compute_vertex_normals()
-
-    if collada_geom.assetInfo.upaxis == 'Z_UP':
-        rotation = scipy.spatial.transform.Rotation.from_euler('XYZ', [90, 90, 0], degrees=True).as_matrix()
-        o3d_mesh.rotate(rotation)
             
     return o3d_mesh
 
@@ -186,16 +227,26 @@ def get_robot_geometry_at_joint_state(
     joint_idx = 0
     for link_idx, link_name in enumerate(chain_links):
         for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
+            if attached_link not in robot_urdf.link_map: continue
             for visual in robot_urdf.link_map[attached_link].visuals:
-                visual_filename = visual.geometry.filename[7:]
-                if os.path.splitext(visual_filename)[1] == '.dae':
+                if not isinstance(visual.geometry, Mesh): continue
+                visual_filename: str = visual.geometry.filename[7:]
+                file_extension = os.path.splitext(visual_filename)[1]
+                file_folder_path = os.path.dirname(visual_filename)
+                if file_extension == '.dae':
                     try:
                         obj = collada.Collada(filename=visual_filename)
-                        mesh = collada_to_open3d(obj)
+                        mesh = collada_to_open3d(obj, file_folder_path)
                     except collada.common.DaeMalformedError:
                         continue
-                else:
+                    except Exception:
+                        print(f'Error occured loading collada file {visual_filename}')
+                        continue
+                elif file_extension.lower() in ['.stl', '.obj', '.ply']:
                     mesh = open3d.io.read_triangle_mesh(visual_filename)
+                else:
+                    print(f'Got visual with unsupported file extension "{file_extension}"')
+                    continue
 
                 if visual.geometry.scale is not None:
                     mesh.scale(visual.geometry.scale)
