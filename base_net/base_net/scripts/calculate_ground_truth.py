@@ -94,7 +94,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     original_scores = scorer.score_pose_array(valid_base_indices.view(1, 20, 20, 20)).flatten()
 
     best_pose_scores = torch.zeros_like(valid_base_indices)
-    best_pose = scorer.select_best_pose(valid_base_indices.view(1, 20, 20, 20))
+    _, best_pose = scorer.select_best_pose(valid_base_indices.view(1, 20, 20, 20))
     best_pose_scores[best_pose] = True
 
     geometries = [pointcloud] if pointcloud is not None else []
@@ -124,7 +124,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     # Render the best one
     best_pose_scores = torch.zeros_like(solution_success)
-    best_pose = scorer.select_best_pose(solution_success.view(1, 20, 20, 20))
+    _, best_pose = scorer.select_best_pose(solution_success.view(1, 20, 20, 20))
     best_pose_scores[best_pose] = True
     geometries += task_visualization.get_base_arrows(goal_poses, best_pose_scores, prefix='final_scores_')
 
@@ -132,7 +132,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
     if torch.any(solution_success):
         robot_spheres = task_visualization.get_robot_geometry_at_joint_state(
             robot_config=model_config.robot, 
-            joint_state=solution_states[best_pose, :],
+            joint_state=solution_states[best_pose, :].flatten(),
             inverted=True, 
             base_link_pose=np.eye(4)
         )

@@ -101,7 +101,7 @@ class PoseScorer:
 
         return scores / (index_offset_max + 1)
     
-    def select_best_pose(self, pose_array: Tensor, already_scored: bool = False) -> Tensor:
+    def select_best_pose(self, pose_array: Tensor, already_scored: bool = False) -> tuple[Tensor, Tensor]:
         pose_scores = pose_array if already_scored else self.score_pose_array(pose_array) 
         
         index_tensor = -1*torch.ones(pose_array.size(0), dtype=int, device=pose_array.device)
