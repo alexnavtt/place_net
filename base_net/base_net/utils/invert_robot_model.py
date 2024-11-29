@@ -44,6 +44,20 @@ def prepare_urdf_file(filepath: str, xacro_args: str = '') -> None:
     with open('/tmp/invert_robot_model_original.urdf', 'w') as f:
         f.writelines('\n'.join(file_strings))
 
+def urdf_pose_to_matrix(pose: urdf.Pose) -> np.ndarray:
+    matrix = np.eye(4)
+    if pose is None:
+        return matrix
+    
+    matrix[:3, :3] = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(pose.rpy)), degrees=False).as_matrix()
+    matrix[:3,  3] = np.array(pose.xyz)
+    return matrix
+
+def matrix_to_urdf_pose(matrix: np.ndarray) -> urdf.Pose:
+    rpy = scipy.spatial.transform.Rotation.from_matrix(matrix[:3, :3]).as_euler("zyx", degrees=False)
+    xyz = matrix[:3, 3].tolist()
+    return urdf.Pose(xyz=xyz, rpy=rpy)
+
 def invert_pose(pose: urdf.Pose) -> urdf.Pose | None:
     if pose is None: 
         return None
@@ -115,11 +129,23 @@ def invert_dynamic_joint(joint: Joint) -> list:
 
     return rev_inv_joint, intermediary_link, static_transform_joint
 
+def fix_dynamic_joints(robot: Robot, dynamic_joints: dict[str, float]):
+    for joint in robot.joints:
+        joint: Joint = joint
+        if joint.type == 'revolute' and joint.name in dynamic_joints:
+            joint.type = 'fixed'
+            joint_transform = np.eye(4)
+            joint_transform[:3, :3] = scipy.spatial.transform.Rotation.from_rotvec(np.array(joint.axis)*dynamic_joints[joint.name], degrees=False).as_matrix()
+            old_origin = urdf_pose_to_matrix(joint.origin)
+            joint.origin = matrix_to_urdf_pose(old_origin @ joint_transform)
 
-def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str) -> tuple[Robot, Robot]:
+def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str, defaulted_joints: dict[str, float] = {}) -> tuple[Robot, Robot]:
     prepare_urdf_file(urdf_path, xacro_args)
     with contextlib.redirect_stderr(open(os.devnull, 'w')):
         robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
+
+    if len(defaulted_joints) > 0:
+        fix_dynamic_joints(robot, defaulted_joints)
 
     # Get the relevant chains
     arm_joints = robot.get_chain(robot.get_root(), end_effector, joints=True, links=False)

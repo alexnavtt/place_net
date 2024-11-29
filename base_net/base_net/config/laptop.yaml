@@ -25,6 +25,21 @@ urdf_file:
   path: urdf/spot.urdf.xacro
   xacro_args: 'has_rl_kit:=True has_arm:=True'
 
+unused_joint_defaults:
+  front_left_hip_x  : -0.0058014001697301865
+  front_left_hip_y  :  0.7929132580757141
+  front_left_knee   : -1.5593334436416626
+  front_right_hip_x : -0.007982775568962097
+  front_right_hip_y :  0.7943171262741089
+  front_right_knee  : -1.5458697080612183
+  rear_left_hip_x   :  0.0062673864886164665
+  rear_left_hip_y   :  0.7941105961799622
+  rear_left_knee    : -1.5512280464172363
+  rear_right_hip_x  :  0.012335322797298431
+  rear_right_hip_y  :  0.8197641372680664
+  rear_right_knee   : -1.55510675907135
+  arm0_fingers      : -0.010957598686218262
+
 task_geometry:
   base_link_elevation: 0.709
   max_radial_reach: 0.9

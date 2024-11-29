@@ -448,6 +448,9 @@ class BaseNetConfig:
             )
         else:
             urdf_file = urdf_config['path']
+
+        # Get a list of all joints not in the manipulator chain that we want to set to a default value
+        unused_joint_defaults = yaml_config.get('unused_joint_defaults', {})
         
         # Load and process the cuRobo config file
         with open(curobo_file) as f:
@@ -462,6 +465,14 @@ class BaseNetConfig:
                     config_item['set_base_frame'] = ee_link
                     robot_config['tool_frames'][0] = base_link
                     break
+
+            # XRDF doesn't allow cspace to mismatch with the URDF so we remove any that we are going to fix in place
+            for joint_name, _ in unused_joint_defaults.items():
+                if joint_name in robot_config['cspace']['joint_names']:
+                    idx = robot_config['cspace']['joint_names'].index(joint_name)
+                    del(robot_config['cspace']['joint_names'][idx])
+                    del(robot_config['cspace']['acceleration_limits'][idx])
+                    del(robot_config['cspace']['jerk_limits'][idx])
 
             # Temporary workaround because cuRobo doesn't properly process an XRDF dict
             with open('/tmp/robot_xrdf.xrdf', 'w') as f:
@@ -478,10 +489,11 @@ class BaseNetConfig:
 
         # Load and process the URDF file
         robot_urdf, inverted_robot_urdf = invert_urdf(
-            urdf_path    = urdf_file, 
-            xacro_args   = urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', 
-            end_effector = ee_link, 
-            output_path  = "/tmp/inverted_urdf.urdf"
+            urdf_path        = urdf_file, 
+            xacro_args       = urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', 
+            end_effector     = ee_link, 
+            output_path      = "/tmp/inverted_urdf.urdf",
+            defaulted_joints = unused_joint_defaults
         )
 
         curobo_config = RobotConfig(

@@ -15,6 +15,7 @@ from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.pointcloud_region import PointcloudRegion
+from base_net.utils.invert_robot_model import urdf_pose_to_matrix
 
 def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
 
@@ -107,13 +108,6 @@ def get_regions(regions: PointcloudRegion) -> list[open3d.geometry.TriangleMesh]
 
     return meshes
 
-def urdf_pose_to_matrix(pose: urdfPose) -> np.ndarray:
-        matrix = np.eye(4)
-        if pose is not None:
-            matrix[:3, :3] = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(pose.rpy)), degrees=False).as_matrix()
-            matrix[:3,  3] = np.array(pose.xyz)
-        return matrix
-
 def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.ndarray]:
     robot: Robot = robot_config.kinematics.kinematics_config.debug[0]
 
@@ -200,6 +194,31 @@ def collada_to_open3d(collada_geom: collada.Collada, file_folder_path: str):
             
     return o3d_mesh
 
+def get_urdf_visual_geometry(visual, link_name: str) -> open3d.geometry.TriangleMesh:
+    visual_filename: str = visual.geometry.filename[7:]
+    file_extension = os.path.splitext(visual_filename)[1]
+    file_folder_path = os.path.dirname(visual_filename)
+    if file_extension == '.dae':
+        try:
+            obj = collada.Collada(filename=visual_filename)
+            mesh = collada_to_open3d(obj, file_folder_path)
+        except collada.common.DaeMalformedError:
+            print(f'Failed to load collada file for link "{link_name}", the mesh is malformed')
+            raise
+        except Exception:
+            print(f'Error occured loading collada file {visual_filename}')
+            raise
+    elif file_extension.lower() in ['.stl', '.obj', '.ply']:
+        mesh = open3d.io.read_triangle_mesh(visual_filename)
+    else:
+        print(f'Got visual with unsupported file extension "{file_extension}"')
+        raise RuntimeError()
+
+    if visual.geometry.scale is not None:
+        mesh.scale(visual.geometry.scale)
+
+    return mesh
+
 def get_robot_geometry_at_joint_state(
         robot_config: RobotConfig, 
         joint_state: torch.Tensor, 
@@ -223,35 +242,22 @@ def get_robot_geometry_at_joint_state(
     chain_links = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=True, joints=False)
     chain_joints = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=False, joints=True)
 
+    rendered_links = set()
     link_pose = base_link_pose
     joint_idx = 0
     for link_idx, link_name in enumerate(chain_links):
         for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
-            if attached_link not in robot_urdf.link_map: continue
+            if attached_link not in robot_urdf.link_map or attached_link in rendered_links: continue
             for visual in robot_urdf.link_map[attached_link].visuals:
                 if not isinstance(visual.geometry, Mesh): continue
-                visual_filename: str = visual.geometry.filename[7:]
-                file_extension = os.path.splitext(visual_filename)[1]
-                file_folder_path = os.path.dirname(visual_filename)
-                if file_extension == '.dae':
-                    try:
-                        obj = collada.Collada(filename=visual_filename)
-                        mesh = collada_to_open3d(obj, file_folder_path)
-                    except collada.common.DaeMalformedError:
-                        continue
-                    except Exception:
-                        print(f'Error occured loading collada file {visual_filename}')
-                        continue
-                elif file_extension.lower() in ['.stl', '.obj', '.ply']:
-                    mesh = open3d.io.read_triangle_mesh(visual_filename)
-                else:
-                    print(f'Got visual with unsupported file extension "{file_extension}"')
+                try:
+                    visual_mesh = get_urdf_visual_geometry(visual, attached_link)
+                except Exception:
+                    # The function will print an error message and we simply don't render this link
                     continue
-
-                if visual.geometry.scale is not None:
-                    mesh.scale(visual.geometry.scale)
-                mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
-                geometries.append({'geometry': mesh, 'group': 'robot_mesh', 'name': link_name})
+                visual_mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
+                geometries.append({'geometry': visual_mesh, 'group': 'robot_mesh', 'name': attached_link})
+                rendered_links.add(attached_link)
 
         if link_idx != len(chain_joints):
             joint: Joint = robot_urdf.joint_map[chain_joints[link_idx]]
