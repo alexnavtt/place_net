@@ -15,7 +15,7 @@ setup(
         'scipy',
         'tensorboard',
         'setproctitle',
-        'pycollada'
+        'pyassimp'
     ],
     entry_points={
         'console_scripts': [

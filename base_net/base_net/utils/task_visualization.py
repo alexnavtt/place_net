@@ -1,15 +1,12 @@
 import os
 import torch
 import open3d
-import collada
+import pyassimp
 import numpy as np
 import scipy.spatial
-import collada.triangleset
 import open3d.visualization
 from PIL import Image
-from collections import defaultdict
-from typing_extensions import Iterable
-from urdf_parser_py.urdf import Robot, Pose as urdfPose, Joint, Mesh
+from urdf_parser_py.urdf import Robot, Joint, Mesh, Cylinder, Box
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
@@ -48,6 +45,8 @@ def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> 
 def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None, prefix: str = '') -> list[open3d.geometry.TriangleMesh]:
     if success is None:
         success = torch.zeros(pose.batch)
+    else:
+        success = torch.clamp(success.float(), 0.0, 1.0)
 
     rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
     composite_mesh = open3d.geometry.TriangleMesh()
@@ -60,7 +59,7 @@ def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None, prefi
             cylinder_split=1,
             resolution=4
         )
-        new_arrow.paint_uniform_color([float(1-pose_success.item()), pose_success.item(), 0])
+        new_arrow.paint_uniform_color([1-pose_success.item(), pose_success.item(), 0])
         new_arrow.rotate(rotation_to_x, center=[0, 0, 0])
         new_arrow.rotate(scipy.spatial.transform.Rotation.from_quat(rotation.cpu().numpy(), scalar_first=True).as_matrix(), center=[0, 0, 0])
         new_arrow.translate(position.cpu().numpy())
@@ -134,90 +133,94 @@ def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.
 
     return transform_from_ee
 
-def collada_to_open3d(collada_geom: collada.Collada, file_folder_path: str):    
+def collada_to_open3d(filename):
+    folder = os.path.dirname(filename)
     o3d_mesh = open3d.geometry.TriangleMesh()
+    with pyassimp.load(filename) as scene:
+        for node in scene.rootnode.children:
+            for assimp_mesh in node.meshes:
+                vertices= np.array(assimp_mesh.vertices)
+                faces = np.array(assimp_mesh.faces) + len(o3d_mesh.vertices)
 
-    vertices_offset = 0
-    materials = {mat.id: mat.effect.diffuse for mat in collada_geom.materials}
+                # Sometimes faces might be malformed if non-triangle geometry exists in the file.
+                # In those cases we just skip rendering the mesh, not much we can do
+                try:
+                    o3d_mesh.triangles.extend(faces)
+                    o3d_mesh.vertices.extend(vertices)
+                except Exception:
+                    continue
 
-    for geom in collada_geom.geometries:
-        for prim in geom.primitives:
-            vertices = prim.vertex
+                if assimp_mesh.normals is not None:
+                    o3d_mesh.vertex_normals.extend(np.array(assimp_mesh.normals))
+                else:
+                    o3d_mesh.compute_vertex_normals()
 
-            if isinstance(prim, collada.triangleset.TriangleSet):
-                o3d_mesh.vertices.extend(vertices)
-                o3d_mesh.triangles.extend(prim.indices[:, :, 0] + vertices_offset)
-                vertices_offset += len(vertices)
+                material = scene.materials[assimp_mesh.materialindex]
+                material_record = open3d.visualization.rendering.MaterialRecord()
+                material_record.shader = "defaultLit"
 
-                if hasattr(prim, 'colors') and prim.colors is not None:
-                    o3d_mesh.vertex_colors.extend(prim.colors)
+                if len(assimp_mesh.colors) and assimp_mesh.colors[0] is not None:
+                    vertex_colors = np.array(assimp_mesh.colors[0])
+                    o3d_mesh.vertex_colors.extend(vertex_colors)
 
-                elif prim.material is not None and prim.material in materials:
-                    if isinstance(materials[prim.material], Iterable):
-                        material_color = np.array(materials[prim.material][:3])
-                        o3d_mesh.vertex_colors.extend(np.tile(material_color, (len(vertices), 1)))
-                        
-                    elif len(prim.texcoordset) > 0 and hasattr(materials[prim.material], 'sampler'):
-                        mat = materials[prim.material]                        
-                        texture_path = mat.sampler.surface.image.path
-                        texture = np.array(Image.open(os.path.join(file_folder_path, texture_path))) / 255.0
+                elif ('file', 1) in material.properties and material.properties[('file', 1)]:
+                    texture_file = material.properties[('file', 1)]
+                    texture_image = open3d.geometry.Image(np.asarray(Image.open(os.path.join(folder, texture_file))))
+                    uv_coordinates = np.array(assimp_mesh.texturecoords[0][:, :2])  # Take first UV set
+                    triangle_uvs = uv_coordinates[faces.flatten()]
+                    o3d_mesh.triangle_uvs.extend(triangle_uvs)
+                    material_record.albedo_img = texture_image
 
-                        vertex_color_map = defaultdict(list)
-                        uv_coords = prim.texcoordset[0]
+                elif ('diffuse', 0) in material.properties:
+                    diffuse_color = np.array(material.properties[('diffuse', 0)])[:3]
+                    vertex_colors = np.tile(diffuse_color, (vertices.shape[0], 1))
+                    o3d_mesh.vertex_colors.extend(vertex_colors)
 
-                        for tri_idx, (u, v) in enumerate(uv_coords):
-                            v = 1 - v   # different image conventions
-                            row = int(v * (texture.shape[0] - 1))
-                            col = int(u * (texture.shape[1] - 1))
-                            color = texture[row, col, :3]
+            o3d_mesh.transform(node.transformation)
 
-                            vertex_index = prim.indices.flatten()[tri_idx]
-                            vertex_color_map[vertex_index].append(color)
+    return o3d_mesh, material_record
 
-                        uv_colors = []
-                        for idx in range(len(vertices)):
-                            if idx in vertex_color_map:
-                                # Temporary hack, just take the first color. Weighted average by triangle area is probably best 
-                                mode_color = vertex_color_map[idx][0]
-                                uv_colors.append(np.array(mode_color))
-                            else:
-                                uv_colors.append(np.array([0.5, 0.5, 0.5]))
+def get_urdf_visual_geometry(visual) -> open3d.geometry.TriangleMesh:
+    if isinstance(visual.geometry, Box):
+        width, height, depth = visual.geometry.size
+        mesh = open3d.geometry.TriangleMesh.create_box(width, height, depth)
+        mesh.translate(np.array([-width/2, -height/2, -depth/2]))
+        # TODO: Handle textures in primitives
+        if visual.material and visual.material.color:
+            mesh.paint_uniform_color(visual.material.color.rgba[:3])
+        material = None
 
-                        o3d_mesh.vertex_colors.extend(uv_colors)
+    elif isinstance(visual.geometry, Cylinder):
+        mesh = open3d.geometry.TriangleMesh.create_cylinder(visual.geometry.radius, visual.geometry.length)
+        if visual.material and visual.material.color:
+            mesh.paint_uniform_color(visual.material.color.rgba[:3])
+        material = None
+    
+    elif isinstance(visual.geometry, Mesh):
+        visual_filename: str = visual.geometry.filename[7:]
+        file_extension = os.path.splitext(visual_filename)[1]
+        if file_extension == '.dae':
+            try:
+                mesh, material = collada_to_open3d(visual_filename)
+            except Exception as e:
+                print(f'Error occured loading collada file {visual_filename}: {e}')
+                raise
+        elif file_extension.lower() in ['.stl', '.obj', '.ply']:
+            mesh = open3d.io.read_triangle_mesh(visual_filename)
+            material = None
+        else:
+            print(f'Got visual with unsupported file extension "{file_extension}"')
+            raise RuntimeError()
 
-    # Get the scene transform for the mesh
-    if collada_geom.scene and len(collada_geom.scene.nodes) > 0 and hasattr(collada_geom.scene.nodes[0], 'matrix'):
-        o3d_mesh.transform(collada_geom.scene.nodes[0].matrix)
+    try:
+        if hasattr(visual.geometry, 'scale') and visual.geometry.scale is not None:
+            # URDF has per-axis scaling and Open3D has uniform scaling
+            scale = np.array(visual.geometry.scale)
+            mesh = mesh.scale(scale.mean(), center=np.zeros(3))
+    except Exception as e:
+        print(f'Error scaling mesh: {e}')
 
-    if not o3d_mesh.has_vertex_normals():
-        o3d_mesh.compute_vertex_normals()
-            
-    return o3d_mesh
-
-def get_urdf_visual_geometry(visual, link_name: str) -> open3d.geometry.TriangleMesh:
-    visual_filename: str = visual.geometry.filename[7:]
-    file_extension = os.path.splitext(visual_filename)[1]
-    file_folder_path = os.path.dirname(visual_filename)
-    if file_extension == '.dae':
-        try:
-            obj = collada.Collada(filename=visual_filename)
-            mesh = collada_to_open3d(obj, file_folder_path)
-        except collada.common.DaeMalformedError:
-            print(f'Failed to load collada file for link "{link_name}", the mesh is malformed')
-            raise
-        except Exception:
-            print(f'Error occured loading collada file {visual_filename}')
-            raise
-    elif file_extension.lower() in ['.stl', '.obj', '.ply']:
-        mesh = open3d.io.read_triangle_mesh(visual_filename)
-    else:
-        print(f'Got visual with unsupported file extension "{file_extension}"')
-        raise RuntimeError()
-
-    if visual.geometry.scale is not None:
-        mesh.scale(visual.geometry.scale)
-
-    return mesh
+    return mesh, material
 
 def get_robot_geometry_at_joint_state(
         robot_config: RobotConfig, 
@@ -248,15 +251,14 @@ def get_robot_geometry_at_joint_state(
     for link_idx, link_name in enumerate(chain_links):
         for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
             if attached_link not in robot_urdf.link_map or attached_link in rendered_links: continue
-            for visual in robot_urdf.link_map[attached_link].visuals:
-                if not isinstance(visual.geometry, Mesh): continue
+            for visual_idx, visual in enumerate(robot_urdf.link_map[attached_link].visuals):
                 try:
-                    visual_mesh = get_urdf_visual_geometry(visual, attached_link)
+                    visual_mesh, material = get_urdf_visual_geometry(visual)
                 except Exception:
                     # The function will print an error message and we simply don't render this link
                     continue
                 visual_mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
-                geometries.append({'geometry': visual_mesh, 'group': 'robot_mesh', 'name': attached_link})
+                geometries.append({'geometry': visual_mesh, 'group': 'robot_mesh', 'name': f'{attached_link}_{visual_idx}', 'material': material})
                 rendered_links.add(attached_link)
 
         if link_idx != len(chain_joints):
