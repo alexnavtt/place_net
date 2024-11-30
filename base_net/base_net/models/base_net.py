@@ -30,6 +30,10 @@ class BaseNet(torch.nn.Module):
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
+            torch.nn.Linear(in_features=1024, out_features=2048),
+            torch.nn.BatchNorm1d(num_features=2048),
+            torch.nn.ReLU(),
+
             torch.nn.Linear(in_features=2048, out_features=4096),
             torch.nn.BatchNorm1d(num_features=4096),
             torch.nn.ReLU(),
@@ -124,22 +128,24 @@ class BaseNet(torch.nn.Module):
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.task_geometry)
+            expanded_task = task_encoding.unsqueeze(1).expand(-1, pointcloud_tensor.size(1), -1)
+            combined_tensor = torch.cat([pointcloud_tensor, expanded_task], dim=-1)
 
         # Encode the points into a feature vector
-        task_embedding: Tensor = self.pose_encoder(task_encoding)
-        pointcloud_embeddings: Tensor = self.pointcloud_encoder(pointcloud_tensor, padding_mask)
+        # task_embedding: Tensor = self.pose_encoder(task_encoding)
+        pointcloud_embeddings: Tensor = self.pointcloud_encoder(combined_tensor, padding_mask)
 
         # Attend the pose data to the pointcloud data
-        output, weights = self.attention_layer(
-            query=task_embedding.unsqueeze(1),
-            key=pointcloud_embeddings.unsqueeze(1),
-            value=pointcloud_embeddings.unsqueeze(1)
-        )
+        # output, weights = self.attention_layer(
+        #     query=task_embedding.unsqueeze(1),
+        #     key=pointcloud_embeddings.unsqueeze(1),
+        #     value=pointcloud_embeddings.unsqueeze(1)
+        # )
 
-        weighted_pointcloud = torch.bmm(weights, pointcloud_embeddings.unsqueeze(1)).squeeze(1)
-        combined_vector = torch.concatenate([weighted_pointcloud, task_embedding], dim=-1)
+        # weighted_pointcloud = torch.bmm(weights, pointcloud_embeddings.unsqueeze(1)).squeeze(1)
+        # combined_vector = torch.concatenate([weighted_pointcloud, task_embedding], dim=-1)
 
-        final_vector: Tensor = self.linear_upscale(combined_vector)
+        final_vector: Tensor = self.linear_upscale(pointcloud_embeddings)
 
         # Scale up to final 20x20x20 grid
         first_3d_layer = final_vector.view([-1, 256, 4, 4, 4])

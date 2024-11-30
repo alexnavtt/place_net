@@ -18,7 +18,8 @@ def pad_pointclouds_to_same_size(pointclouds: list[torch.Tensor], num_channels: 
 class PointNetEncoder(torch.nn.Module):
     def __init__(self, feature_size: int = 1024, use_normals: bool = True):
         super(PointNetEncoder, self).__init__()
-        self.num_channels = 6 if use_normals else 3
+        # self.num_channels = 6 if use_normals else 3
+        self.num_channels = 7 # x, y, z, task_z, task_pitch, sin(task_roll), cos(task_roll)
         self.use_normals = use_normals
 
         """ Note: We skip the geometry and feature transform steps
@@ -129,7 +130,7 @@ class PointNetEncoder(torch.nn.Module):
     
     def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor, geometry_config) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
-        pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds, self.num_channels, task_position.device)
+        pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds, 3, task_position.device)
 
         # Step 2: Determine which ones are within the allowable elevations
         task_xy, task_z = task_position.view([-1, 1, 3]).split([2, 1], dim=-1)
@@ -152,7 +153,7 @@ class PointNetEncoder(torch.nn.Module):
 
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
         filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
-        filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds, self.num_channels, task_position.device)
+        filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds, 3, task_position.device)
 
         return filtered_pointclouds_tensor.to(task_position.device), padding_mask
     
