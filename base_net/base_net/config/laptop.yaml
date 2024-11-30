@@ -109,6 +109,7 @@ model_settings:
   cuda_device: 0
   batch_size: 2
   learning_rate: 0.0005
+  patience: 20
   log_base_path: 'base_net/data/runs/latest/'
   checkpoint_base_path: 'base_net/data/checkpoints/'
   checkpoint_frequency: 50

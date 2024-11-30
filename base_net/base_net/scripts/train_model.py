@@ -162,8 +162,12 @@ def main():
             )
 
         # At regular intervals, save the model checkpoint
-        if epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0:
+        if logger.was_best() or (epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0):
             logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
+
+        if logger.is_training_done(patience=base_net_config.model.patience):
+            print(f'No improvement was seen in validation loss over the last {base_net_config.model.patience} epochs, terminating training early')
+            break
 
     logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
     logger.flush()

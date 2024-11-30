@@ -41,6 +41,9 @@ class BaseNetModelConfig:
     # Max number of epochs to use for training
     num_epochs: int = 200
 
+    # Max number of epochs to go without improvement before ending training
+    patience: int = 1_000_000_000
+
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
 
@@ -106,6 +109,7 @@ class BaseNetModelConfig:
             use_normals=model_settings.get('use_normals', True),
             batch_size=model_settings.get('batch_size', 1),
             num_epochs=model_settings.get('num_epochs', 200),
+            patience=model_settings.get('patience', 1_000_000_000),
             learning_rate=model_settings.get('learning_rate', 0.001),
             encoder_type=pointcloud_encoder_type,
             loss_fn_type=loss_fn_type,

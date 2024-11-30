@@ -23,6 +23,10 @@ class Logger:
         self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug
         self._model_config = model_config
         self._scorer = pose_scorer.PoseScorer()
+
+        # Early stopping variables
+        self._best_loss = float('inf')
+        self._num_epochs_without_improvement = 0
         
         if self._log:
             if existing_checkpoint_path is None:
@@ -134,6 +138,7 @@ class Logger:
 
         for name, metric in self._metrics.items():
             # Multiply by 100 to convert to percentages
+            if not len(metric): continue
             metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
 
             # For success and loss we are only interested in the averages
@@ -152,6 +157,14 @@ class Logger:
             self._writer.add_scalar(f'{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
 
         self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
+
+        if label == 'validate':
+            if self._last_loss < self._best_loss:
+                self._best_loss = self._last_loss
+                self._num_epochs_without_improvement = 0
+            else:
+                self._num_epochs_without_improvement += 1
+        
         self.reset_loss()
 
     def flush(self):
@@ -206,12 +219,23 @@ class Logger:
                 geometries += pointcloud_geometry
             open3d.visualization.draw(geometries)
 
+    def was_best(self) -> bool:
+        return self._last_loss == self._best_loss
+    
+    def is_training_done(self, patience: int) -> bool:
+        return self._num_epochs_without_improvement > patience
+
     def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int, mapped_indices: dict):
         if not self._record_checkpoints: return
 
         if not self._checkpoint_initialized:
             self.initialize_checkpoint_folder()
             self._checkpoint_initialized = True
+
+        if self.was_best():
+            filename = 'best.pt'
+        else:
+            filename = f'epoch-{epoch}_loss-{self._last_loss}.pt'
 
         torch.save(
             {
@@ -220,5 +244,5 @@ class Logger:
                 'epoch': epoch,
                 'mapped_indices': mapped_indices
             }, 
-            os.path.join(self._checkpoint_path, f'epoch-{epoch}_loss-{self._last_loss}.pt')
+            os.path.join(self._checkpoint_path, filename)
         )
