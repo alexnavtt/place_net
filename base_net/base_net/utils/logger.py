@@ -206,7 +206,7 @@ class Logger:
                 geometries += pointcloud_geometry
             open3d.visualization.draw(geometries)
 
-    def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int):
+    def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int, mapped_indices: dict):
         if not self._record_checkpoints: return
 
         if not self._checkpoint_initialized:
@@ -217,7 +217,8 @@ class Logger:
             {
                 'base_net_model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'epoch': epoch
+                'epoch': epoch,
+                'mapped_indices': mapped_indices
             }, 
             os.path.join(self._checkpoint_path, f'epoch-{epoch}_loss-{self._last_loss}.pt')
         )

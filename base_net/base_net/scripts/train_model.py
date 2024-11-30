@@ -1,6 +1,7 @@
 #!/bin/python
 import os
 import torch
+import warnings
 import argparse
 from tqdm import tqdm
 from torch import Tensor
@@ -59,25 +60,29 @@ def main():
     logger = Logger(base_net_config, checkpoint_path)
 
     if args.checkpoint is not None:
-        checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device, weights_only=False)
         base_net_model.load_state_dict(checkpoint['base_net_model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        mapped_indices = checkpoint['mapped_indices'] if mapped_indices in checkpoint else None
         start_epoch = checkpoint['epoch']
     else:
+        mapped_indices = None
         start_epoch = 0
 
     loss_fn = base_net_config.model.loss_fn_type()
 
     # Load the data
     if args.test:
-        test_data = BaseNetDataset(base_net_config, mode='testing')
+        test_data = BaseNetDataset(base_net_config, mode='testing', mapped_indices=mapped_indices)
         test_loader = DataLoader(test_data, collate_fn=collate_fn)
         base_net_model.eval()
     else:
-        train_data = BaseNetDataset(base_net_config, mode='training')
+        train_data = BaseNetDataset(base_net_config, mode='training', mapped_indices=mapped_indices)
         train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
         
-        validate_data = BaseNetDataset(base_net_config, mode='validation')
+        validate_data = BaseNetDataset(base_net_config, mode='validation', mapped_indices=mapped_indices)
         validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
     # Convenience function for debug visualization
@@ -158,9 +163,9 @@ def main():
 
         # At regular intervals, save the model checkpoint
         if epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0:
-            logger.save_checkpoint(base_net_model, optimizer, epoch)
+            logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
 
-    logger.save_checkpoint(base_net_model, optimizer, epoch)
+    logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
     logger.flush()
 
 if __name__ == "__main__":
