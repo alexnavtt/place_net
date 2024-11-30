@@ -11,6 +11,7 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>base_net_msgs</exec_depend>
+  <depend>generate_parameter_library</depend>
 
   <export>
     <build_type>ament_python</build_type>

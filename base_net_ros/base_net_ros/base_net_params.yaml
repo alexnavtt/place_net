@@ -1,0 +1,23 @@
+base_net_ros_params:
+  checkpoint_path:
+    type: string
+    read_only: True
+    description: Absolute path to the model checkpoint to load
+    validation: 
+      not_empty<>: null
+
+  device:
+    type: int
+    read_only: True
+    default_value: 0
+    description: Index of the CUDA device to use. CPU and other GPU architectures are not supported due to reliance on cuRobo
+    validation:
+      gt_eq<>: 0
+
+  max_batch_size:
+    type: int
+    read_only: True
+    default_value: 0
+    description: The maximum number of task poses to run in parallel as a batch. Reduce if you are running into 'out of memory' problems. Set to zero for unlimited
+    validation:
+      gt_eq<>: 0

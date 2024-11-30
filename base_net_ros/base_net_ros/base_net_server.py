@@ -21,6 +21,7 @@ from base_net.utils import geometry, pose_scorer
 
 from .base_net_visualizer import BaseNetVisualizer
 from . import base_net_conversions
+from .base_net_ros_parameters import base_net_ros_params
 
 class PoseGrid:
     def __init__(self, x_range: float, y_range: float, x_res: int, y_res: int, yaw_res: int, device):
@@ -54,16 +55,15 @@ class BaseNetServer(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
 
         # Load the model from the checkpoint path
-        checkpoint_path: str = self.declare_parameter('checkpoint_path').value
-        device_param: str | int | None = self.declare_parameter('device').value
-        self.max_batch_size: int = self.declare_parameter('max_batch_size').value
+        param_listener = base_net_ros_params.ParamListener(self)
+        self.params = param_listener.get_params()
 
-        base_path, _ = os.path.split(checkpoint_path)
-        self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=device_param)
+        base_path, _ = os.path.split(self.params.checkpoint_path)
+        self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
         self.base_net_model = BaseNet(self.base_net_config)
         self.pose_scorer = pose_scorer.PoseScorer()
 
-        checkpoint_config = torch.load(checkpoint_path, map_location=self.base_net_config.model.device)
+        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device)
         self.base_net_model.load_state_dict(checkpoint_config['base_net_model'])
         self.base_net_model.eval()
 
@@ -95,8 +95,9 @@ class BaseNetServer(Node):
         )
         
         with torch.no_grad():
-            for index_start in range(0, batch_size, self.max_batch_size):
-                index_end = min(index_start + self.max_batch_size, batch_size)
+            mini_batch_size = self.params.max_batch_size if self.params.max_batch_size > 0 else batch_size
+            for index_start in range(0, batch_size, mini_batch_size):
+                index_end = min(index_start + mini_batch_size, batch_size)
                 pointcloud_slice = pointcloud_list[index_start:index_end]
                 task_slice = task_poses[index_start:index_end]
                 logits = self.base_net_model(pointcloud_slice, task_slice)
@@ -339,7 +340,7 @@ class BaseNetServer(Node):
 def main():
     rclpy.init()
     base_net_server = BaseNetServer()
-    base_net_server.get_logger().info('BaseNet server online')
+    base_net_server.get_logger().info(f'BaseNet server online, using cuda device {base_net_server.params.device}')
     rclpy.spin(base_net_server)
 
 if __name__ == '__main__':

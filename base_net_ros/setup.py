@@ -1,6 +1,12 @@
 import os
 from glob import glob
 from setuptools import setup
+from generate_parameter_library_py.setup_helper import generate_parameter_module
+
+generate_parameter_module(
+    "base_net_ros_parameters",
+    "base_net_ros/base_net_params.yaml"
+)
 
 package_name = 'base_net_ros'
 

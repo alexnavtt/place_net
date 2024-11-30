@@ -166,3 +166,6 @@ data/
 
 # VSCode config
 .vscode
+
+# Auto-generated parameters file
+base_net_ros_parameters.py
