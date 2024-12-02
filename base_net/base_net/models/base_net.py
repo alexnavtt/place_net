@@ -15,22 +15,24 @@ class BaseNet(torch.nn.Module):
         self.task_geometry = copy.deepcopy(config.task_geometry)
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
-        self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals)
-        self.pose_encoder = PoseEncoder()
+        self.feature_size = 1024
+        self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals, feature_size=self.feature_size)
+        self.pose_encoder = PoseEncoder(feature_size=self.feature_size)
 
         # Define a cross-attention layer between the pose embedding and the pointcloud embedding
         self.attention_layer = torch.nn.MultiheadAttention(
             num_heads=1,
-            embed_dim=1024,
+            embed_dim=self.feature_size,
             batch_first=True,
         )
 
-        num_channels, width, bredth, height = 256, 4, 4, 4
-        num_features = num_channels * width * bredth * height
+        self.num_channels = 256
+        width, bredth, height = 4, 4, 4
+        num_features = self.num_channels * width * bredth * height
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
-            torch.nn.Linear(in_features=2048, out_features=4096),
+            torch.nn.Linear(in_features=2*self.feature_size, out_features=4096),
             torch.nn.BatchNorm1d(num_features=4096),
             torch.nn.ReLU(),
 
@@ -46,51 +48,51 @@ class BaseNet(torch.nn.Module):
               D_out = (D_in - 1) x stride - 2 x padding + kernel_size + output_padding
         """
         self.deconvolution = torch.nn.Sequential(
-            # Size is (B, 256, 4, 4, 4)
+            # Size is (B, num_channels, 4, 4, 4)
             torch.nn.ConvTranspose3d(
-                in_channels=256,
-                out_channels=128,
+                in_channels=self.num_channels,
+                out_channels=self.num_channels//2,
                 kernel_size=4,
                 stride=2,
                 padding=1
             ),
-            torch.nn.BatchNorm3d(num_features=128),
+            torch.nn.BatchNorm3d(num_features=self.num_channels//2),
             torch.nn.ReLU(),
 
-            # Size is (B, 128, 8, 8, 8)
+            # Size is (B, num_channels/2, 8, 8, 8)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
 
-            # Size is (B, 128, 8, 8, 10)
+            # Size is (B, num_channels/2, 8, 8, 10)
             torch.nn.ConvTranspose3d(
-                in_channels=128,
-                out_channels=64,
+                in_channels=self.num_channels//2,
+                out_channels=self.num_channels//4,
                 kernel_size=3,
                 stride=1,
                 padding=(0, 0, 2)
             ),
-            torch.nn.BatchNorm3d(num_features=64),
+            torch.nn.BatchNorm3d(num_features=self.num_channels//4),
             torch.nn.ReLU(),
 
-            # Size is (B, 64, 10, 10, 8)
+            # Size is (B, num_channels/4, 10, 10, 8)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
 
-            # Size is (B, 64, 10, 10, 10)
+            # Size is (B, num_channels/4, 10, 10, 10)
             torch.nn.ConvTranspose3d(
-                in_channels=64,
-                out_channels=32,
+                in_channels=self.num_channels//4,
+                out_channels=self.num_channels//8,
                 kernel_size=4,
                 stride=2,
                 padding=1
             ),
-            torch.nn.BatchNorm3d(num_features=32),
+            torch.nn.BatchNorm3d(num_features=self.num_channels//8),
             torch.nn.ReLU(),
 
-            # Size is (B, 32, 20, 20, 20)
+            # Size is (B, num_channels/8, 20, 20, 20)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
 
-            # Size is (B, 32, 20, 20, 22)
+            # Size is (B, num_channels/8, 20, 20, 22)
             torch.nn.ConvTranspose3d(
-                in_channels=32,
+                in_channels=self.num_channels//8,
                 out_channels=1,
                 kernel_size=3,
                 stride=1,
@@ -142,7 +144,7 @@ class BaseNet(torch.nn.Module):
         final_vector: Tensor = self.linear_upscale(combined_vector)
 
         # Scale up to final 20x20x20 grid
-        first_3d_layer = final_vector.view([-1, 256, 4, 4, 4])
+        first_3d_layer = final_vector.view([-1, self.num_channels, 4, 4, 4])
         final_3d_grid = self.deconvolution(first_3d_layer)
 
         return final_3d_grid.squeeze(1)

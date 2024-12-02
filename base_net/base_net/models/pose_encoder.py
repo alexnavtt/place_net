@@ -3,7 +3,7 @@ from torch import Tensor
 from base_net.utils import geometry
 
 class PoseEncoder(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, feature_size=1024):
         super(PoseEncoder, self).__init__()
 
         # Task embedding layers
@@ -12,8 +12,8 @@ class PoseEncoder(torch.nn.Module):
             torch.nn.BatchNorm1d(num_features=32),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(in_features=32, out_features=1024),
-            torch.nn.BatchNorm1d(num_features=1024),
+            torch.nn.Linear(in_features=32, out_features=feature_size),
+            torch.nn.BatchNorm1d(num_features=feature_size),
             torch.nn.ReLU(),
         )
 

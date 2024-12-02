@@ -108,15 +108,15 @@ model_settings:
   model_type: 'BaseNet'
   pointcloud_encoder: 'PointNet'
   use_normals: False
-  loss_function: 'Focal' # BCE, Dice, Focal, Tversky
+  loss_function: 'Dice' # BCE, Dice, Focal, Tversky
   data_split: [60, 20, 20]
-  num_epochs: 1000
-  cuda_device: 2
+  num_epochs: 2000
+  cuda_device: 1
   batch_size: 16
   learning_rate: 0.0001
-  patience: 20
-  log_base_path: 'base_net/data/runs/v0.5.0/nn_focal_lr1e-4/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.5.0/nn_focal_lr1e-4/'
+  patience: 50
+  log_base_path: 'base_net/data/runs/v0.5.1/dice_lr1e-4_64_channels/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.5.1/dice_lr1e-4_64_channels/'
   checkpoint_frequency: 100
 
   tversky_loss:
