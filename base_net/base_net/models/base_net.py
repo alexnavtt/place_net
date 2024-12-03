@@ -15,7 +15,7 @@ class BaseNet(torch.nn.Module):
         self.task_geometry = copy.deepcopy(config.task_geometry)
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
-        self.feature_size = 1024
+        self.feature_size = self.config.feature_size
         self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals, feature_size=self.feature_size)
         self.pose_encoder = PoseEncoder(feature_size=self.feature_size)
 
@@ -26,9 +26,9 @@ class BaseNet(torch.nn.Module):
             batch_first=True,
         )
 
-        self.num_channels = 256
+        self.num_channels = self.config.channel_count
         width, bredth, height = 4, 4, 4
-        num_features = self.num_channels * width * bredth * height
+        num_deconvolution_features = self.num_channels * width * bredth * height
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
@@ -36,8 +36,8 @@ class BaseNet(torch.nn.Module):
             torch.nn.BatchNorm1d(num_features=4096),
             torch.nn.ReLU(),
 
-            torch.nn.Linear(in_features=4096, out_features=num_features),
-            torch.nn.BatchNorm1d(num_features=num_features),
+            torch.nn.Linear(in_features=4096, out_features=num_deconvolution_features),
+            torch.nn.BatchNorm1d(num_features=num_deconvolution_features),
             torch.nn.ReLU()
         )
 

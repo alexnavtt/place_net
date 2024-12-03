@@ -35,6 +35,13 @@ class BaseNetModelConfig:
     # Whether or not to use pointcloud normals for training and inference
     use_normals: bool = True
 
+    # The length of the features to calculate for the pointcloud and tasks
+    feature_size: int = 1024
+
+    # The number of channels to use in the first level of the deconvolution network.
+    # Each subsequent layer will have half the channels as the last
+    channel_count: int = 256
+
     # The batch size to use for training
     batch_size: int = 1
 
@@ -55,6 +62,9 @@ class BaseNetModelConfig:
 
     # Learning rate to use during training
     learning_rate: float = 0.001
+
+    # Whether or not to use a separate classifier to determine if there are any reachable poses
+    external_classifier: bool = False
 
     # The path to use as a base for saving tensorboard progress during training
     log_base_path: str | None = None
@@ -107,10 +117,13 @@ class BaseNetModelConfig:
 
         return BaseNetModelConfig(
             use_normals=model_settings.get('use_normals', True),
+            feature_size=model_settings.get('feature_size', 1024),
+            channel_count=model_settings.get('channel_count', 256),
             batch_size=model_settings.get('batch_size', 1),
             num_epochs=model_settings.get('num_epochs', 200),
             patience=model_settings.get('patience', 1_000_000_000),
             learning_rate=model_settings.get('learning_rate', 0.001),
+            external_classifier=model_settings.get('external_classifier', False),
             encoder_type=pointcloud_encoder_type,
             loss_fn_type=loss_fn_type,
             device=torch_device,
