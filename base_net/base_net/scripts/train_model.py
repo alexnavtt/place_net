@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from base_net.models.base_net import BaseNet
+from base_net.models.pose_validity_checker import PoseValidityChecker
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger
@@ -26,6 +27,8 @@ def load_arguments():
     parser.add_argument('--device', help='CUDA device override')
     parser.add_argument('--debug', help='Debug override flag')
     parser.add_argument('--num-epochs', help='Max epoch override')
+    parser.add_argument('--classifier-only', default='False', help='Set to True to only train the classifier')
+    parser.add_argument('--positive-cases-only', default='False', help='Set to True to only train BaseNet on cases with valid solutions')
     return parser.parse_args()
 
 def collate_fn(data_tuple: list[tuple[Tensor, Tensor, Tensor]]) -> tuple[Tensor, list[Tensor], Tensor]:
@@ -38,6 +41,9 @@ def collate_fn(data_tuple: list[tuple[Tensor, Tensor, Tensor]]) -> tuple[Tensor,
 
 def main():
     args = load_arguments()
+
+    classifier_only: bool = args.classifier_only.lower() == 'true'
+    positive_only: bool = (not classifier_only) and (args.positive_cases_only.lower() == 'true')
 
     # Load the model from a checkpoint if necessary        
     if args.checkpoint is None:
@@ -73,17 +79,40 @@ def main():
 
     loss_fn = base_net_config.model.loss_fn_type()
 
+    # Create an external classifier if required
+    base_net_config.model.external_classifier = base_net_config.model.external_classifier or classifier_only
+    if base_net_config.model.external_classifier:
+        external_classifier = PoseValidityChecker(base_net_config)
+        positive_only = True
+
     # Load the data
     dataset = BaseNetDataset(base_net_config, mapped_indices=mapped_indices)
     if args.test:
-        test_loader = DataLoader(dataset.get_dataset('testing'), collate_fn=collate_fn)
+        test_loader = DataLoader(dataset.get_dataset('testing', exclude_negative=False), collate_fn=collate_fn)
         base_net_model.eval()
     else:
         train_data = dataset.get_dataset('training')
         validate_data = dataset.get_dataset('validation')
 
-        train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
-        validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+        if positive_only and not classifier_only:
+            positive_train_data = dataset.get_dataset('training', exclude_negative=True)
+            train_loader = DataLoader(positive_train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+
+            positive_validate_data = dataset.get_dataset('validation', exclude_negative=True)
+            validate_loader = DataLoader(positive_validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+
+        if base_net_config.model.external_classifier:
+            classifier_train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+            classifier_validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+
+            classifier_loss_fn = torch.nn.BCEWithLogitsLoss()
+            classifier_optimizer = torch.optim.Adam(external_classifier.parameters(), lr=base_net_config.model.learning_rate)
+
+            print(f'There are {len(positive_train_data)}/{len(train_data)} positive training data points')
+            print(f'There are {len(positive_validate_data)}/{len(validate_data)} positive validation data points')
+        else:
+            train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+            validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
     # Convenience function for debug visualization
     def visualize_if_debug(output, solution, task_tensor, pointcloud_list) -> None:
@@ -113,41 +142,56 @@ def main():
     
     for epoch in range(start_epoch, base_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
-        print('Training:')
-        base_net_model.train()
-        for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
-            optimizer.zero_grad()
-            output = base_net_model(pointcloud_list, task_tensor)
-            loss = loss_fn(output, solution)
-            loss.backward()
-            optimizer.step()
-            logger.add_data_point(loss, output, solution)
-            visualize_if_debug(output, solution, task_tensor, pointcloud_list)
-
-        logger.log_statistics(epoch, 'train')
-
-        print('Validating:')
-        with torch.no_grad():
-            base_net_model.eval()
-            for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
+        if not classifier_only:
+            print('Training BaseNet:')
+            base_net_model.train()
+            for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
+                optimizer.zero_grad()
                 output = base_net_model(pointcloud_list, task_tensor)
                 loss = loss_fn(output, solution)
+                loss.backward()
+                optimizer.step()
                 logger.add_data_point(loss, output, solution)
                 visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
-        logger.log_statistics(epoch, 'validate')
+            logger.log_statistics(epoch, 'train')
+        
+        if base_net_config.model.external_classifier:
+            print('Training Classifier:')
+            external_classifier.train()
+            for task_tensor, pointcloud_list, solution in tqdm(classifier_train_loader, ncols=100):
+                classifier_optimizer.zero_grad()
+                output = external_classifier(pointcloud_list, task_tensor)
+                ground_truth = torch.any(solution.flatten(start_dim=1), dim=1, keepdim=True)
+                loss = classifier_loss_fn(output, ground_truth.float())
+                loss.backward()
+                logger.add_classification_datapoint(loss, output, ground_truth)
+                classifier_optimizer.step()
 
+            logger.log_statistics(epoch, 'train')
 
-        # After running the test data, pass the last test datapoint to the visualizer
-        if epoch % 10 == 0:
-            logger.log_visualization(
-                model_output = output[0, :, :, :],
-                ground_truth = solution[0, :, :, :],
-                step         = epoch//10,
-                task_pose    = task_tensor[0, :],
-                pointcloud   = pointcloud_list[0] if pointcloud_list[0] is not None else None,
-                device       = base_net_config.model.device
-            )
+        with torch.no_grad():
+            if not classifier_only:
+                print('Validating BaseNet:')
+                base_net_model.eval()
+                for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
+                    output = base_net_model(pointcloud_list, task_tensor)
+                    loss = loss_fn(output, solution)
+                    logger.add_data_point(loss, output, solution)
+                    visualize_if_debug(output, solution, task_tensor, pointcloud_list)
+
+                logger.log_statistics(epoch, 'validate')
+
+            if base_net_config.model.external_classifier:
+                print(f'Validating Classifier:')
+                external_classifier.eval()
+                for task_tensor, pointcloud_list, solution in tqdm(classifier_validate_loader, ncols=100):
+                    output = external_classifier(pointcloud_list, task_tensor)
+                    ground_truth = torch.any(solution.flatten(start_dim=1), dim=1, keepdim=True)
+                    loss = classifier_loss_fn(output, ground_truth.float())
+                    logger.add_classification_datapoint(loss, output, ground_truth)
+
+                logger.log_statistics(epoch, 'validate')
 
         # At regular intervals, save the model checkpoint
         if logger.was_best() or (epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0):

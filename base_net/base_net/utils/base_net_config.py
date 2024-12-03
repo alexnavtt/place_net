@@ -42,6 +42,9 @@ class BaseNetModelConfig:
     # Each subsequent layer will have half the channels as the last
     channel_count: int = 256
 
+    # Dropout probability for 3D deconvolution
+    convolution_dropout: float = 0.0
+
     # The batch size to use for training
     batch_size: int = 1
 
@@ -49,7 +52,8 @@ class BaseNetModelConfig:
     num_epochs: int = 200
 
     # Max number of epochs to go without improvement before ending training
-    patience: int = 1_000_000_000
+    # Set to zero to disable early stopping
+    patience: int = 0
 
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
@@ -114,21 +118,48 @@ class BaseNetModelConfig:
                 loss_fn_type = lambda alpha=alpha, beta=beta: TverskyLoss(alpha, beta)
             case _:
                 raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
+            
+        # Determine the name of the model path based on the hyperparameters
+        batch_size = model_settings.get('batch_size', 1)
+        use_normals = model_settings.get('use_normals', True)
+        learning_rate = model_settings.get('learning_rate', 0.001)
+        feature_size = model_settings.get('feature_size', 1024)
+        channel_count = model_settings.get('channel_count', 256)
+        convolution_dropout = model_settings.get('convolution_dropout', 0.0)
+        external_classifier = model_settings.get('external_classifier', False)
+        
+        model_name = loss_fn_label
+        model_name += '_b' + str(batch_size)
+        model_name += '_lr' + f'{learning_rate:.10f}'.rstrip('0').lstrip('0').lstrip('.')
+        model_name += '_f' + str(feature_size)
+        model_name += '_c' + str(channel_count)
+        model_name += '_d' + str(int(100*convolution_dropout))
+        if not use_normals: model_name += '_nn'
+        if external_classifier: model_name += '_pos'
+
+        log_base_path = model_settings.get('log_base_path', None)
+        if log_base_path is not None:
+            log_base_path = os.path.join(log_base_path, model_name)
+
+        checkpoint_base_path = model_settings.get('checkpoint_base_path', None)
+        if checkpoint_base_path is not None:
+            checkpoint_base_path = os.path.join(checkpoint_base_path, model_name)
 
         return BaseNetModelConfig(
-            use_normals=model_settings.get('use_normals', True),
-            feature_size=model_settings.get('feature_size', 1024),
-            channel_count=model_settings.get('channel_count', 256),
-            batch_size=model_settings.get('batch_size', 1),
+            use_normals=use_normals,
+            feature_size=feature_size,
+            channel_count=channel_count,
+            convolution_dropout=convolution_dropout,
+            batch_size=batch_size,
             num_epochs=model_settings.get('num_epochs', 200),
-            patience=model_settings.get('patience', 1_000_000_000),
-            learning_rate=model_settings.get('learning_rate', 0.001),
-            external_classifier=model_settings.get('external_classifier', False),
+            patience=model_settings.get('patience', 0),
+            learning_rate=learning_rate,
+            external_classifier=external_classifier,
             encoder_type=pointcloud_encoder_type,
             loss_fn_type=loss_fn_type,
             device=torch_device,
-            log_base_path=model_settings.get('log_base_path', None),
-            checkpoint_base_path=model_settings.get('checkpoint_base_path', None),
+            log_base_path=log_base_path,
+            checkpoint_base_path=checkpoint_base_path,
             checkpoint_frequency=model_settings.get('checkpoint_frequency', None),
             data_split=model_settings.get('data_split', [60, 20, 20])
         )

@@ -27,6 +27,9 @@ class Logger:
         # Early stopping variables
         self._best_loss = float('inf')
         self._num_epochs_without_improvement = 0
+
+        # For differentiating between BaseNet and Classifier loss
+        self.mode = 'BaseNet'
         
         if self._log:
             if existing_checkpoint_path is None:
@@ -77,6 +80,7 @@ class Logger:
 
     def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         if not self._log: return
+        self.mode = 'BaseNet'
 
         binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
@@ -133,8 +137,19 @@ class Logger:
         if not math.isnan(negative_success):
             self._metrics['NegativeSuccess'].append(negative_success)
 
+    def add_classification_datapoint(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
+        self.mode = 'Classifier'
+
+        positive_classification = (torch.sigmoid(model_output) >= 0.5)
+        success = positive_classification & ground_truth
+
+        self._metrics['Loss'].append(loss)
+        self._metrics['Success'].append(success.float().mean().item())
+
     def log_statistics(self, epoch: int, label: str):
         if not self._log: return
+
+        prefix = 'Classifier/' if self.mode == 'Classifier' else ''
 
         for name, metric in self._metrics.items():
             # Multiply by 100 to convert to percentages
@@ -142,28 +157,29 @@ class Logger:
             metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
 
             # For success and loss we are only interested in the averages
-            self._writer.add_scalar(f'{name}/Avg/{label}', metric_tensor.mean().item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Avg/{label}', metric_tensor.mean().item(), epoch)
             if name == 'Success' or name == 'Loss': continue
         
             # We do not collect most scalar data for testing runs
-            self._writer.add_histogram(f'{name}/{label}', metric_tensor, epoch)
+            self._writer.add_histogram(f'{prefix}{name}/{label}', metric_tensor, epoch)
             if label == 'test': continue
 
-            self._writer.add_scalar(f'{name}/Max/{label}', metric_tensor.max().item(), epoch)
-            self._writer.add_scalar(f'{name}/Min/{label}', metric_tensor.min().item(), epoch)
-            self._writer.add_scalar(f'{name}/StdDev/{label}', metric_tensor.std(unbiased=True).item(), epoch)
-            self._writer.add_scalar(f'{name}/Q1/{label}', metric_tensor.quantile(0.25).item(), epoch)
-            self._writer.add_scalar(f'{name}/Q2/{label}', metric_tensor.quantile(0.50).item(), epoch)
-            self._writer.add_scalar(f'{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Max/{label}', metric_tensor.max().item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Min/{label}', metric_tensor.min().item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/StdDev/{label}', metric_tensor.std(unbiased=True).item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Q1/{label}', metric_tensor.quantile(0.25).item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Q2/{label}', metric_tensor.quantile(0.50).item(), epoch)
+            self._writer.add_scalar(f'{prefix}{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
 
-        self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
+        if self.mode == 'BaseNet':
+            self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
 
-        if label == 'validate':
-            if self._last_loss < self._best_loss:
-                self._best_loss = self._last_loss
-                self._num_epochs_without_improvement = 0
-            else:
-                self._num_epochs_without_improvement += 1
+            if label == 'validate':
+                if self._last_loss < self._best_loss:
+                    self._best_loss = self._last_loss
+                    self._num_epochs_without_improvement = 0
+                else:
+                    self._num_epochs_without_improvement += 1
         
         self.reset_loss()
 
@@ -223,6 +239,7 @@ class Logger:
         return self._last_loss == self._best_loss
     
     def is_training_done(self, patience: int) -> bool:
+        if patience == 0: return False
         return self._num_epochs_without_improvement > patience
 
     def save_checkpoint(self, model: torch.nn.Module, optimizer: torch.nn.Module, epoch: int, mapped_indices: dict):

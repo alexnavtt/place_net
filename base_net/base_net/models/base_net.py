@@ -58,6 +58,7 @@ class BaseNet(torch.nn.Module):
             ),
             torch.nn.BatchNorm3d(num_features=self.num_channels//2),
             torch.nn.ReLU(),
+            torch.nn.Dropout3d(self.config.convolution_dropout),
 
             # Size is (B, num_channels/2, 8, 8, 8)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
@@ -72,6 +73,7 @@ class BaseNet(torch.nn.Module):
             ),
             torch.nn.BatchNorm3d(num_features=self.num_channels//4),
             torch.nn.ReLU(),
+            torch.nn.Dropout3d(self.config.convolution_dropout),
 
             # Size is (B, num_channels/4, 10, 10, 8)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),
@@ -86,6 +88,7 @@ class BaseNet(torch.nn.Module):
             ),
             torch.nn.BatchNorm3d(num_features=self.num_channels//8),
             torch.nn.ReLU(),
+            torch.nn.Dropout3d(self.config.convolution_dropout),
 
             # Size is (B, num_channels/8, 20, 20, 20)
             torch.nn.CircularPad3d(padding=(1, 1, 0, 0, 0, 0)),

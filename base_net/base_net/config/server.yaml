@@ -105,26 +105,30 @@ inverse_reachability_map:
     yaw: 20
 
 model_settings:
-  model_type: 'BaseNet'
+  # Configuration params
   pointcloud_encoder: 'PointNet'
-  use_normals: False
   loss_function: 'Dice' # BCE, Dice, Focal, Tversky
+  use_normals: False
+  external_classifier: False
+
+  # Hyperparameters
+  feature_size: 1024
+  channel_count: 256
   data_split: [60, 20, 20]
   num_epochs: 2000
-  cuda_device: 1
   batch_size: 16
   learning_rate: 0.0001
-  patience: 50
-  log_base_path: 'base_net/data/runs/v0.5.1/dice_lr1e-4_64_channels/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.5.1/dice_lr1e-4_64_channels/'
+  patience: 150
+  convolution_dropout: 0.1
+
+  # Loss-function specific hyperparameters
+  tversky_loss: {'alpha': 0.8, 'beta': 0.2}
+  bce: {'pos_weight': 5.0}
+  focal_loss: {'pos_weight': 5.0}
+  
+  # System parameters
+  cuda_device: 1
+  log_base_path: 'base_net/data/runs/v0.7.0/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.7.0/'
   checkpoint_frequency: 100
 
-  tversky_loss:
-    alpha: 0.8
-    beta: 0.2
-
-  bce:
-    pos_weight: 5.0
-
-  focal_loss:
-    pos_weight: 5.0
