@@ -110,9 +110,6 @@ def main():
             logger.log_statistics(0, 'test')
             logger.flush()
             return
-
-    # Temporary change for testing
-    base_net_config.model.external_classifier = False
     
     for epoch in range(start_epoch, base_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
