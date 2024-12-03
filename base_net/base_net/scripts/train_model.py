@@ -7,7 +7,7 @@ from tqdm import tqdm
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from base_net.models.base_net import BaseNet, BaseNetLite
+from base_net.models.base_net import BaseNet
 from base_net.models.basenet_dataset import BaseNetDataset
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.logger import Logger
@@ -65,7 +65,7 @@ def main():
             checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device, weights_only=False)
         base_net_model.load_state_dict(checkpoint['base_net_model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        mapped_indices = checkpoint['mapped_indices'] if mapped_indices in checkpoint else None
+        mapped_indices = checkpoint['mapped_indices'] if 'mapped_indices' in checkpoint else None
         start_epoch = checkpoint['epoch']
     else:
         mapped_indices = None
@@ -74,15 +74,15 @@ def main():
     loss_fn = base_net_config.model.loss_fn_type()
 
     # Load the data
+    dataset = BaseNetDataset(base_net_config, mapped_indices=mapped_indices)
     if args.test:
-        test_data = BaseNetDataset(base_net_config, mode='testing', mapped_indices=mapped_indices)
-        test_loader = DataLoader(test_data, collate_fn=collate_fn)
+        test_loader = DataLoader(dataset.get_dataset('testing'), collate_fn=collate_fn)
         base_net_model.eval()
     else:
-        train_data = BaseNetDataset(base_net_config, mode='training', mapped_indices=mapped_indices)
+        train_data = dataset.get_dataset('training')
+        validate_data = dataset.get_dataset('validation')
+
         train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
-        
-        validate_data = BaseNetDataset(base_net_config, mode='validation', mapped_indices=mapped_indices)
         validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
     # Convenience function for debug visualization
@@ -110,6 +110,9 @@ def main():
             logger.log_statistics(0, 'test')
             logger.flush()
             return
+
+    # Temporary change for testing
+    base_net_config.model.external_classifier = False
     
     for epoch in range(start_epoch, base_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
@@ -118,9 +121,6 @@ def main():
         for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
             optimizer.zero_grad()
             output = base_net_model(pointcloud_list, task_tensor)
-            if isinstance(base_net_model, BaseNetLite):
-                output, batch_indices, pose_indices = output
-                solution = solution.flatten(start_dim=1)[batch_indices, pose_indices]
             loss = loss_fn(output, solution)
             loss.backward()
             optimizer.step()
@@ -134,21 +134,12 @@ def main():
             base_net_model.eval()
             for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
                 output = base_net_model(pointcloud_list, task_tensor)
-                if isinstance(base_net_model, BaseNetLite):
-                    output, batch_indices, pose_indices = output
-                    solution = solution.flatten(start_dim=1)[batch_indices, pose_indices]
                 loss = loss_fn(output, solution)
                 logger.add_data_point(loss, output, solution)
                 visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
         logger.log_statistics(epoch, 'validate')
 
-        # Reorganize elements for BaseNetLite to be placed in the visualizer
-        if isinstance(base_net_model, BaseNetLite):
-            first_batch_indices = pose_indices[batch_indices == 0]
-            reconstructed_output = torch.zeros(base_net_model.irm.solutions.shape[1:], dtype=torch.float).flatten()
-            reconstructed_output[first_batch_indices] = output[:first_batch_indices.size(0)].cpu()
-            output = reconstructed_output.view((1, *base_net_model.irm.solutions.shape[1:]))
 
         # After running the test data, pass the last test datapoint to the visualizer
         if epoch % 10 == 0:
@@ -163,13 +154,13 @@ def main():
 
         # At regular intervals, save the model checkpoint
         if logger.was_best() or (epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0):
-            logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
+            logger.save_checkpoint(base_net_model, optimizer, epoch, dataset.mapped_indices)
 
         if logger.is_training_done(patience=base_net_config.model.patience):
             print(f'No improvement was seen in validation loss over the last {base_net_config.model.patience} epochs, terminating training early')
             break
 
-    logger.save_checkpoint(base_net_model, optimizer, epoch, train_data.mapped_indices)
+    logger.save_checkpoint(base_net_model, optimizer, epoch, dataset.mapped_indices)
     logger.flush()
 
 if __name__ == "__main__":
