@@ -27,7 +27,7 @@ def main():
         roll_pitch_yaw_resolution=(irm_config.task_resolution['roll'], irm_config.task_resolution['pitch'], irm_config.solution_resolution['yaw']),
     )
 
-    inverse_reachability_map.solve(model_config.robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count)
+    inverse_reachability_map.solve(model_config.inverted_robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count)
     inverse_reachability_map.save(os.path.join(model_config.solution_path, 'base_net_irm.pt'))
 
 if __name__ == "__main__":

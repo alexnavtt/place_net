@@ -116,7 +116,7 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
     max_bound[2] = max(model_config.task_geometry.base_link_elevation + model_config.task_geometry.max_radial_reach, max_bound[2])
     bounding_box = open3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
 
-    ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
+    ee_spheres = get_end_effector_spheres(model_config.inverted_robot).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
 
     while points_sampled < sample_config['count'] and attempt_count < max_attempt_count:
@@ -177,7 +177,7 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Bas
     quaternion_tensor = torch.empty([0, 4])
 
     # Get the end effector collision spheres to make sure samples poses are valid
-    ee_spheres = get_end_effector_spheres(model_config.robot).cpu().numpy()
+    ee_spheres = get_end_effector_spheres(model_config.inverted_robot).cpu().numpy()
 
     # Get a KD tree for sphere-pointcloud collision detection
     pointcloud = regions.pointcloud
@@ -281,7 +281,7 @@ def main():
             print("No output path provided, generated poses have not been saved")
     
         if model_config.task_generation.visualize:
-            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.robot, regions)
+            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.inverted_robot, regions)
 
 if __name__ == "__main__":
     main()

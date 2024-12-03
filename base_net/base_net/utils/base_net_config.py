@@ -304,7 +304,7 @@ class BaseNetConfig:
 
     # Modified cuRobot RobotConfig with the robot URDF and the robot
     # inverted robot URDF stored as a tuple in the kinematics debug field
-    robot: RobotConfig
+    inverted_robot: RobotConfig
 
     # The configuration related the PyTorch model 
     model: BaseNetModelConfig
@@ -378,7 +378,7 @@ class BaseNetConfig:
         return BaseNetConfig(
             yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
-            robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
+            inverted_robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_geometry=task_geometry,
             task_generation=task_generation_config,

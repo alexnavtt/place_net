@@ -72,7 +72,7 @@ def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None
         world_config = None
 
     ik_config = IKSolverConfig.load_from_robot_config(
-        model_config.robot,
+        model_config.inverted_robot,
         world_config,
         rotation_threshold=0.01,
         position_threshold=0.001,
@@ -131,7 +131,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
     # Render one of the successful poses randomly
     if torch.any(solution_success):
         robot_spheres = task_visualization.get_robot_geometry_at_joint_state(
-            robot_config=model_config.robot, 
+            robot_config=model_config.inverted_robot, 
             joint_state=solution_states[best_pose, :].flatten(),
             inverted=True, 
             base_link_pose=np.eye(4)
@@ -262,7 +262,7 @@ def main():
                 print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
 
                 # Take the solution for the filtered base positions and expand it out to include all base positions
-                solution_states = torch.empty([num_poses, model_config.robot.kinematics.kinematics_config.n_dof])
+                solution_states = torch.empty([num_poses, model_config.inverted_robot.kinematics.kinematics_config.n_dof])
                 solution_states[valid_pose_indices, :] = joint_states.cpu()
                 solution_success = torch.zeros(num_poses, dtype=bool)
                 solution_success[valid_pose_indices] = revised_solutions.cpu()
