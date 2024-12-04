@@ -143,14 +143,14 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     open3d.visualization.draw(geometries)
 
-def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose, model_config: BaseNetConfig) -> tuple[Tensor, Tensor]:
+def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose) -> tuple[Tensor, Tensor]:
     if batch_size is None:
         soln = ik_solver.solve_batch(goal_pose=poses)
         return soln.success.squeeze(), soln.solution.squeeze(1)
     
     if ik_solver.use_cuda_graph:
-        position_batch = torch.empty((batch_size, 3), device=model_config.model.device)
-        quaternion_batch = torch.empty((batch_size, 4), device=model_config.model.device)
+        position_batch = torch.empty((batch_size, 3), device=poses.position.device)
+        quaternion_batch = torch.empty((batch_size, 4), device=poses.position.device)
 
     success = torch.zeros((poses.batch), dtype=bool)
     joint_states = torch.empty((poses.batch, ik_solver.robot_config.kinematics.kinematics_config.n_dof))
@@ -227,7 +227,7 @@ def main():
             base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
             # Filter out poses which the robot cannot reach even without obstacles
-            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, batch_size, base_poses_in_task, model_config)
+            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, batch_size, base_poses_in_task)
             num_valid_poses = torch.sum(valid_pose_indices)
 
             if model_config.debug:
@@ -255,7 +255,6 @@ def main():
                     ik_solver=obstacle_aware_ik_solver, 
                     batch_size=model_config.max_ik_count,
                     poses=valid_base_poses_in_task,
-                    model_config=model_config
                 )
                 t2 = time.perf_counter()
                 print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
