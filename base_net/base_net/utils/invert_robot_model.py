@@ -130,16 +130,19 @@ def invert_dynamic_joint(joint: Joint) -> list:
     return rev_inv_joint, intermediary_link, static_transform_joint
 
 def fix_dynamic_joints(robot: Robot, dynamic_joints: dict[str, float]):
+    joint: Joint
     for joint in robot.joints:
-        joint: Joint = joint
-        if joint.type == 'revolute' and joint.name in dynamic_joints:
-            joint.type = 'fixed'
-            joint_transform = np.eye(4)
+        if joint.name not in dynamic_joints: continue
+        joint_transform = np.eye(4)
+        if joint.type == 'revolute':
             joint_transform[:3, :3] = scipy.spatial.transform.Rotation.from_rotvec(np.array(joint.axis)*dynamic_joints[joint.name], degrees=False).as_matrix()
-            old_origin = urdf_pose_to_matrix(joint.origin)
-            joint.origin = matrix_to_urdf_pose(old_origin @ joint_transform)
+        elif joint.type == 'prismatic':
+            joint_transform[:3, 3] = np.array(joint.axis)*dynamic_joints[joint.name]
+        old_origin = urdf_pose_to_matrix(joint.origin)
+        joint.origin = matrix_to_urdf_pose(old_origin @ joint_transform)
+        joint.type = 'fixed'
 
-def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str, defaulted_joints: dict[str, float] = {}) -> tuple[Robot, Robot]:
+def main(urdf_path: str, xacro_args: str, end_effector: str, defaulted_joints: dict[str, float] = {}) -> tuple[Robot, Robot]:
     prepare_urdf_file(urdf_path, xacro_args)
     with contextlib.redirect_stderr(open(os.devnull, 'w')):
         robot: Robot = Robot.from_xml_file('/tmp/invert_robot_model_original.urdf')
@@ -177,9 +180,6 @@ def main(urdf_path: str, xacro_args: str, end_effector: str, output_path: str, d
         add_extra_link_chain(robot, inverted_robot, next_link_name, arm_links)
 
     print("Finished inverting URDF")
-
-    with open(output_path, 'w') as f:
-        f.write(inverted_robot.to_xml_string())
 
     return robot, inverted_robot
 

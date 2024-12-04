@@ -14,7 +14,7 @@ from torch import Tensor
 from curobo.types.robot import RobotConfig
 
 from base_net.utils import task_visualization
-from base_net.utils.base_net_config import BaseNetConfig
+from base_net.utils.base_net_config import BaseNetConfig, BaseNetRobotConfig
 from base_net.utils.pointcloud_region import PointcloudRegion
 
 def load_arguments() -> dict:
@@ -25,21 +25,22 @@ def load_arguments() -> dict:
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='Config yaml file in which to look for a list of pointclouds')
     return parser.parse_args()
 
-def get_end_effector_spheres(robot_config: RobotConfig) -> torch.Tensor:
+def get_end_effector_spheres(robot_config: BaseNetRobotConfig) -> torch.Tensor:
     """
     Get all of the collision spheres on the end effector link and all links
     with fixed joints to the end effector link. The output tensor is in 
     the form [num_spheres, 4] with each sphere described as [x, y, z, r]
     """
 
-    ee_link = robot_config.kinematics.kinematics_config.base_link
-    transform_from_ee: dict[str, np.ndarray] = task_visualization.get_links_attached_to(ee_link, robot_config)
+    robot_kinematics = robot_config.inverted_robot.kinematics
+    ee_link = robot_kinematics.kinematics_config.base_link
+    transform_from_ee: dict[str, np.ndarray] = task_visualization.get_links_attached_to(ee_link, robot_config.inverted_urdf)
     
-    ee_spheres = torch.empty([0, 4]).cuda(robot_config.kinematics.tensor_args.device)
+    ee_spheres = torch.empty([0, 4]).cuda(robot_kinematics.tensor_args.device)
     for link_name, link_transform in transform_from_ee.items():
-        if link_name not in robot_config.kinematics.kinematics_config.link_name_to_idx_map:
+        if link_name not in robot_kinematics.kinematics_config.link_name_to_idx_map:
             continue
-        new_spheres = robot_config.kinematics.kinematics_config.get_link_spheres(link_name)
+        new_spheres = robot_kinematics.kinematics_config.get_link_spheres(link_name)
         num_spheres = new_spheres.size()[0]
         sphere_locs = torch.concatenate([new_spheres[:, :3], torch.ones(num_spheres, 1).to(new_spheres.device)], dim=1)
         transform_tensor = torch.Tensor(link_transform.T).to(new_spheres.device)
@@ -71,7 +72,7 @@ def are_spheres_in_collision(
         
     return False
 
-def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: RobotConfig, regions: PointcloudRegion) -> None:
+def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: BaseNetRobotConfig, regions: PointcloudRegion) -> None:
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
@@ -116,7 +117,7 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
     max_bound[2] = max(model_config.task_geometry.base_link_elevation + model_config.task_geometry.max_radial_reach, max_bound[2])
     bounding_box = open3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
 
-    ee_spheres = get_end_effector_spheres(model_config.inverted_robot).cpu().numpy()
+    ee_spheres = get_end_effector_spheres(model_config.robot_config).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
 
     while points_sampled < sample_config['count'] and attempt_count < max_attempt_count:
@@ -177,7 +178,7 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Bas
     quaternion_tensor = torch.empty([0, 4])
 
     # Get the end effector collision spheres to make sure samples poses are valid
-    ee_spheres = get_end_effector_spheres(model_config.inverted_robot).cpu().numpy()
+    ee_spheres = get_end_effector_spheres(model_config.robot_config).cpu().numpy()
 
     # Get a KD tree for sphere-pointcloud collision detection
     pointcloud = regions.pointcloud
@@ -281,7 +282,7 @@ def main():
             print("No output path provided, generated poses have not been saved")
     
         if model_config.task_generation.visualize:
-            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.inverted_robot, regions)
+            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.robot_config, regions)
 
 if __name__ == "__main__":
     main()

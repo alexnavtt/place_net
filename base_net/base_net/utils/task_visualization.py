@@ -8,11 +8,11 @@ import open3d.visualization
 from PIL import Image
 from urdf_parser_py.urdf import Robot, Joint, Mesh, Cylinder, Box
 from curobo.types.math import Pose as cuRoboPose
-from curobo.types.robot import RobotConfig
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net.utils.pointcloud_region import PointcloudRegion
 from base_net.utils.invert_robot_model import urdf_pose_to_matrix
+from base_net.utils.base_net_config import BaseNetRobotConfig
 
 def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
 
@@ -107,8 +107,7 @@ def get_regions(regions: PointcloudRegion) -> list[open3d.geometry.TriangleMesh]
 
     return meshes
 
-def get_links_attached_to(link: str, robot_config: RobotConfig) -> dict[str, np.ndarray]:
-    robot: Robot = robot_config.kinematics.kinematics_config.debug[0]
+def get_links_attached_to(link: str, robot: Robot) -> dict[str, np.ndarray]:
 
     def get_attached_child_links(link_name: str, transform_from_ee: dict) -> None:
         if link_name not in robot.child_map:
@@ -223,14 +222,14 @@ def get_urdf_visual_geometry(visual) -> open3d.geometry.TriangleMesh:
     return mesh, material
 
 def get_robot_geometry_at_joint_state(
-        robot_config: RobotConfig, 
+        robot_config: BaseNetRobotConfig, 
         joint_state: torch.Tensor, 
         base_link_pose: np.ndarray,
         *, 
         inverted: bool = False
     ) -> list[open3d.geometry.TriangleMesh]:
 
-    robot_model = CudaRobotModel(config=robot_config.kinematics)
+    robot_model = CudaRobotModel(config=robot_config.inverted_robot.kinematics)
     geometries = []
     
     robot_spheres = robot_model.get_robot_as_spheres(q=joint_state.cuda(robot_model.tensor_args.device))[0]
@@ -240,16 +239,16 @@ def get_robot_geometry_at_joint_state(
         robot_sphere_o3d.paint_uniform_color(np.random.rand(1).repeat(3))
         geometries.append({'geometry': robot_sphere_o3d.compute_triangle_normals(), 'group': 'robot_spheres', 'name': robot_sphere.name})
 
-    urdf_idx = 1 if inverted else 0
-    robot_urdf: Robot = robot_config.kinematics.kinematics_config.debug[urdf_idx]
-    chain_links = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=True, joints=False)
-    chain_joints = robot_urdf.get_chain(robot_config.kinematics.kinematics_config.base_link, robot_config.kinematics.kinematics_config.ee_link, links=False, joints=True)
+    kinematics_config = robot_config.inverted_robot.kinematics.kinematics_config
+    robot_urdf: Robot = robot_config.inverted_urdf if inverted else robot_config.urdf
+    chain_links = robot_urdf.get_chain(kinematics_config.base_link, kinematics_config.ee_link, links=True, joints=False)
+    chain_joints = robot_urdf.get_chain(kinematics_config.base_link, kinematics_config.ee_link, links=False, joints=True)
 
     rendered_links = set()
     link_pose = base_link_pose
     joint_idx = 0
     for link_idx, link_name in enumerate(chain_links):
-        for attached_link, link_transform in get_links_attached_to(link_name, robot_config).items():
+        for attached_link, link_transform in get_links_attached_to(link_name, robot_urdf).items():
             if attached_link not in robot_urdf.link_map or attached_link in rendered_links: continue
             for visual_idx, visual in enumerate(robot_urdf.link_map[attached_link].visuals):
                 try:

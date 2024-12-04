@@ -11,6 +11,7 @@ import numpy as np
 import scipy.spatial.transform
 from torch import Tensor
 from torch.nn import BCEWithLogitsLoss
+from urdf_parser_py.urdf import Robot
 from curobo.types.robot import RobotConfig
 from curobo.types.base import TensorDeviceType
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
@@ -28,6 +29,13 @@ except ModuleNotFoundError:
 def tensor_hash(tensor: Tensor):
     tensor_bytes = tensor.cpu().numpy().tobytes()
     return hashlib.sha256(tensor_bytes).hexdigest()
+
+@dataclass
+class BaseNetRobotConfig:
+    robot: RobotConfig
+    inverted_robot: RobotConfig
+    urdf: Robot
+    inverted_urdf: Robot
 
 @dataclass
 class BaseNetModelConfig:
@@ -302,9 +310,8 @@ class BaseNetConfig:
     # in CPU tensors of shape (num_points, 6) arranged x, y, z, nx, ny, nz
     pointclouds: dict[str, open3d.geometry.PointCloud]
 
-    # Modified cuRobot RobotConfig with the robot URDF and the robot
-    # inverted robot URDF stored as a tuple in the kinematics debug field
-    inverted_robot: RobotConfig
+    # The robot model
+    robot_config: BaseNetRobotConfig
 
     # The configuration related the PyTorch model 
     model: BaseNetModelConfig
@@ -378,7 +385,7 @@ class BaseNetConfig:
         return BaseNetConfig(
             yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
-            inverted_robot=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
+            robot_config=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_geometry=task_geometry,
             task_generation=task_generation_config,
@@ -471,7 +478,7 @@ class BaseNetConfig:
         return solutions
     
     @staticmethod
-    def load_robot_config(yaml_config: dict, device: torch.device) -> RobotConfig:
+    def load_robot_config(yaml_config: dict, device: torch.device) -> tuple[RobotConfig, RobotConfig]:
         """
         Load the cuRobo config from the config yaml/XRDF file and the urdf specified in the config.
         This function inverts the loaded URDF such that the end effector becomes the base link 
@@ -502,36 +509,36 @@ class BaseNetConfig:
         
         # Load and process the cuRobo config file
         with open(curobo_file) as f:
-            robot_config = yaml.safe_load(f)
+            inverted_robot_config = yaml.safe_load(f)
 
         curobo_config_extension = os.path.splitext(curobo_file)[1]
         if curobo_config_extension == '.xrdf':
-            ee_link = robot_config['tool_frames'][0]
-            for config_item in robot_config['modifiers']:
+            # XRDF doesn't allow cspace to mismatch with the URDF so we remove any that we are going to fix in place
+            for joint_name, _ in unused_joint_defaults.items():
+                if joint_name in inverted_robot_config['cspace']['joint_names']:
+                    idx = inverted_robot_config['cspace']['joint_names'].index(joint_name)
+                    del(inverted_robot_config['cspace']['joint_names'][idx])
+                    del(inverted_robot_config['cspace']['acceleration_limits'][idx])
+                    del(inverted_robot_config['cspace']['jerk_limits'][idx])
+
+            ee_link = inverted_robot_config['tool_frames'][0]
+            for config_item in inverted_robot_config['modifiers']:
                 if 'set_base_frame' in config_item:
                     base_link = config_item['set_base_frame']
                     config_item['set_base_frame'] = ee_link
-                    robot_config['tool_frames'][0] = base_link
+                    inverted_robot_config['tool_frames'][0] = base_link
                     break
 
-            # XRDF doesn't allow cspace to mismatch with the URDF so we remove any that we are going to fix in place
-            for joint_name, _ in unused_joint_defaults.items():
-                if joint_name in robot_config['cspace']['joint_names']:
-                    idx = robot_config['cspace']['joint_names'].index(joint_name)
-                    del(robot_config['cspace']['joint_names'][idx])
-                    del(robot_config['cspace']['acceleration_limits'][idx])
-                    del(robot_config['cspace']['jerk_limits'][idx])
-
             # Temporary workaround because cuRobo doesn't properly process an XRDF dict
-            with open('/tmp/robot_xrdf.xrdf', 'w') as f:
-                yaml.dump(robot_config, f)
-            robot_config = '/tmp/robot_xrdf.xrdf'
+            with open('/tmp/inverted_robot_xrdf.xrdf', 'w') as f:
+                yaml.dump(inverted_robot_config, f)
+                inverted_robot_config = '/tmp/inverted_robot_xrdf.xrdf'
 
         elif curobo_config_extension == '.yaml':
-            ee_link = robot_config['robot_cfg']['kinematics']['ee_link']
-            base_link = robot_config['robot_cfg']['kinematics']['base_link']
-            robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
-            robot_config['robot_cfg']['kinematics']['base_link'] = ee_link
+            ee_link = inverted_robot_config['robot_cfg']['kinematics']['ee_link']
+            base_link = inverted_robot_config['robot_cfg']['kinematics']['base_link']
+            inverted_robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
+            inverted_robot_config['robot_cfg']['kinematics']['base_link'] = ee_link
         else:
             raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{curobo_config_extension}"')
 
@@ -540,22 +547,29 @@ class BaseNetConfig:
             urdf_path        = urdf_file, 
             xacro_args       = urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', 
             end_effector     = ee_link, 
-            output_path      = "/tmp/inverted_urdf.urdf",
             defaulted_joints = unused_joint_defaults
         )
 
-        curobo_config = RobotConfig(
+        # Write the models to files to be used in loading
+        inverse_file_path = '/tmp/inverse_urdf.urdf'
+        with open(inverse_file_path, 'w') as f:
+            f.write(inverted_robot_urdf.to_xml_string())
+
+        inverted_config = RobotConfig(
             kinematics=CudaRobotModelConfig.from_robot_yaml_file(
-                file_path=robot_config,
+                file_path=inverted_robot_config,
                 ee_link=base_link,
-                urdf_path="/tmp/inverted_urdf.urdf",
+                urdf_path=inverse_file_path,
                 tensor_args=TensorDeviceType(device=device)
             )
         )
 
-        # Make the URDF structure available later
-        curobo_config.kinematics.kinematics_config.debug = (robot_urdf, inverted_robot_urdf)
-
-        return curobo_config
+        # Issues with cuRobo robot loading prevent the forward robot model from being loaded
+        return BaseNetRobotConfig(
+            robot=None,
+            inverted_robot=inverted_config,
+            urdf=robot_urdf,
+            inverted_urdf=inverted_robot_urdf
+        )
 
         
