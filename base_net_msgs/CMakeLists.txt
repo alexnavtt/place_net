@@ -9,6 +9,7 @@ find_package(sensor_msgs REQUIRED)
 rosidl_generate_interfaces(
     ${PROJECT_NAME}
         "srv/QueryBaseLocation.srv"
+        "srv/QueryReachablePosesGT.srv"
     DEPENDENCIES 
         geometry_msgs 
         sensor_msgs

@@ -1,0 +1,28 @@
+# QueryReachablePosesGT.srv
+
+# Given a robot base pose, an environment pointcloud, and a set of
+# end effector poses, determine which end effectors poses can be 
+# reached from that base pose using direct IK calculations in the
+# cuRobo motion planning library
+
+# The GT in the name stands for Ground Truth. This service call can
+# take over a minute to calculate and is mainly intended for testing
+# and debugging
+
+## Request
+
+# The full set of poses for the robot end effector
+geometry_msgs/PoseArray end_effector_poses
+
+# The pointcloud representation of the collision environment. 
+sensor_msgs/PointCloud2 pointcloud
+
+# The pose of the base link for which the reachability will be calculated
+geometry_msgs/PoseStamped base_link_pose
+
+---
+
+## Response
+
+# The indices of the input task poses which are reachable
+int64[] valid_task_indices

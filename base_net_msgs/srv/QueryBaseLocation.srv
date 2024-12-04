@@ -6,7 +6,6 @@
 geometry_msgs/PoseArray end_effector_poses
 
 # The pointcloud representation of the collision environment. 
-# Must contain normals
 sensor_msgs/PointCloud2 pointcloud
 
 # The name of the link for which the base poses should be returned
