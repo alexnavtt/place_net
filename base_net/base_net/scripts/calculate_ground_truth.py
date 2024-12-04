@@ -143,7 +143,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     open3d.visualization.draw(geometries)
 
-def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses: cuRoboPose, model_config: BaseNetConfig) -> tuple[Tensor, Tensor]:
+def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose, model_config: BaseNetConfig) -> tuple[Tensor, Tensor]:
     if batch_size is None:
         soln = ik_solver.solve_batch(goal_pose=poses)
         return soln.success.squeeze(), soln.solution.squeeze(1)
@@ -152,12 +152,12 @@ def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses
         position_batch = torch.empty((batch_size, 3), device=model_config.model.device)
         quaternion_batch = torch.empty((batch_size, 4), device=model_config.model.device)
 
-    success = torch.zeros((num_poses), dtype=bool)
-    joint_states = torch.empty((num_poses, ik_solver.robot_config.kinematics.kinematics_config.n_dof))
+    success = torch.zeros((poses.batch), dtype=bool)
+    joint_states = torch.empty((poses.batch, ik_solver.robot_config.kinematics.kinematics_config.n_dof))
     
     start_idx = 0
-    while start_idx < num_poses:
-        end_idx = min(start_idx + batch_size, num_poses)
+    while start_idx < poses.batch:
+        end_idx = min(start_idx + batch_size, poses.batch)
         size = end_idx - start_idx
         if ik_solver.use_cuda_graph:
             position_batch[:size, :] = poses.position[start_idx:end_idx, :]
@@ -227,7 +227,7 @@ def main():
             base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
 
             # Filter out poses which the robot cannot reach even without obstacles
-            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, num_poses, batch_size, base_poses_in_task, model_config)
+            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, batch_size, base_poses_in_task, model_config)
             num_valid_poses = torch.sum(valid_pose_indices)
 
             if model_config.debug:
@@ -253,7 +253,6 @@ def main():
                 valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
                 revised_solutions, joint_states = solve_batched_ik(
                     ik_solver=obstacle_aware_ik_solver, 
-                    num_poses=num_valid_poses, 
                     batch_size=model_config.max_ik_count,
                     poses=valid_base_poses_in_task,
                     model_config=model_config
