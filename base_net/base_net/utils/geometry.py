@@ -127,7 +127,7 @@ def decode_tasks(tasks: Tensor):
     rpy[:, 0] = tasks[:, 2]     # roll
     rpy[:, 1] = tasks[:, 1]     # pitch
     quaternions = torch.tensor(
-        scipy.spatial.transform.Rotation.from_euler("xyz", rpy.numpy(), degrees=False).as_quat(scalar_first=True), device=tasks.device
+        scipy.spatial.transform.Rotation.from_euler("xyz", rpy.cpu().numpy(), degrees=False).as_quat(scalar_first=True), device=tasks.device
     )
 
     return torch.concatenate([positions, quaternions], dim=1).float()

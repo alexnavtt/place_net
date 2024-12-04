@@ -57,7 +57,7 @@ class InverseReachabilityMap:
         self.device = device
 
         self.task_grid = None
-        self.encoded_base_grid, self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
+        self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
 
         if solution_file is not None:
             self.solutions: Tensor = torch.load(solution_file, map_location='cpu')
@@ -92,7 +92,6 @@ class InverseReachabilityMap:
 
         z_grid, pitch_grid, roll_grid = torch.meshgrid(z_range, pitch_range, roll_range, indexing='ij')
         self.task_grid = torch.stack([z_grid, pitch_grid, roll_grid]).reshape(3, -1).T
-        print(self.task_grid)
     
     def solve(self, robot: RobotConfig, base_link_elevation: float, batch_size: int | None = None):
         device = robot.tensor_args.device
