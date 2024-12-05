@@ -34,9 +34,14 @@ class BaseNetVisualizer:
         self.response_reachable_task_pub   = ros_node.create_publisher(PoseArray  , '~/response/reachable_tasks'      , latching_qos)
         self.response_aggregate_scores_pub = ros_node.create_publisher(MarkerArray, '~/response/aggregate_pose_scores', latching_qos)
 
-        # Other visualization
+        # Ground truth visualizations
+        self.ground_truth_valid_pub = ros_node.create_publisher(PoseArray, '~/ground_truth/valid_poses', latching_qos)
+        self.ground_truth_task_pub  = ros_node.create_publisher(PoseArray, '~/ground_truth/task_poses', latching_qos)
+
+        # Debug visualization
         self.model_output_pub    = ros_node.create_publisher(MarkerArray, '~/model_output'   , latching_qos)
         self.points_in_range_pub = ros_node.create_publisher(PointCloud2, '~/points_in_range', latching_qos)
+        self.gt_points_pub       = ros_node.create_publisher(PointCloud2, '~/ground_truth_points', latching_qos)
 
     def visualize_query(self, req: QueryBaseLocation.Request) -> None:
         self.query_task_pub.publish(req.end_effector_poses)
