@@ -521,6 +521,16 @@ class BaseNetConfig:
                     del(inverted_robot_config['cspace']['acceleration_limits'][idx])
                     del(inverted_robot_config['cspace']['jerk_limits'][idx])
 
+            # Issues with the base frame of the forward model mean we have to take the URDF root frame.
+            # Otherwise collision bodies above (parents or children of parents of) the new base frame 
+            # in the robot tree will cause an error loading the robot and the program will crash
+            forward_robot_config = copy.deepcopy(inverted_robot_config)
+            for idx, config_item in enumerate(forward_robot_config['modifiers']):
+                if 'set_base_frame' in config_item:
+                    print(f'NOTE: The modifier setting the robot base frame to {config_item["set_base_frame"]} has been removed from the forward robot model. This model is for debugging and does not affect normal operations')
+                    del(forward_robot_config['modifiers'][idx])
+                    break
+
             ee_link = inverted_robot_config['tool_frames'][0]
             for config_item in inverted_robot_config['modifiers']:
                 if 'set_base_frame' in config_item:
@@ -530,11 +540,15 @@ class BaseNetConfig:
                     break
 
             # Temporary workaround because cuRobo doesn't properly process an XRDF dict
+            with open('/tmp/forward_robot_xrdf.xrdf', 'w') as f:
+                yaml.dump(forward_robot_config, f)
+                forward_robot_config = '/tmp/forward_robot_xrdf.xrdf'
             with open('/tmp/inverted_robot_xrdf.xrdf', 'w') as f:
                 yaml.dump(inverted_robot_config, f)
                 inverted_robot_config = '/tmp/inverted_robot_xrdf.xrdf'
 
         elif curobo_config_extension == '.yaml':
+            forward_robot_config = copy.deepcopy(inverted_robot_config)
             ee_link = inverted_robot_config['robot_cfg']['kinematics']['ee_link']
             base_link = inverted_robot_config['robot_cfg']['kinematics']['base_link']
             inverted_robot_config['robot_cfg']['kinematics']['ee_link'] = base_link
@@ -543,7 +557,7 @@ class BaseNetConfig:
             raise RuntimeError(f'Received cuRobo config file with unsupported extension: "{curobo_config_extension}"')
 
         # Load and process the URDF file
-        robot_urdf, inverted_robot_urdf = invert_urdf(
+        forward_robot_urdf, inverted_robot_urdf = invert_urdf(
             urdf_path        = urdf_file, 
             xacro_args       = urdf_config['xacro_args'] if 'xacro_args' in urdf_config else '', 
             end_effector     = ee_link, 
@@ -551,9 +565,21 @@ class BaseNetConfig:
         )
 
         # Write the models to files to be used in loading
+        forward_file_path = '/tmp/forward_urdf.urdf'
+        with open(forward_file_path, 'w') as f:
+            f.write(forward_robot_urdf.to_xml_string())
         inverse_file_path = '/tmp/inverse_urdf.urdf'
         with open(inverse_file_path, 'w') as f:
             f.write(inverted_robot_urdf.to_xml_string())
+
+        forward_config = RobotConfig(
+           kinematics=CudaRobotModelConfig.from_robot_yaml_file(
+                file_path=forward_robot_config,
+                ee_link=ee_link,
+                urdf_path=forward_file_path,
+                tensor_args=TensorDeviceType(device=device)
+            ) 
+        )
 
         inverted_config = RobotConfig(
             kinematics=CudaRobotModelConfig.from_robot_yaml_file(
@@ -566,9 +592,9 @@ class BaseNetConfig:
 
         # Issues with cuRobo robot loading prevent the forward robot model from being loaded
         return BaseNetRobotConfig(
-            robot=None,
+            robot=forward_config,
             inverted_robot=inverted_config,
-            urdf=robot_urdf,
+            urdf=forward_robot_urdf,
             inverted_urdf=inverted_robot_urdf
         )
 
