@@ -144,6 +144,21 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
     open3d.visualization.draw(geometries)
 
 def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose) -> tuple[Tensor, Tensor]:
+    """Solve a batch of IK problems while respecting the configured maximum IK limit
+
+    Args:
+        ik_solver:  The IK solver for the problem, already configured with obstacle info.
+                    Setting cuda_graph to True is valid and respected by this function
+        batch_size: The maximum number of problems to run in parallel at once
+        poses:      The goal poses to solve for, defined in the root frame of the robot model
+
+    Returns:
+        success (Tensor [N]): Boolean success flags for each pose in poses
+        joint_states (Tensor [N x n_dof]): Joint angles found for each solution.
+                                           For problems where success is False, 
+                                           this is the closest solution found
+    """
+
     if batch_size is None:
         soln = ik_solver.solve_batch(goal_pose=poses)
         return soln.success.squeeze(), soln.solution.squeeze(1)
