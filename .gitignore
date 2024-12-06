@@ -169,3 +169,6 @@ data/
 
 # Auto-generated parameters file
 base_net_ros_parameters.py
+
+# Large model files moved to base_net_ros for easy lookup
+base_net_ros/models
