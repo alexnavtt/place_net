@@ -82,8 +82,8 @@ class BaseNetDataset():
     def get_dataset(self, mode: str, exclude_negative: bool = False):
         """
         Get a certain portion of the dataset. Can retrieve training, validation and testing data
-        Additionally can filter data such that only instance with at least one valid robot pose
-        are included in teh dataset
+        Additionally can filter data such that only instances with at least one valid robot pose
+        are included in the dataset
         """
         # Validate the input
         if mode not in ['training', 'validation', 'testing']:
