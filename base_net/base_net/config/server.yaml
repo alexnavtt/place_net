@@ -110,6 +110,8 @@ model_settings:
   loss_function: 'Dice' # BCE, Dice, Focal, Tversky
   use_normals: False
   external_classifier: False
+  downsample_fraction: 0.3
+  pointcloud_noise_stddev: 0.0
 
   # Hyperparameters
   feature_size: 1024

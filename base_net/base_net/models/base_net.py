@@ -126,9 +126,17 @@ class BaseNet(torch.nn.Module):
             tasks = tasks.to(self.config.device)
             task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
 
+            # Downsample the pointclouds during training
+            if self.training and self.config.downsample_fraction > 0.0:
+                pointclouds = [self.downsample_pointcloud(pointcloud) for pointcloud in pointclouds]
+
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.task_geometry)
+
+            # Add noise to pointcloud during training
+            if self.training and self.config.pointcloud_noise_stddev > 0.0:
+                pointcloud_tensor += torch.randn_like(pointcloud_tensor) * self.config.pointcloud_noise_stddev
 
         # Encode the points into a feature vector
         task_embedding: Tensor = self.pose_encoder(task_encoding)
@@ -151,6 +159,15 @@ class BaseNet(torch.nn.Module):
         final_3d_grid = self.deconvolution(first_3d_layer)
 
         return final_3d_grid.squeeze(1)
+    
+    def downsample_pointcloud(self, pointcloud: Tensor) -> Tensor:
+        """
+        Given an input pointcloud tensor, randomly remove a portion of the points
+        """
+        num_points_in_cloud = pointcloud.size(0)
+        num_points_to_keep = int(num_points_in_cloud * (1 - self.config.downsample_fraction))
+        indices = torch.randperm(num_points_in_cloud)[:num_points_to_keep]
+        return pointcloud[indices]
 
 class BaseNetLite(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):

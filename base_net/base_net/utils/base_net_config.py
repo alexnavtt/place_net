@@ -63,6 +63,12 @@ class BaseNetModelConfig:
     # Set to zero to disable early stopping
     patience: int = 0
 
+    # The fraction of the points to randomly remove from the pointcloud during training
+    downsample_fraction: float = 0.0
+
+    # The standard devitaion of the gaussian noise to add to the pointcloud during training
+    pointcloud_noise_stddev: float = 0.0
+
     # The method to use for encoding the incoming pointcloud data
     encoder_type: Type[Union[PointNetEncoder, CNNEncoder]] = PointNetEncoder
 
@@ -127,6 +133,9 @@ class BaseNetModelConfig:
             case _:
                 raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
             
+        # Convenience function to make floating point numbers less than 1 look nice
+        stringify = lambda num: f'{num:.10f}'.rstrip('0').lstrip('0').lstrip('.')
+
         # Determine the name of the model path based on the hyperparameters
         batch_size = model_settings.get('batch_size', 1)
         use_normals = model_settings.get('use_normals', True)
@@ -135,15 +144,24 @@ class BaseNetModelConfig:
         channel_count = model_settings.get('channel_count', 256)
         convolution_dropout = model_settings.get('convolution_dropout', 0.0)
         external_classifier = model_settings.get('external_classifier', False)
+        downsample_fraction = model_settings.get('downsample_fraction', 0.0)
+        pointcloud_noise_stddev=model_settings.get('pointcloud_noise_stddev', 0.0)
         
         model_name = loss_fn_label
         model_name += '_b' + str(batch_size)
-        model_name += '_lr' + f'{learning_rate:.10f}'.rstrip('0').lstrip('0').lstrip('.')
+        model_name += '_lr' + stringify(learning_rate)
         model_name += '_f' + str(feature_size)
         model_name += '_c' + str(channel_count)
-        model_name += '_d' + str(int(100*convolution_dropout))
-        if not use_normals: model_name += '_nn'
-        if external_classifier: model_name += '_pos'
+        if convolution_dropout > 0.0:
+            model_name += '_d' + str(int(100*convolution_dropout))
+        if downsample_fraction > 0.0:
+            model_name += '_ds' + stringify(downsample_fraction)
+        if pointcloud_noise_stddev > 0.0:
+            model_name += '_n' + stringify(pointcloud_noise_stddev)
+        if not use_normals: 
+            model_name += '_nn'
+        if external_classifier: 
+            model_name += '_pos'
 
         log_base_path = model_settings.get('log_base_path', None)
         if log_base_path is not None:
@@ -161,6 +179,8 @@ class BaseNetModelConfig:
             batch_size=batch_size,
             num_epochs=model_settings.get('num_epochs', 200),
             patience=model_settings.get('patience', 0),
+            downsample_fraction=downsample_fraction,
+            pointcloud_noise_stddev=pointcloud_noise_stddev,
             learning_rate=learning_rate,
             external_classifier=external_classifier,
             encoder_type=pointcloud_encoder_type,
