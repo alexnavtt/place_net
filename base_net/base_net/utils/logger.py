@@ -58,6 +58,10 @@ class Logger:
             'Success': [],
             'PositiveSuccess': [],
             'NegativeSuccess': [],
+            'FailedElevation': [],
+            'FailedRoll': [],
+            'FailedPitch': [],
+            'FailedScore': [],
         }
         
     def clear_latest_run_dir(self):
@@ -78,7 +82,7 @@ class Logger:
         with open(os.path.join(self._checkpoint_path, 'config.yaml'), 'w') as f:
             yaml.dump(self._model_config.yaml_source, f)
 
-    def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
+    def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor, input_poses: Tensor):
         if not self._log: return
         self.mode = 'BaseNet'
 
@@ -126,6 +130,13 @@ class Logger:
         error_grid = torch.logical_or(false_positive_grid, false_negative_grid)
         error = error_grid.float().mean(dim=1).mean().item()
 
+        # Of the cases that were failures, what are their characteristics
+        batch_failure = torch.logical_not(batch_success)
+        encoded_tasks = geometry.encode_tasks(input_poses)
+        failed_elevations = encoded_tasks[batch_failure][:, 0]
+        failed_pitches = encoded_tasks[batch_failure][:, 1]
+        failed_rolls = encoded_tasks[batch_failure][:, 2]
+
         self._metrics['Loss'].append(loss)
         self._metrics['Error'].append(error)
         self._metrics['FalsePositive'].append(false_positive)
@@ -136,6 +147,11 @@ class Logger:
             self._metrics['PositiveSuccess'].append(positive_success)
         if not math.isnan(negative_success):
             self._metrics['NegativeSuccess'].append(negative_success)
+
+        self._metrics['FailedElevation'].extend(failed_elevations.cpu())
+        self._metrics['FailedPitch'].extend(failed_pitches.cpu())
+        self._metrics['FailedRoll'].extend(failed_rolls.cpu())
+        self._metrics['FailedScore'].extend(optimal_scores[batch_failure].flatten().cpu())
 
     def add_classification_datapoint(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         self.mode = 'Classifier'
@@ -156,20 +172,9 @@ class Logger:
             if not len(metric): continue
             metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
 
-            # For success and loss we are only interested in the averages
-            self._writer.add_scalar(f'{prefix}{name}/Avg/{label}', metric_tensor.mean().item(), epoch)
-            if name == 'Success' or name == 'Loss': continue
-        
-            # We do not collect most scalar data for testing runs
+            # Record the data in mean and histogram format
+            self._writer.add_scalar(f'{prefix}{name}/Avg/{label}', metric_tensor.mean().item(), epoch)        
             self._writer.add_histogram(f'{prefix}{name}/{label}', metric_tensor, epoch)
-            if label == 'test': continue
-
-            self._writer.add_scalar(f'{prefix}{name}/Max/{label}', metric_tensor.max().item(), epoch)
-            self._writer.add_scalar(f'{prefix}{name}/Min/{label}', metric_tensor.min().item(), epoch)
-            self._writer.add_scalar(f'{prefix}{name}/StdDev/{label}', metric_tensor.std(unbiased=True).item(), epoch)
-            self._writer.add_scalar(f'{prefix}{name}/Q1/{label}', metric_tensor.quantile(0.25).item(), epoch)
-            self._writer.add_scalar(f'{prefix}{name}/Q2/{label}', metric_tensor.quantile(0.50).item(), epoch)
-            self._writer.add_scalar(f'{prefix}{name}/Q3/{label}', metric_tensor.quantile(0.75).item(), epoch)
 
         if self.mode == 'BaseNet':
             self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()

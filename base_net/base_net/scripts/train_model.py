@@ -133,7 +133,7 @@ def main():
                 output = base_net_model(pointcloud_list, task_tensor)      
                 loss = loss_fn(output, solution)
 
-                logger.add_data_point(loss, output, solution)
+                logger.add_data_point(loss, output, solution, task_tensor)
 
                 visualize_if_debug(output, solution, task_tensor, pointcloud_list)
             logger.log_statistics(0, 'test')
@@ -151,7 +151,7 @@ def main():
                 loss = loss_fn(output, solution)
                 loss.backward()
                 optimizer.step()
-                logger.add_data_point(loss, output, solution)
+                logger.add_data_point(loss, output, solution, task_tensor)
                 visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
             logger.log_statistics(epoch, 'train')
@@ -177,7 +177,7 @@ def main():
                 for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
                     output = base_net_model(pointcloud_list, task_tensor)
                     loss = loss_fn(output, solution)
-                    logger.add_data_point(loss, output, solution)
+                    logger.add_data_point(loss, output, solution, task_tensor)
                     visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
                 logger.log_statistics(epoch, 'validate')
