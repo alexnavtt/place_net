@@ -52,9 +52,7 @@ def trim_pointcloud(model_config: BaseNetConfig, pointcloud: Tensor):
 def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None):
     """
     Consolidate the robot config and environment data to create a collision-aware IK
-    solver for this particular environment. For efficiency, the pointcloud is cropped
-    to only those points which are reachable from the task pose by the robot collision 
-    bodies
+    solver for this particular environment.
     """
     tensor_args = TensorDeviceType(device=model_config.model.device)
 
@@ -188,6 +186,95 @@ def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose) ->
 
     return success, joint_states
 
+def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometry.PointCloud, base_poses_in_flattened_task_frame: cuRoboPose, model_config: BaseNetConfig) -> Tensor:
+    """
+    Give a set of end effector poses, generate a grid of boolean reachability masks for each
+
+    Args:
+        task_pose_tensor [Tensor(n, 7)]: The task poses that the robot is trying to reach defined in the world frame
+        pointcloud [open3d.geometry.PointCloud]: The environment pointcloud defined in the world frame
+        base_poses_in_flattened_task_frame [cuRoboPose]: The base poses to solve for, defined centered at the origin
+        model_config [BaseNetConfig]: The model config settings
+
+    Returns:
+        A PyTorch tensor of shape [n, ny, nx, ntheta] where each entry is a 3D mask of valid poses for the robot 
+    """
+
+    # Extract some trivial values
+    batch_size = model_config.max_ik_count
+    num_base_poses = base_poses_in_flattened_task_frame.batch
+    empty_ik_solver = load_ik_solver(model_config)
+
+    # Initialize the solution tensor
+    x_count = model_config.inverse_reachability.solution_resolution['x']
+    y_count = model_config.inverse_reachability.solution_resolution['y']
+    yaw_count = model_config.inverse_reachability.solution_resolution['yaw']
+    sol_tensor = torch.empty((task_pose_tensor.size()[0], x_count, y_count, yaw_count), dtype=bool)
+    
+    for task_pose_idx, task_pose in enumerate(task_pose_tensor):
+        t1 = time.perf_counter()
+        position, quaternion = task_pose.to(model_config.model.device).split([3, 4])
+        task_pose_in_world = cuRoboPose(position, quaternion)
+
+        # Transform the base poses from the flattened task frame to the task frame
+        flattened_task_pose = geometry.flatten_task(task_pose_in_world)
+
+        # Assign transform names for clarity of calculations
+        world_tform_flattened_task = flattened_task_pose
+        world_tform_task = task_pose_in_world
+        task_tform_world: cuRoboTransform = world_tform_task.inverse()
+
+        base_poses_in_world = world_tform_flattened_task.repeat(num_base_poses).multiply(base_poses_in_flattened_task_frame)
+        base_poses_in_world.position[:,2] = model_config.task_geometry.base_link_elevation
+
+        base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_base_poses).multiply(base_poses_in_world)
+
+        # Filter out poses which the robot cannot reach even without obstacles
+        valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, batch_size, base_poses_in_task)
+        num_valid_poses = torch.sum(valid_pose_indices)
+
+        if model_config.debug:
+            visualize_task(task_pose_in_world, None, base_poses_in_world, valid_pose_indices)
+
+        if num_valid_poses == 0:
+            solution_success = valid_pose_indices
+            t2 = time.perf_counter()
+            print(f'{task_pose_idx}: {num_base_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
+        else:
+            # Transform the pointcloud from the world frame to the task frame
+            task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
+            task_tform_world_mat = np.eye(4)
+            task_tform_world_mat[:3, :3] = task_R_world
+            task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
+
+            pointcloud_in_world = copy.deepcopy(pointcloud)
+            pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
+            pointcloud_in_task = trim_pointcloud(model_config, pointcloud_in_task)
+
+            # Solve all remaining poses in batches
+            obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
+            valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
+            revised_solutions, joint_states = solve_batched_ik(
+                ik_solver=obstacle_aware_ik_solver, 
+                batch_size=model_config.max_ik_count,
+                poses=valid_base_poses_in_task,
+            )
+            t2 = time.perf_counter()
+            print(f'{task_pose_idx}: {num_base_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
+
+            # Take the solution for the filtered base positions and expand it out to include all base positions
+            solution_states = torch.empty([num_base_poses, model_config.robot_config.inverted_robot.kinematics.kinematics_config.n_dof])
+            solution_states[valid_pose_indices, :] = joint_states.cpu()
+            solution_success = torch.zeros(num_base_poses, dtype=bool)
+            solution_success[valid_pose_indices] = revised_solutions.cpu()
+            if model_config.debug:
+                visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
+
+        # y-coordinate varies least frequently, yaw-coordinate varies most
+        sol_tensor[task_pose_idx] = solution_success.view(y_count, x_count, yaw_count)
+
+    return sol_tensor
+
 def main():
     args = load_arguments()
     model_config = BaseNetConfig.from_yaml_file(args.config_file)
@@ -204,86 +291,10 @@ def main():
         yaw_res=yaw_count,
         device=model_config.model.device
     )
-    num_poses = base_poses_in_flattened_task_frame.batch
-    empty_ik_solver = load_ik_solver(model_config)
 
-    # Determine empty_ik_solver batch size
-    if model_config.max_ik_count is None:
-        batch_size = num_poses
-    else:
-        for i in range(1, 10000):
-            if num_poses // i < model_config.max_ik_count:
-                batch_size = num_poses // i
-                break
-    if batch_size is None:
-        raise RuntimeError(f'Provided configuration with {num_poses} per solution is too big given your provided max_ik_count of {model_config.max_ik_count}')
-
-    task_idx = 0
     for task_name, task_pose_tensor in model_config.tasks.items():
         print(f'Starting calculations for environment {task_name}: solutions will be saved to {os.path.join(model_config.solution_path, f"{task_name}.pt")}')
-        sol_tensor = torch.empty((task_pose_tensor.size()[0], x_count, y_count, yaw_count), dtype=bool)
-        for task_pose_idx, task_pose in enumerate(task_pose_tensor):
-            task_idx += 1
-            t1 = time.perf_counter()
-            position, quaternion = task_pose.to(model_config.model.device).split([3, 4])
-            task_pose_in_world = cuRoboPose(position, quaternion)
-
-            # Transform the base poses from the flattened task frame to the task frame
-            flattened_task_pose = geometry.flatten_task(task_pose_in_world)
-
-            # Assign transform names for clarity of calculations
-            world_tform_flattened_task = flattened_task_pose
-            world_tform_task = task_pose_in_world
-            task_tform_world: cuRoboTransform = world_tform_task.inverse()
-
-            base_poses_in_world = world_tform_flattened_task.repeat(num_poses).multiply(base_poses_in_flattened_task_frame)
-            base_poses_in_world.position[:,2] = model_config.task_geometry.base_link_elevation
-
-            base_poses_in_task: cuRoboPose = task_tform_world.repeat(num_poses).multiply(base_poses_in_world)
-
-            # Filter out poses which the robot cannot reach even without obstacles
-            valid_pose_indices, solution_states = solve_batched_ik(empty_ik_solver, batch_size, base_poses_in_task)
-            num_valid_poses = torch.sum(valid_pose_indices)
-
-            if model_config.debug:
-                visualize_task(task_pose_in_world, None, base_poses_in_world, valid_pose_indices)
-
-            if num_valid_poses == 0:
-                solution_success = valid_pose_indices
-                t2 = time.perf_counter()
-                print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} ({(t2-t1):.2f} seconds)')
-            else:
-                # Transform the pointcloud from the world frame to the task frame
-                task_R_world = scipy.spatial.transform.Rotation.from_quat(quat=task_tform_world.quaternion.squeeze().cpu().numpy(), scalar_first=True).as_matrix()
-                task_tform_world_mat = np.eye(4)
-                task_tform_world_mat[:3, :3] = task_R_world
-                task_tform_world_mat[:3, 3] = task_tform_world.position.squeeze().cpu().numpy()
-
-                pointcloud_in_world = copy.deepcopy(model_config.pointclouds[task_name])
-                pointcloud_in_task = pointcloud_in_world.transform(task_tform_world_mat)
-                pointcloud_in_task = trim_pointcloud(model_config, pointcloud_in_task)
-
-                # Solve all remaining poses in batches
-                obstacle_aware_ik_solver = load_ik_solver(model_config, pointcloud_in_task)
-                valid_base_poses_in_task = cuRoboPose(base_poses_in_task.position[valid_pose_indices], base_poses_in_task.quaternion[valid_pose_indices])
-                revised_solutions, joint_states = solve_batched_ik(
-                    ik_solver=obstacle_aware_ik_solver, 
-                    batch_size=model_config.max_ik_count,
-                    poses=valid_base_poses_in_task,
-                )
-                t2 = time.perf_counter()
-                print(f'{task_idx}: {num_poses:5d} -> {torch.sum(valid_pose_indices):5d} -> {torch.sum(revised_solutions):5d} ({(t2-t1):.2f} seconds)')
-
-                # Take the solution for the filtered base positions and expand it out to include all base positions
-                solution_states = torch.empty([num_poses, model_config.robot_config.inverted_robot.kinematics.kinematics_config.n_dof])
-                solution_states[valid_pose_indices, :] = joint_states.cpu()
-                solution_success = torch.zeros(num_poses, dtype=bool)
-                solution_success[valid_pose_indices] = revised_solutions.cpu()
-                if model_config.debug:
-                    visualize_solution(solution_success, solution_states, base_poses_in_task, model_config, pointcloud_in_task)
-
-            # y-coordinate varies least frequently, yaw-coordinate varies most
-            sol_tensor[task_pose_idx, :, :, :] = solution_success.view(y_count, x_count, yaw_count)
+        sol_tensor = get_ground_truth_tensor(task_pose_tensor, model_config.pointclouds[task_name], base_poses_in_flattened_task_frame, model_config)
 
         if model_config.solution_path is not None:
             solution_path = os.path.join(model_config.solution_path, f'{task_name}.pt')

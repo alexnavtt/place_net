@@ -28,7 +28,6 @@ def load_base_pose_array(half_x_range: float, half_y_range: float, x_res: int, y
 
     y_grid, x_grid, yaw_grid = torch.meshgrid(y_range, x_range, yaw_range, indexing='ij')
     pose_array = torch.stack([x_grid, y_grid, yaw_grid]).reshape(3, -1).T
-    encoded_pose_array = torch.stack([x_grid, y_grid, torch.sin(yaw_grid), torch.cos(yaw_grid)]).reshape(4, -1).T
 
     x_pos, y_pos, yaw_pos = pose_array.split([1, 1, 1], dim=-1)
 
