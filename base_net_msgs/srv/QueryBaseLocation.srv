@@ -11,6 +11,11 @@ sensor_msgs/PointCloud2 pointcloud
 # The name of the link for which the base poses should be returned
 string base_link
 
+# Whether or not to use ground truth calculations. Keep in mind that
+# the ground truth can take over a minute PER END EFFECTOR POSE to 
+# complete, and is mainly intended for testing and debugging
+bool ground_truth false
+
 ---
 
 ## Response

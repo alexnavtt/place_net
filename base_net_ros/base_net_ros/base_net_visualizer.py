@@ -80,7 +80,8 @@ class BaseNetVisualizer:
         return arrow_marker
 
     def visualize_response(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, frame_id: str) -> None:
-        self.response_optimal_pub.publish(resp.optimal_base_pose)
+        if resp.has_valid_pose:
+            self.response_optimal_pub.publish(resp.optimal_base_pose)
         self.response_valid_pub.publish(resp.valid_poses)
 
         valid_task_pose_array = PoseArray()

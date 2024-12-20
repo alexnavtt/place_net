@@ -91,7 +91,7 @@ Visualization Manager:
           Axes Radius: 0.009999999776482582
           Class: rviz_default_plugins/PoseArray
           Color: 255; 255; 255
-          Enabled: false
+          Enabled: true
           Head Length: 0.07000000029802322
           Head Radius: 0.029999999329447746
           Name: TaskPoses
@@ -105,7 +105,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /base_net_server/query/task_poses
-          Value: false
+          Value: true
       Enabled: true
       Name: Query
     - Class: rviz_common/Group
@@ -123,17 +123,17 @@ Visualization Manager:
             Value: /base_net_server/response/aggregate_pose_scores
           Value: true
         - Alpha: 1
-          Axes Length: 1
-          Axes Radius: 0.10000000149011612
+          Axes Length: 0.30000001192092896
+          Axes Radius: 0.05000000074505806
           Class: rviz_default_plugins/Pose
           Color: 255; 25; 0
           Enabled: true
-          Head Length: 0.30000001192092896
-          Head Radius: 0.10000000149011612
+          Head Length: 0.15000000596046448
+          Head Radius: 0.07000000029802322
           Name: OptimalPose
-          Shaft Length: 1
-          Shaft Radius: 0.05000000074505806
-          Shape: Arrow
+          Shaft Length: 0.5
+          Shaft Radius: 0.029999999329447746
+          Shape: Axes
           Topic:
             Depth: 5
             Durability Policy: Transient Local
@@ -169,7 +169,7 @@ Visualization Manager:
           Axes Radius: 0.009999999776482582
           Class: rviz_default_plugins/PoseArray
           Color: 28; 113; 216
-          Enabled: true
+          Enabled: false
           Head Length: 0.07000000029802322
           Head Radius: 0.03500000014901161
           Name: ReachableTasks
@@ -183,7 +183,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /base_net_server/response/reachable_tasks
-          Value: true
+          Value: false
       Enabled: true
       Name: Response
     - Class: rviz_common/Group
@@ -216,11 +216,11 @@ Visualization Manager:
           Class: rviz_default_plugins/PoseArray
           Color: 145; 65; 172
           Enabled: true
-          Head Length: 0.07000000029802322
-          Head Radius: 0.029999999329447746
+          Head Length: 0.07100000232458115
+          Head Radius: 0.03099999949336052
           Name: ReachablePoses
-          Shaft Length: 0.23000000417232513
-          Shaft Radius: 0.009999999776482582
+          Shaft Length: 0.23100000619888306
+          Shaft Radius: 0.010999999940395355
           Shape: Arrow (3D)
           Topic:
             Depth: 5
@@ -263,7 +263,7 @@ Visualization Manager:
           Max Color: 255; 255; 255
           Max Intensity: 1.6999964714050293
           Min Color: 0; 0; 0
-          Min Intensity: 0.20000599324703217
+          Min Intensity: 0.20024700462818146
           Name: PointsInRange
           Position Transformer: XYZ
           Selectable: true
@@ -283,7 +283,7 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 1.69983971118927
+            Max Value: 1.7000662088394165
             Min Value: 0.20009981095790863
             Value: true
           Axis: Z
@@ -369,25 +369,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/XYOrbit
-      Distance: 13.9451904296875
+      Distance: 5.406737327575684
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.8555717468261719
-        Y: -2.0969760417938232
-        Z: -1.0967254638671875e-05
+        X: 0.8535486459732056
+        Y: 0.751567006111145
+        Z: -1.704692840576172e-05
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9447974562644958
+      Pitch: 0.9197970628738403
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz_default_plugins)
-      Yaw: 4.4154462814331055
+      Yaw: 4.0404462814331055
     Saved: ~
 Window Geometry:
   Displays:
@@ -406,4 +406,4 @@ Window Geometry:
     collapsed: false
   Width: 1850
   X: 70
-  Y: 9
+  Y: 10

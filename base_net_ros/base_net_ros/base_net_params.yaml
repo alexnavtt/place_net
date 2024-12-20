@@ -21,3 +21,15 @@ base_net_ros_params:
     description: The maximum number of task poses to run in parallel as a batch. Reduce if you are running into 'out of memory' problems. Set to zero for unlimited
     validation:
       gt_eq<>: 0
+
+  world_frame:
+    type: string
+    read_only: True
+    default_value: map
+    description: The gravity-aligned world frame on which z=0 indicates the bottom of the robot
+
+  max_ik_count:
+    type: int
+    read_only: True
+    default_value: 0
+    description: Maximum number of IK solutions to calculate in parallel for ground truth calculations

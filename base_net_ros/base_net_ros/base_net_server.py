@@ -2,6 +2,7 @@ import os
 import time
 import math
 import torch
+import open3d
 import numpy as np
 from torch import Tensor
 from threading import Thread
@@ -14,6 +15,7 @@ from tf2_ros import Buffer, TransformListener, LookupException
 from std_msgs.msg import Header
 from geometry_msgs.msg import PoseArray
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
+from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py.point_cloud2 import read_points_numpy, create_cloud_xyz32
 
 from curobo.types.math import Pose as cuRoboPose
@@ -24,7 +26,7 @@ from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net_msgs.srv import QueryBaseLocation, QueryReachablePosesGT
 from base_net.utils import geometry, pose_scorer
-from base_net.scripts.calculate_ground_truth import solve_batched_ik
+from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
 from .base_net_visualizer import BaseNetVisualizer
 from . import base_net_conversions
@@ -68,6 +70,8 @@ class BaseNetServer(Node):
 
         base_path, _ = os.path.split(self.params.checkpoint_path)
         self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
+        if self.params.max_ik_count > 0:
+            self.base_net_config.max_ik_count = self.params.max_ik_count
         self.base_net_model = BaseNet(self.base_net_config)
         self.pose_scorer = pose_scorer.PoseScorer()
 
@@ -113,6 +117,29 @@ class BaseNetServer(Node):
                 model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
 
         return model_output
+    
+    def get_solution_tensor(self, task_poses: Tensor, pointcloud: Tensor, ground_truth: bool) -> Tensor:
+        if ground_truth:
+            # We use the standard base pose array and master grid, instead of directly calculating the 
+            # ground truth values for the master grid. This keeps results consistent between the model
+            # and ground truth calculations
+            base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
+                half_x_range=self.base_net_config.task_geometry.max_radial_reach,
+                half_y_range=self.base_net_config.task_geometry.max_radial_reach,
+                x_res=self.base_net_config.inverse_reachability.solution_resolution['x'],
+                y_res=self.base_net_config.inverse_reachability.solution_resolution['y'],
+                yaw_res=self.base_net_config.inverse_reachability.solution_resolution['yaw'],
+                device=self.base_net_config.model.device
+            )
+
+            # Convert the pointcloud to open3d
+            pointcloud_z = pointcloud[:, 2]
+            pointcloud = pointcloud[(pointcloud_z > self.base_net_config.task_geometry.min_pointcloud_elevation) & (pointcloud_z < self.base_net_config.task_geometry.max_pointcloud_elevation)]
+            pointcloud_o3d = open3d.geometry.PointCloud()
+            pointcloud_o3d.points.extend(pointcloud.cpu().numpy())
+            return get_ground_truth_tensor(task_poses, pointcloud_o3d, base_poses_in_flattened_task_frame, self.base_net_config).to(self.base_net_config.model.device)
+        else:
+            return self.run_model(task_poses, pointcloud)
     
     def create_master_score_grid(self, task_poses: Tensor) -> PoseGrid:
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
@@ -246,32 +273,63 @@ class BaseNetServer(Node):
 
         reachable_mask = valid_poses[valid_batch_indices, y_indices, x_indices, yaw_indices]
         return valid_batch_indices[reachable_mask]
+    
+    def pose_array_to_tensor(self, pose_array: PoseArray, target_frame: str) -> Tensor:
+        """
+        Transform a pose array to a target frame and encode it into a PyTorch Tensor of shape (n, 7)
+        """
+        needs_transform = pose_array.header.frame_id != target_frame
+        if needs_transform: 
+            self.get_logger().info(f'Transforming task frames from {pose_array.header.frame_id} to {target_frame}')
+            poses = [
+                self.tf_buffer.transform(
+                    PoseStamped(pose=pose, header=pose_array.header),
+                    target_frame,
+                    timeout=rclpy.duration.Duration(seconds=1.0)
+                ).pose for pose in pose_array.poses
+            ]
+        else:
+            poses = pose_array.poses
+
+        pose_curobo = base_net_conversions.poses_to_curobo(poses, self.base_net_config.model.device)
+        return torch.cat([pose_curobo.position, pose_curobo.quaternion], dim=1)
+    
+    def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str) -> Tensor:
+        """
+        Encode the xyz fields of a pointcloud into a PyTorch Tensor and transform to a given frame
+        """
+        pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
+        pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
+
+        if target_frame != pointcloud.header.frame_id:
+            self.get_logger().info(f'Transforming pointcloud from {pointcloud.header.frame_id} to {target_frame}')
+            transform = self.tf_buffer.lookup_transform(
+                target_frame=target_frame, 
+                source_frame=pointcloud.header.frame_id,
+                time=rclpy.time.Time.from_msg(pointcloud.header.stamp),
+                timeout=rclpy.duration.Duration(seconds=1.0)
+            ).transform
+            world_tform_pointcloud = base_net_conversions.transform_to_curobo(transform, 'cpu')
+            pointcloud_tensor = world_tform_pointcloud.transform_points(pointcloud_tensor)
+
+        return pointcloud_tensor
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
         self.get_logger().info("Received base location request. Visualizing request now.")
         self.base_net_viz.visualize_query(req)
 
         # Make sure the task poses and pointclouds are represented in the same frame
-        pointcloud_frame: str = req.pointcloud.header.frame_id
-
-        task_poses = torch.zeros((len(req.end_effector_poses.poses), 7))
-        for idx, pose in enumerate(req.end_effector_poses.poses):
-            pose_stamped = PoseStamped(pose=pose, header=req.end_effector_poses.header)
-            transfomed_pose: PoseStamped = self.tf_buffer.transform(pose_stamped, pointcloud_frame, timeout=rclpy.duration.Duration(seconds=1.0))
-            task_poses[idx, :3] = torch.tensor([transfomed_pose.pose.position.x, transfomed_pose.pose.position.y, transfomed_pose.pose.position.z])
-            task_poses[idx, 3:] = torch.tensor([transfomed_pose.pose.orientation.w, transfomed_pose.pose.orientation.x, transfomed_pose.pose.orientation.y, transfomed_pose.pose.orientation.z])
-        task_poses = task_poses.to(self.base_net_config.model.device)
-
-        # Encode the pointcloud into a tensor
-        pointcloud_points = read_points_numpy(req.pointcloud, ['x', 'y', 'z'], skip_nans=True)
-        pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
+        task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
+        pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
 
         # Get the output from the model
         t1 = time.perf_counter()
-        model_output = self.run_model(task_poses, pointcloud_tensor)
+        model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.ground_truth)
+        self.get_logger().info(f"{model_output.shape=}")
         pose_scores = self.pose_scorer.score_pose_array(model_output)
         t2 = time.perf_counter()
-        self.get_logger().info(f'Model forward pass took {t2 - t1:.3f} seconds')
+        title = 'Ground truth' if req.ground_truth else 'Model forward pass' 
+        self.get_logger().info(f'{title} took {t2 - t1:.3f} seconds')
 
         # Create a score tensor which covers all poses
         master_grid = self.create_master_score_grid(task_poses)
@@ -287,15 +345,11 @@ class BaseNetServer(Node):
         t6 = time.perf_counter()
         self.get_logger().info(f'Score grid population took {t6 - t5:.3f} seconds')
 
-        resp.has_valid_pose = torch.any(model_output).item()
+        # The robot is inverted here so ee is actually base_link
+        model_base_link: str = self.base_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
 
-        if resp.has_valid_pose:
-            self.get_logger().info("There is a valid pose")
-
-            # The robot is inverted here so ee is actually base_link
-            model_base_link: str = self.base_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
-
-            # Transform poses to the requested base link frame
+        # Transform poses to the requested base link frame
+        if model_base_link != req.base_link:
             self.get_logger().info(f'Transforming calculated poses from native frame {model_base_link} to requested frame {req.base_link}')
             try:
                 manipulation_tform_base_link_ros = self.tf_buffer.lookup_transform(
@@ -309,13 +363,22 @@ class BaseNetServer(Node):
                 resp.has_valid_pose = False
                 return resp
 
-            manipulation_tform_base_link_ros: cuRoboPose = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
-
+            manipulation_tform_base_link_ros = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
             base_link_poses = master_grid.poses.multiply(manipulation_tform_base_link_ros.repeat(master_grid.poses.batch))
+        else:
+            base_link_poses = master_grid.poses
+
+        # === Populate the response === #
+
+        # Some fields are only populated if there is a valid pose
+        resp.has_valid_pose = torch.any(model_output).item()
+        if resp.has_valid_pose:
+            self.get_logger().info("There is a valid pose")
+
             _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid.scores.unsqueeze(0), already_scored=True)
             best_pose = base_link_poses[best_pose_idx]
 
-            resp.optimal_base_pose.header.frame_id = pointcloud_frame
+            resp.optimal_base_pose.header.frame_id = self.params.world_frame
             resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
             resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
@@ -329,23 +392,25 @@ class BaseNetServer(Node):
                 valid_poses             = model_output
             )
             resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
-
-            valid_pose_mask = master_grid.scores.bool()
-            resp.valid_poses.header = resp.optimal_base_pose.header
-            resp.valid_poses.poses = base_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
-            resp.valid_pose_scores = master_grid.scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
-
-            self.get_logger().info(f'Visualizing final scores')
-            self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, pointcloud_frame)
-            self.get_logger().info(f'Done')
         else:
             self.get_logger().info("There are no valid poses")
+
+        valid_pose_mask = master_grid.scores.bool()
+        resp.valid_poses.header.frame_id = self.params.world_frame
+        resp.valid_poses.poses = base_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
+        resp.valid_pose_scores = master_grid.scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
+
+        # === Visualize the output === #
+
+        self.get_logger().info(f'Visualizing final scores')
+        self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
+        self.get_logger().info(f'Done')
         
-        self.get_logger().info(f'Visualizing model output')
-        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, pointcloud_frame)
+        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
 
         if self.base_net_viz.model_output_pub.get_subscription_count() > 0:
-            model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, pointcloud_frame))
+            self.get_logger().info(f'Visualizing model output')
+            model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
             model_output_thread.start()
 
         self.get_logger().info('Base placement query completed successfully')
