@@ -62,6 +62,7 @@ class Logger:
             'FailedRoll': [],
             'FailedPitch': [],
             'FailedScore': [],
+            'SuccessScore': []
         }
         
     def clear_latest_run_dir(self):
@@ -151,7 +152,10 @@ class Logger:
         self._metrics['FailedElevation'].extend(failed_elevations.cpu())
         self._metrics['FailedPitch'].extend(failed_pitches.cpu())
         self._metrics['FailedRoll'].extend(failed_rolls.cpu())
-        self._metrics['FailedScore'].extend(optimal_scores[batch_failure].flatten().cpu())
+
+        # Determine the scores of the positive cases that we failed
+        self._metrics['FailedScore'].extend(optimal_scores[true_positives & batch_failure].flatten().cpu())
+        self._metrics['SuccessScore'].extend(optimal_scores[true_positives & batch_success].flatten().cpu())
 
     def add_classification_datapoint(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor):
         self.mode = 'Classifier'
@@ -169,8 +173,9 @@ class Logger:
 
         for name, metric in self._metrics.items():
             # Multiply by 100 to convert to percentages
-            if not len(metric): continue
             metric_tensor = 100*torch.tensor(metric, dtype=torch.float)
+            if not len(metric_tensor) or torch.isnan(metric_tensor).any() or torch.isinf(metric_tensor).any():
+                continue
 
             # Record the data in mean and histogram format
             self._writer.add_scalar(f'{prefix}{name}/Avg/{label}', metric_tensor.mean().item(), epoch)        
