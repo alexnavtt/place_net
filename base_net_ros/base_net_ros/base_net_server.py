@@ -518,7 +518,7 @@ class BaseNetServer(Node):
         self.get_logger().info(f'IK solving complete. There were {torch.sum(success, dtype=int)} reachable poses')
 
         resp.success = True
-        resp.valid_task_indices = success.nonzero().squeeze().cpu().int().tolist()
+        resp.valid_task_indices = success.nonzero().flatten().cpu().int().tolist()
 
         # Visualize the response
         self.get_logger().info('Visualizing reachable poses')
