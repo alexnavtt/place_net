@@ -47,7 +47,6 @@ class InverseReachabilityMap:
             reach_radius: float, 
             xyz_resolution: Iterable,
             roll_pitch_yaw_resolution: Iterable, 
-            solution_file: str | None = None, 
             device: str | torch.device = 'cuda:0'):
         self.num_x, self.num_y, self.num_z = xyz_resolution
         self.num_roll, self.num_pitch, self.num_yaw = roll_pitch_yaw_resolution
@@ -58,18 +57,8 @@ class InverseReachabilityMap:
 
         self.task_grid = None
         self.base_poses = geometry.load_base_pose_array(self.reach_radius, self.reach_radius, self.num_x, self.num_y, self.num_yaw, device)
-
-        if solution_file is not None:
-            self.solutions: Tensor = torch.load(solution_file, map_location='cpu')
-            if not isinstance(self.solutions, Tensor):
-                raise RuntimeError(f'[InverseReachabilityMap]: Object loaded from {solution_file} is not a Tensor!')
-            if not all(np.array(self.solutions.size()[1:]) == np.array([self.num_x, self.num_y, self.num_yaw])):
-                raise RuntimeError(f'[InverseReachabilityMap]: Size of loaded solution tensor is {self.solutions.size()} but the configured size is {[self.num_x, self.num_y, self.num_yaw]}')
-            self.solved = True
-            print(f'Loaded inverse reachability solutions of shape {self.solutions.size()} from {solution_file}')
-        else:
-            self.solutions: Tensor = torch.zeros((self.num_z*self.num_pitch*self.num_roll, self.num_x, self.num_y, self.num_yaw), dtype=bool)
-            self.solved = False
+        self.solutions: Tensor = torch.zeros((self.num_z*self.num_pitch*self.num_roll, self.num_x, self.num_y, self.num_yaw), dtype=bool)
+        self.solved = False
 
     def __iter__(self):
         self._iter_idx = 0
@@ -139,7 +128,35 @@ class InverseReachabilityMap:
         torch.set_printoptions(profile='default')
 
     def save(self, filename) -> None:
-        torch.save(self.solutions, filename)
+        torch.save(
+            {
+                'solution': self.solutions,
+                'min_elevation': self.min_z,
+                'max_elevation': self.max_z,
+                'reach_radius': self.reach_radius,
+                'xyz_resolution': [self.num_x, self.num_y, self.num_z],
+                'roll_pitch_yaw_resolution': [self.num_roll, self.num_pitch, self.num_yaw]
+            },
+            filename
+        )
+
+    @staticmethod
+    def load(filename):
+        saved_state = torch.load(filename, map_location='cpu', weights_only=True)
+        
+        if not isinstance(saved_state['solution'], Tensor):
+            raise RuntimeError(f'[InverseReachabilityMap]: Object loaded from {filename} is not a Tensor!')
+
+        irm = InverseReachabilityMap(
+            saved_state['min_elevation'],
+            saved_state['max_elevation'],
+            saved_state['reach_radius'],
+            saved_state['xyz_resolution'],
+            saved_state['roll_pitch_yaw_resolution']
+        )
+        irm.solved = True
+        irm.solutions = saved_state['solution']
+        return irm
 
     def to_flat_idx(self, grid_idx: Tensor) -> Tensor:
         """
