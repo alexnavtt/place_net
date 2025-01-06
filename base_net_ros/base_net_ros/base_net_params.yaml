@@ -2,9 +2,14 @@ base_net_ros_params:
   checkpoint_path:
     type: string
     read_only: True
+    default_value: ""
     description: Absolute path to the model checkpoint to load
-    validation: 
-      not_empty<>: null
+
+  inverse_reachability_map_path:
+    type: string
+    read_only: True
+    default_value: ""
+    description: Absolute path to the inverse reachability map to load
 
   device:
     type: int

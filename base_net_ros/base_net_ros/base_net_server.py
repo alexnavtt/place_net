@@ -25,7 +25,7 @@ from curobo.geom.types import WorldConfig, Mesh
 from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
 from base_net_msgs.srv import QueryBaseLocation, QueryReachablePosesGT
-from base_net.utils import geometry, pose_scorer
+from base_net.utils import geometry, pose_scorer, inverse_reachability_map
 from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
 from .base_net_visualizer import BaseNetVisualizer
@@ -68,11 +68,23 @@ class BaseNetServer(Node):
         param_listener = base_net_ros_params.ParamListener(self)
         self.params = param_listener.get_params()
 
-        base_path, _ = os.path.split(self.params.checkpoint_path)
-        self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
-        if self.params.max_ik_count > 0:
-            self.base_net_config.max_ik_count = self.params.max_ik_count
-        self.base_net_model = BaseNet(self.base_net_config)
+        # Load the model if a checkpoint path is provided
+        if self.params.checkpoint_path:
+            base_path, _ = os.path.split(self.params.checkpoint_path)
+            self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
+            if self.params.max_ik_count > 0:
+                self.base_net_config.max_ik_count = self.params.max_ik_count
+            self.base_net_model = BaseNet(self.base_net_config)
+        else:
+            self.base_net_model = None
+
+        # Load the inverse reachability map if a checkpoint path is provided
+        if self.params.inverse_reachability_map_path:
+            self.irm = inverse_reachability_map.InverseReachabilityMap.load(self.params.inverse_reachability_map_path)
+            self.get_logger().info(f'Loaded inverse reachability solutions of shape {self.irm.solutions.size()} from {self.params.inverse_reachability_map_path}')
+        else:
+            self.irm = None
+
         self.pose_scorer = pose_scorer.PoseScorer()
 
         checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device)
@@ -118,8 +130,8 @@ class BaseNetServer(Node):
 
         return model_output
     
-    def get_solution_tensor(self, task_poses: Tensor, pointcloud: Tensor, ground_truth: bool) -> Tensor:
-        if ground_truth:
+    def get_solution_tensor(self, task_poses: Tensor, pointcloud: Tensor, mode: str) -> Tensor:
+        if mode == 'ground_truth':
             # We use the standard base pose array and master grid, instead of directly calculating the 
             # ground truth values for the master grid. This keeps results consistent between the model
             # and ground truth calculations
@@ -138,8 +150,21 @@ class BaseNetServer(Node):
             pointcloud_o3d = open3d.geometry.PointCloud()
             pointcloud_o3d.points.extend(pointcloud.cpu().numpy())
             return get_ground_truth_tensor(task_poses, pointcloud_o3d, base_poses_in_flattened_task_frame, self.base_net_config).to(self.base_net_config.model.device)
-        else:
+            
+        elif mode == 'model':
+            if self.base_net_model is None:
+                raise RuntimeError('Received base_net model query but no model has been loaded!')
             return self.run_model(task_poses, pointcloud)
+            
+        elif mode == 'irm':
+            if self.irm is None:
+                raise RuntimeError('Received an inverse reachability map query but no IRM has been loaded!')
+            if pointcloud.numel() > 0:
+                self.get_logger().warn('A pointcloud was passed to an IRM base pose query. Collision avoidance for IRM queries is not supported')
+            return self.irm.query_pose(task_poses.cpu()).to(self.base_net_config.model.device)
+
+        else:
+            raise RuntimeError(f'Unable to process base placement request for mode {mode}, options are ["model", "ground_truth", "irm"]')
     
     def create_master_score_grid(self, task_poses: Tensor) -> PoseGrid:
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
@@ -324,12 +349,15 @@ class BaseNetServer(Node):
 
         # Get the output from the model
         t1 = time.perf_counter()
-        model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.ground_truth)
-        self.get_logger().info(f"{model_output.shape=}")
-        pose_scores = self.pose_scorer.score_pose_array(model_output)
+        try:
+            model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
+            pose_scores = self.pose_scorer.score_pose_array(model_output)
+        except RuntimeError as e:
+            self.get_logger().error(str(e))
+            resp.success = False
+            return resp
         t2 = time.perf_counter()
-        title = 'Ground truth' if req.ground_truth else 'Model forward pass' 
-        self.get_logger().info(f'{title} took {t2 - t1:.3f} seconds')
+        self.get_logger().info(f'Request using {req.mode} took {t2 - t1:.3f} seconds')
 
         # Create a score tensor which covers all poses
         master_grid = self.create_master_score_grid(task_poses)
