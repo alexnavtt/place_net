@@ -85,9 +85,9 @@ class BaseNetServer(Node):
         else:
             self.irm = None
 
-        self.pose_scorer = pose_scorer.PoseScorer()
+        self.pose_scorer = pose_scorer.PoseScorer(max_angular_window=torch.pi)
 
-        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device)
+        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device, weights_only=True)
         self.base_net_model.load_state_dict(checkpoint_config['base_net_model'])
         self.base_net_model.eval()
 
@@ -323,6 +323,11 @@ class BaseNetServer(Node):
         """
         Encode the xyz fields of a pointcloud into a PyTorch Tensor and transform to a given frame
         """
+
+        # Handle the case of an empty pointcloud
+        if pointcloud.width == 0:
+            return torch.tensor([], device=self.base_net_config.model.device)
+
         pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
         pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
 
