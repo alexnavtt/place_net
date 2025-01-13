@@ -31,6 +31,7 @@ class BaseNetVisualizer:
         self.response_optimal_pub          = ros_node.create_publisher(PoseStamped, '~/response/optimal_pose'         , latching_qos)
         self.response_valid_pub            = ros_node.create_publisher(PoseArray  , '~/response/valid_poses'          , latching_qos)
         self.response_scores_pub           = ros_node.create_publisher(MarkerArray, '~/response/pose_scores'          , latching_qos)
+        self.response_unreachable_task_pub = ros_node.create_publisher(PoseArray  , '~/response/unreachable_tasks'    , latching_qos)
         self.response_reachable_task_pub   = ros_node.create_publisher(PoseArray  , '~/response/reachable_tasks'      , latching_qos)
         self.response_aggregate_scores_pub = ros_node.create_publisher(MarkerArray, '~/response/aggregate_pose_scores', latching_qos)
 
@@ -88,6 +89,11 @@ class BaseNetVisualizer:
         valid_task_pose_array.header = req.end_effector_poses.header
         valid_task_pose_array.poses = [req.end_effector_poses.poses[idx] for idx in resp.valid_task_indices]
         self.response_reachable_task_pub.publish(valid_task_pose_array)
+
+        unreachable_task_pose_array = PoseArray()
+        unreachable_task_pose_array.header = req.end_effector_poses.header
+        unreachable_task_pose_array.poses = [req.end_effector_poses.poses[idx] for idx in resp.unreachable_task_indices]
+        self.response_unreachable_task_pub.publish(unreachable_task_pose_array)
 
         final_grid_marker = MarkerArray()
 

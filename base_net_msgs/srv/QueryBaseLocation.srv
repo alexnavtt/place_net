@@ -35,6 +35,9 @@ geometry_msgs/PoseStamped optimal_base_pose
 # Indices of the task poses which can be reached from the optimal base pose
 int64[] valid_task_indices
 
+# Indices of the task poses which could not be reached from any base pose
+int64[] unreachable_task_indices
+
 # The score of the optimal pose in the range [0, 1]
 float32 optimal_score
 
