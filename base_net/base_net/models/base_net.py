@@ -32,9 +32,12 @@ class BaseNet(torch.nn.Module):
 
         # Define a simple linear layer to process this data before deconvolution
         self.linear_upscale = torch.nn.Sequential(
+            torch.nn.Dropout(p=0.5),
+
             torch.nn.Linear(in_features=2*self.feature_size, out_features=4096),
             torch.nn.BatchNorm1d(num_features=4096),
             torch.nn.ReLU(),
+            torch.nn.Dropout(p=0.5),
 
             torch.nn.Linear(in_features=4096, out_features=num_deconvolution_features),
             torch.nn.BatchNorm1d(num_features=num_deconvolution_features),

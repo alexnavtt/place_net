@@ -50,6 +50,9 @@ class BaseNetModelConfig:
     # Each subsequent layer will have half the channels as the last
     channel_count: int = 256
 
+    # Dropout probability for the MLP portion of the model between encoding and deconvolution
+    mlp_dropout: float = 0.0
+
     # Dropout probability for 3D deconvolution
     convolution_dropout: float = 0.0
 
@@ -134,7 +137,7 @@ class BaseNetModelConfig:
                 raise ValueError(f'Unrecognized loss function type passed: {model_settings["loss_function"]}')
             
         # Convenience function to make floating point numbers less than 1 look nice
-        stringify = lambda num: f'{num:.10f}'.rstrip('0').lstrip('0').lstrip('.')
+        stringify = lambda num: str(int(100*num))
 
         # Determine the name of the model path based on the hyperparameters
         batch_size = model_settings.get('batch_size', 1)
@@ -142,6 +145,7 @@ class BaseNetModelConfig:
         learning_rate = model_settings.get('learning_rate', 0.001)
         feature_size = model_settings.get('feature_size', 1024)
         channel_count = model_settings.get('channel_count', 256)
+        mlp_dropout = model_settings.get('mlp_dropout', 0.0)
         convolution_dropout = model_settings.get('convolution_dropout', 0.0)
         external_classifier = model_settings.get('external_classifier', False)
         downsample_fraction = model_settings.get('downsample_fraction', 0.0)
@@ -149,11 +153,13 @@ class BaseNetModelConfig:
         
         model_name = loss_fn_label
         model_name += '_b' + str(batch_size)
-        model_name += '_lr' + stringify(learning_rate)
+        model_name += '_lr' + f'{learning_rate:.10f}'.rstrip('0').lstrip('0').lstrip('.')
         model_name += '_f' + str(feature_size)
         model_name += '_c' + str(channel_count)
         if convolution_dropout > 0.0:
-            model_name += '_d' + str(int(100*convolution_dropout))
+            model_name += '_cd' + stringify(convolution_dropout)
+        if mlp_dropout > 0.0:
+            model_name += '_md' + stringify(mlp_dropout)
         if downsample_fraction > 0.0:
             model_name += '_ds' + stringify(downsample_fraction)
         if pointcloud_noise_stddev > 0.0:
