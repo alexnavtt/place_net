@@ -85,9 +85,9 @@ class BaseNetServer(Node):
         else:
             self.irm = None
 
-        self.pose_scorer = pose_scorer.PoseScorer()
+        self.pose_scorer = pose_scorer.PoseScorer(max_angular_window=torch.pi)
 
-        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device)
+        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device, weights_only=True)
         self.base_net_model.load_state_dict(checkpoint_config['base_net_model'])
         self.base_net_model.eval()
 
@@ -131,6 +131,20 @@ class BaseNetServer(Node):
         return model_output
     
     def get_solution_tensor(self, task_poses: Tensor, pointcloud: Tensor, mode: str) -> Tensor:
+        """ Given a set of task poses, determine the binary map of reachable and not reachable base locations
+
+        Args:
+            task_poses [Tensor (n, 7)] : The set of task poses to try to reach defined in a gravity aligned frame
+            pointcloud [Tensor (m, 3)] : A set of points to consider as obstacles. Ignore in IRM mode
+            mode [str]: The method to use in determining the set of base locations.\nOptions are:
+                        'model' - Use BaseNet to determine base locations\n
+                        'ground_truth' - Use cuRobo to perform a collision aware inverse reachability calculation\n
+                        'irm' - Use a precomuted inverse reachability map. This method requires that the 
+                                'inverse_reachability_map_path' ROS parameter be set with a valid IRM file
+        Returns:
+            [Tensor (n, nx, ny, ntheta)] Map of binary reachability values on a 3D SE2 pose grid
+        """
+
         if mode == 'ground_truth':
             # We use the standard base pose array and master grid, instead of directly calculating the 
             # ground truth values for the master grid. This keeps results consistent between the model
@@ -323,6 +337,11 @@ class BaseNetServer(Node):
         """
         Encode the xyz fields of a pointcloud into a PyTorch Tensor and transform to a given frame
         """
+
+        # Handle the case of an empty pointcloud
+        if pointcloud.width == 0:
+            return torch.tensor([], device=self.base_net_config.model.device)
+
         pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
         pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
 
@@ -344,8 +363,13 @@ class BaseNetServer(Node):
         self.base_net_viz.visualize_query(req)
 
         # Make sure the task poses and pointclouds are represented in the same frame
-        task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
-        pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
+        try:
+            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
+        except Exception as e:
+            self.get_logger().error(f'Caught error in base location callback: {e}')
+            resp.success = False
+            return resp
 
         # Get the output from the model
         t1 = time.perf_counter()
@@ -422,6 +446,11 @@ class BaseNetServer(Node):
             resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
         else:
             self.get_logger().info("There are no valid poses")
+
+        # Report which task poses had no reachable base poses at all
+        invalid_layer_mask = torch.logical_not(torch.any(model_output.flatten(start_dim=1), dim=1))
+        invalid_layer_indices = torch.arange(0, len(req.end_effector_poses.poses), device=invalid_layer_mask.device)[invalid_layer_mask].int()
+        resp.unreachable_task_indices = invalid_layer_indices.flatten().cpu().tolist()
 
         valid_pose_mask = master_grid.scores.bool()
         resp.valid_poses.header.frame_id = self.params.world_frame
