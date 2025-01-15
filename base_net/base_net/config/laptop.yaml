@@ -54,14 +54,14 @@ task_geometry:
   max_pointcloud_radius: 2.0
 
 task_generation:
-  visualize: True
+  visualize: False
   surface_points: 
     offset: 0.15
     min_clearance: 0.0
-    count: 334
+    density: 5
   offset_points:
-    - {name: 'close', offset_bounds: [0.15, 0.30], count: 333} 
-    - {name: 'far'  , offset_bounds: [0.40, 0.90], count: 333} 
+    - {name: 'close', offset_bounds: [0.15, 0.30], density: 5} 
+    - {name: 'far'  , offset_bounds: [0.40, 0.90], density: 5} 
   pointcloud_regions:
     living_room_small:
       - {min_bound: [-2.52, -1.95, 0.20], max_bound: [2.41, 4.01, 2.0]}

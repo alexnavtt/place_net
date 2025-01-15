@@ -31,6 +31,9 @@ class PointcloudRegion():
             if len(region.get_point_indices_within_bounding_box(open3d.utility.Vector3dVector(point))):
                 return True
         return False
+    
+    def volume(self) -> float:
+        return np.array([region.volume() for region in self._regions]).sum()
 
     @property
     def pointcloud(self) -> np.ndarray:

@@ -102,7 +102,6 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
     quaternion_tensor = torch.empty([0, 4])
 
     points_sampled = 0
-    max_attempt_count = 100 * sample_config['count']
     attempt_count = 0
 
     pointcloud = regions.pointcloud
@@ -120,7 +119,9 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
     ee_spheres = get_end_effector_spheres(model_config.robot_config).cpu().numpy()
     kd_tree = open3d.geometry.KDTreeFlann(geometry=regions._pointcloud)
 
-    while points_sampled < sample_config['count'] and attempt_count < max_attempt_count:
+    sample_quota = int(sample_config['density'] * regions.volume())
+    max_attempt_count = 100 * sample_quota
+    while points_sampled < sample_quota and attempt_count < max_attempt_count:
         attempt_count += 1
 
         # Randomly sample a point within the pointcloud bounds
@@ -163,10 +164,10 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
         quaternion_tensor = torch.concatenate([quaternion_tensor, torch.tensor(quat).unsqueeze(0)], dim=0)
         points_sampled += 1
 
-    if points_sampled != sample_config['count']:
-        print(f"WARNING: Out of the {sample_config['count']} {sample_config['name']} points requested to be sampled, we could only find {points_sampled}")
+    if points_sampled != sample_quota:
+        print(f"WARNING: Out of the {sample_quota} {sample_config['name']} points requested to be sampled, we could only find {points_sampled}")
 
-    print(f'{name} [{sample_config["name"]}]: {points_sampled}/{sample_config["count"]}')
+    print(f'  [{sample_config["name"]}]: {points_sampled}/{sample_quota}')
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
 def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: BaseNetConfig) -> Tensor:
@@ -194,9 +195,11 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Bas
 
     # List all points as available to sample
     available_point_labels = np.ones(len(pointcloud.points), dtype=bool)
+    sample_quota = int(model_config.task_generation.surface_point_density * regions.volume())
+
     points_sampled = 0
-    with tqdm(total=model_config.task_generation.surface_point_count) as pbar:
-        while points_sampled < model_config.task_generation.surface_point_count and any(available_point_labels):
+    with tqdm(total=sample_quota) as pbar:
+        while points_sampled < sample_quota and any(available_point_labels):
             available_point_indices = np.nonzero(available_point_labels)[0]
             
             # Sample a point
@@ -256,7 +259,7 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Bas
             points_sampled += 1
             pbar.update(1)
 
-    print(f'{name} [Surface]: {points_sampled}/{model_config.task_generation.surface_point_count}')
+    print(f'  [Surface]: {points_sampled}/{sample_quota}')
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
 def main():
@@ -265,7 +268,9 @@ def main():
     task_config = model_config.task_generation
 
     # If we are checking collisions then we need to sample based on the pointcloud geometry
+    total_samples = 0
     for pointcloud_name, original_pointcloud in model_config.pointclouds.items():
+        print(f'Generating poses for {pointcloud_name}:')
         regions = model_config.task_generation.regions[pointcloud_name]
 
         sampled_poses_list = [sample_surface_poses(pointcloud_name, regions, model_config)]
@@ -273,6 +278,7 @@ def main():
             sampled_poses_list += [sample_distant_poses(pointcloud_name, regions, model_config, offset_sample_config)]
 
         sample_poses: Tensor = torch.concatenate(sampled_poses_list, dim=0)
+        total_samples += sample_poses.size(0)
 
         if model_config.task_path is not None:
             filename = os.path.join(model_config.task_path, f'{pointcloud_name}_task.pt')
@@ -283,6 +289,8 @@ def main():
     
         if model_config.task_generation.visualize:
             visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.robot_config, regions)
+
+    print(f'Sampled a total of {total_samples} task poses')
 
 if __name__ == "__main__":
     main()

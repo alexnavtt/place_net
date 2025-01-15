@@ -258,11 +258,15 @@ class TaskGenerationConfig:
     # The minimum clearance for a surface point to be considered valid
     surface_point_clearance: float = 0.0
 
-    # The number of surface points to sample
-    surface_point_count: int = 0
+    # The density at which to sample surface points, in samples/m^3
+    surface_point_density: float | None = None
 
     # A list of ranges from the environment at which to sample random poses
-    # Each entry has fields 'name', 'offset_bounds', 'count'
+    # Each entry has fields 'name', 'offset_bounds', 'density'
+    #  - name : The name of the corresponding pointcloud file (minus the extension)
+    #  - offset_bounds: The minimum and maximum distance from any obstacle to surface
+    #  - density: The number of samples to take per cubic meter for uniform sampling
+    #             across differently sized pointcloud environments
     offset_points: list[dict] | None = None
 
     # The regions in which to sample poses
@@ -278,14 +282,21 @@ class TaskGenerationConfig:
         if 'surface_points' in config:
             surface_point_offset = config['surface_points']['offset']
             surface_point_clearance = config['surface_points'].get('min_clearance', 0.0)
-            surface_point_count = config['surface_points']['count']
+            surface_point_density = config['surface_points']['density']
         else:
-            surface_point_offset = surface_point_clearance = surface_point_count = None
+            surface_point_offset = surface_point_clearance = surface_point_density = None
 
         pointcloud_regions = {pointcloud_name: PointcloudRegion(pointcloud) for pointcloud_name, pointcloud in pointclouds.items()}
         for pointcloud_name, region in pointcloud_regions.items():
-            if pointcloud_name not in config['pointcloud_regions']: continue
+            # If no region is specified, make one region that encompasses the entire pointcloud
+            if pointcloud_name not in config['pointcloud_regions']:
+                bounding_box = open3d.geometry.AxisAlignedBoundingBox.create_from_points(pointclouds[pointcloud_name].points)
+                bounding_box.min_bound = bounding_box.get_min_bound() - yaml_config['task_geometry']['max_radial_reach']
+                bounding_box.max_bound = bounding_box.get_max_bound() + yaml_config['task_geometry']['max_radial_reach']
+                region.add_region(bounding_box.get_center(), bounding_box.get_extent(), 0)
+                continue
 
+            # Otherwise read from the config file
             region_configs = config['pointcloud_regions'][pointcloud_name]
             for region_config in region_configs:
                 if 'min_bound' in region_config and 'max_bound' in region_config:
@@ -300,7 +311,7 @@ class TaskGenerationConfig:
             visualize=config.get('visualize', False),
             surface_point_offset=surface_point_offset,
             surface_point_clearance=surface_point_clearance,
-            surface_point_count=surface_point_count,
+            surface_point_density=surface_point_density,
             offset_points=config.get('offset_points', None),
             regions=pointcloud_regions
         )
