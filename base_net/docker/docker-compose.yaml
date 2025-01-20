@@ -25,34 +25,30 @@ services:
         BUILD_TARGET: $BUILD_TARGET
         CUDA_VERSION: $TARGET_CUDA_VERSION
 
-  generate_task_poses:
+  base_net_runtime:
     extends: base_net
-    container_name: base_net_task_pose_generation
     volumes:
       - ${PWD}/..:/base_net
-    entrypoint: docker/entrypoints/generate_task_poses.sh
     environment:
       - SPOT_URDF_EXTRAS
       - BASE_NET_CONFIG
+
+  generate_task_poses:
+    extends: base_net_runtime
+    container_name: base_net_task_pose_generation
+    entrypoint: docker/entrypoints/generate_task_poses.sh
 
   calculate_ground_truth:
-    extends: base_net
+    extends: base_net_runtime
     container_name: base_net_ground_truth_calculation
-    volumes:
-      - ${PWD}/..:/base_net
     entrypoint: docker/entrypoints/calculate_ground_truth.sh
-    environment:
-      - SPOT_URDF_EXTRAS
-      - BASE_NET_CONFIG
 
   train_model:
-    extends: base_net
+    extends: base_net_runtime
     container_name: base_net_training
-    volumes:
-      - ${PWD}/..:/base_net
     entrypoint: docker/entrypoints/train_model.sh
-    environment:
-      - SPOT_URDF_EXTRAS
-      - BASE_NET_CONFIG
 
-  
+  generate_irm:
+    extends: base_net_runtime
+    container_name: base_net_inverse_reachability_map_generation
+    entrypoint: docker/entrypoints/generate_irm.sh
