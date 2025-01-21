@@ -86,9 +86,6 @@ class PointNetEncoder(torch.nn.Module):
         batch_size, num_points, point_dim = pointclouds.size()
         assert point_dim==self.num_channels, "Points must be structured as xyz or normal-xyz tuples"
 
-        if num_points == 0:
-            return torch.zeros((batch_size, self.feature_size), device=pointclouds.device, requires_grad=False)
-
         # pointclouds is size (batch_size, num_points, 6)
         pointclouds = pointclouds.permute((0, 2, 1))
         # pointclouds is size (batch_size, 6, num_points)
@@ -153,6 +150,20 @@ class PointNetEncoder(torch.nn.Module):
         valid_indices = torch.logical_and(indices_in_range, non_padded_indices)
         filtered_pointclouds = [pointcloud_tensor[idx, valid_points] for idx, valid_points in enumerate(valid_indices)]
         filtered_pointclouds_tensor, padding_mask = pad_pointclouds_to_same_size(filtered_pointclouds, self.num_channels, task_position.device)
+
+        # If there are no points in the pointcloud, place a fake point which is masked as invalid
+        batch_size, num_points, point_dim = filtered_pointclouds_tensor.size()
+        if num_points == 0:
+            filtered_pointclouds_tensor = torch.empty((batch_size, 1, point_dim), device=task_position.device)
+            padding_mask = torch.zeros((batch_size, 1), dtype=torch.bool, device=task_position.device)
+
+        # If any pointclouds contain only invalid points, place a single valid point far from the task pose 
+        fake_point_offset = 0.717*geometry_config.max_pointcloud_radius
+        fake_point_elevation = 0.5*(geometry_config.max_pointcloud_elevation + geometry_config.min_pointcloud_elevation)
+
+        invalid_batches = torch.logical_not(padding_mask.any(dim=1))
+        filtered_pointclouds_tensor[invalid_batches, 0] = torch.tensor([fake_point_offset, fake_point_offset, fake_point_elevation], device=task_position.device)
+        padding_mask[invalid_batches, 0] = True
 
         return filtered_pointclouds_tensor.to(task_position.device), padding_mask
     
