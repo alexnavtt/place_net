@@ -353,7 +353,7 @@ class BaseNetServer(Node):
                 time=rclpy.time.Time.from_msg(pointcloud.header.stamp),
                 timeout=rclpy.duration.Duration(seconds=1.0)
             ).transform
-            world_tform_pointcloud = base_net_conversions.transform_to_curobo(transform, 'cpu')
+            world_tform_pointcloud = base_net_conversions.transform_to_curobo(transform, self.base_net_config.model.device)
             pointcloud_tensor = world_tform_pointcloud.transform_points(pointcloud_tensor)
 
         return pointcloud_tensor
@@ -377,7 +377,7 @@ class BaseNetServer(Node):
             model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
             pose_scores = self.pose_scorer.score_pose_array(model_output)
         except RuntimeError as e:
-            self.get_logger().error(str(e))
+            self.get_logger().error(f'Caught error calculating solution: {e}')
             resp.success = False
             return resp
         t2 = time.perf_counter()
