@@ -115,7 +115,7 @@ model_settings:
 
   # Hyperparameters
   feature_size: 1024
-  channel_count: 512
+  channel_count: 256
   data_split: [80, 20, 0]
   num_epochs: 2000
   batch_size: 16
@@ -130,8 +130,8 @@ model_settings:
   focal_loss: {'pos_weight': 5.0}
   
   # System parameters
-  cuda_device: 0
-  log_base_path: 'base_net/data/runs/v0.7.2/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.7.2/'
+  cuda_device: 2
+  log_base_path: 'base_net/data/runs/v0.8.0/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.8.0/'
   checkpoint_frequency: 200
 
