@@ -40,6 +40,10 @@ unused_joint_defaults:
   rear_right_hip_y  :  0.8197641372680664
   rear_right_knee   : -1.55510675907135
   arm0_fingers      : -0.010957598686218262
+  body_height_joint : 0.52
+  body_yaw_joint    : 0.0
+  body_pitch_joint  : 0.0
+  body_roll_joint   : 0.0
   
 task_geometry:
   base_link_elevation: 0.709
