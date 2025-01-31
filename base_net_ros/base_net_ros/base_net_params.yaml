@@ -38,3 +38,9 @@ base_net_ros_params:
     read_only: True
     default_value: 0
     description: Maximum number of IK solutions to calculate in parallel for ground truth calculations
+
+  visualize:
+    type: bool
+    read_only: True
+    default_value: True
+    description: Whether or not to publish visualization topics, which can take some time to process

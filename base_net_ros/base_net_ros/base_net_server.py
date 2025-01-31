@@ -359,8 +359,11 @@ class BaseNetServer(Node):
         return pointcloud_tensor
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
-        self.get_logger().info("Received base location request. Visualizing request now.")
-        self.base_net_viz.visualize_query(req)
+        self.get_logger().info(f"Received base location request with {len(req.end_effector_poses.poses)} task poses")
+        
+        if self.params.visualize:
+            self.get_logger().info("Visualizing request now.")
+            self.base_net_viz.visualize_query(req)
 
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
@@ -459,16 +462,17 @@ class BaseNetServer(Node):
 
         # === Visualize the output === #
 
-        self.get_logger().info(f'Visualizing final scores')
-        self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
-        self.get_logger().info(f'Done')
-        
-        self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
+        if self.params.visualize:
+            self.get_logger().info(f'Visualizing final scores')
+            self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
+            self.get_logger().info(f'Done')
+            
+            self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
 
-        if self.base_net_viz.model_output_pub.get_subscription_count() > 0:
-            self.get_logger().info(f'Visualizing model output')
-            model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
-            model_output_thread.start()
+            if self.base_net_viz.model_output_pub.get_subscription_count() > 0:
+                self.get_logger().info(f'Visualizing model output')
+                model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
+                model_output_thread.start()
 
         self.get_logger().info('Base placement query completed successfully')
         return resp
