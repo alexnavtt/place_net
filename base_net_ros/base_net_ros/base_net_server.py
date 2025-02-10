@@ -24,7 +24,7 @@ from curobo.wrap.reacher.ik_solver import IKSolverConfig, IKSolver
 from curobo.geom.types import WorldConfig, Mesh
 from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
-from base_net_msgs.srv import QueryBaseLocation, QueryReachablePosesGT
+from base_net_msgs.srv import QueryBaseLocation, QueryReachablePoses, QueryReachablePosesGT
 from base_net.utils import geometry, pose_scorer, inverse_reachability_map
 from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
@@ -104,7 +104,8 @@ class BaseNetServer(Node):
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
-        self.reachable_pose_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses_gt', self.reachable_poses_callback)
+        self.reachable_pose_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses', self.reachable_poses_callback)
+        self.reachable_pose_gt_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses_gt', self.reachable_poses_gt_callback)
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
@@ -268,10 +269,10 @@ class BaseNetServer(Node):
         """ Given the optimal pose, determine which task poses can be reached by the robot
         
         Args:
-            - optimal_pose_in_world: The chosen base pose for the robot. Shape (1)
-            - task_poses_in_world: The task poses for which we have calculated reachability. Shape (B, 7)
-            - reference_poses_in_task: The array of sample poses reachability was calculated for, defined in the flattened task frame. Shape (ny*nx*ntheta)
-            - valid_poses: The boolean model output indicating which poses can be reached. Shape (B, ny, nx, ntheta) 
+            - optimal_pose_in_world : The chosen base pose for the robot. Shape (1)
+            - task_poses_in_world : The task poses for which we have calculated reachability. Shape (B, 7)
+            - reference_poses_in_task : The array of sample poses reachability was calculated for, defined in the flattened task frame. Shape (ny*nx*ntheta)
+            - valid_poses : The boolean model output indicating which poses can be reached. Shape (B, ny, nx, ntheta) 
         Returns:
             - A tensor of indices of the tasks that are reachable from the optimal pose
         """
@@ -477,7 +478,7 @@ class BaseNetServer(Node):
         self.get_logger().info('Base placement query completed successfully')
         return resp
     
-    def reachable_poses_callback(self, req: QueryReachablePosesGT.Request, resp: QueryReachablePosesGT.Response) -> QueryReachablePosesGT.Response:
+    def reachable_poses_gt_callback(self, req: QueryReachablePosesGT.Request, resp: QueryReachablePosesGT.Response) -> QueryReachablePosesGT.Response:
         self.get_logger().info('Got a ReachabilityQuery using the Ground Truth method ------------------------ ')
         
         # Get the required transforms for the pointcloud and for the task poses
@@ -588,6 +589,70 @@ class BaseNetServer(Node):
         self.base_net_viz.ground_truth_valid_pub.publish(reachable_poses)
 
         self.get_logger().info('Ground truth reachability query completed successfully')
+        return resp
+    
+    def reachable_poses_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:
+        self.get_logger().info(f"Received reachability request with {len(req.end_effector_poses.poses)} task poses")
+        
+        if self.params.visualize:
+            self.get_logger().info("Visualizing request now.")
+            self.base_net_viz.visualize_query(req)
+
+        # Get the required transforms for the pointcloud and for the task poses
+        world_frame: str = self.params.world_frame
+        ref_frame:   str = req.link_pose.header.frame_id
+        robot_link:  str = req.link_frame
+        model_base:  str = self.base_net_config.robot_config.robot.kinematics.kinematics_config.base_link
+        try:
+            world_tform_ref_stamped = self.tf_buffer.lookup_transform(
+                world_frame,
+                ref_frame,
+                rclpy.time.Time(seconds=0),
+                rclpy.duration.Duration(seconds=0.5)
+            )
+            robot_link_tform_model_base_stamped = self.tf_buffer.lookup_transform(
+                robot_link,
+                model_base,
+                rclpy.time.Time(seconds=0),
+                rclpy.duration.Duration(seconds=0.5)
+            )
+        except LookupException as e:
+            self.get_logger().error(f'Cannot complete ReachablePoses query as one of the necessary transforms cannot be found: {e}')
+            resp.success = False
+            return resp
+        
+        # Given the supplied base link, determine the pose of the model base link in the world frame
+        world_tform_ref = base_net_conversions.transform_to_curobo(world_tform_ref_stamped.transform, self.base_net_config.model.device)
+        ref_tform_robot_link = base_net_conversions.pose_to_curobo(req.link_pose.pose, self.base_net_config.model.device)
+        robot_link_tform_model_base = base_net_conversions.transform_to_curobo(robot_link_tform_model_base_stamped.transform, self.base_net_config.model.device)
+        world_tform_model_base = world_tform_ref.multiply(ref_tform_robot_link).multiply(robot_link_tform_model_base)
+            
+        # Make sure the task poses and pointclouds are represented in the same frame
+        try:
+            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
+        except Exception as e:
+            self.get_logger().error(f'Caught error in reachability callback: {e}')
+            resp.success = False
+            return resp
+
+        # Get the output from the model
+        t1 = time.perf_counter()
+        try:
+            model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, "model")
+        except RuntimeError as e:
+            self.get_logger().error(f'Caught error calculating solution: {e}')
+            resp.success = False
+            return resp
+        t2 = time.perf_counter()
+        self.get_logger().info(f'Request using model took {t2 - t1:.3f} seconds')
+
+        # Determine which task poses are reachable from the supplied pose
+        reachable_pose_indices = self.get_reachable_pose_indices(world_tform_model_base, task_poses, self.base_poses_in_flattened_task_frame, model_output)
+        resp.success = True
+        resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
+
+        self.get_logger().info(f'There are {len(resp.valid_task_indices)} valid poses')
         return resp
 
 def main():
