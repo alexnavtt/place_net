@@ -104,7 +104,7 @@ class BaseNetServer(Node):
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
-        self.reachable_pose_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses', self.reachable_poses_callback)
+        self.reachable_pose_server = self.create_service(QueryReachablePoses, '~/query_reachable_poses', self.reachable_poses_callback)
         self.reachable_pose_gt_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses_gt', self.reachable_poses_gt_callback)
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
