@@ -389,7 +389,8 @@ class BaseNetServer(Node):
             resp.success = False
             return resp
         t2 = time.perf_counter()
-        self.get_logger().info(f'Request using {req.mode} took {t2 - t1:.3f} seconds')
+        model_run_time = t2 - t1
+        self.get_logger().info(f'Request using {req.mode} took {model_run_time:.3f} seconds')
 
         # Create a score tensor which covers all poses
         master_grid = self.create_master_score_grid(task_poses)
@@ -398,12 +399,13 @@ class BaseNetServer(Node):
         master_grid.translate((task_pose_max + task_pose_min)/2)
 
         # Place all solutions into a master grid
-        t5 = time.perf_counter()
+        t3 = time.perf_counter()
         self.populate_master_score_grid(master_grid, task_poses, pose_scores)
         relative_scores = master_grid.scores / master_grid.scores.max()
         master_grid.scores /= task_poses.size(0)
-        t6 = time.perf_counter()
-        self.get_logger().info(f'Score grid population took {t6 - t5:.3f} seconds')
+        t4 = time.perf_counter()
+        master_grid_time = t4 - t3
+        self.get_logger().info(f'Score grid population took {master_grid_time:.3f} seconds')
 
         # The robot is inverted here so ee is actually base_link
         model_base_link: str = self.base_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
@@ -435,9 +437,13 @@ class BaseNetServer(Node):
         if resp.has_valid_pose:
             self.get_logger().info("There is a valid pose")
 
+            t5 = time.perf_counter()
             _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid.scores.unsqueeze(0), already_scored=True)
-            best_pose = base_link_poses[best_pose_idx]
+            t6 = time.perf_counter()
+            best_pose_time = t6 - t5
+            resp.query_time = model_run_time + master_grid_time + best_pose_time
 
+            best_pose = base_link_poses[best_pose_idx]
             resp.optimal_base_pose.header.frame_id = self.params.world_frame
             resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
             resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
@@ -453,6 +459,7 @@ class BaseNetServer(Node):
             )
             resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
         else:
+            resp.query_time = model_run_time + master_grid_time
             self.get_logger().info("There are no valid poses")
 
         # Report which task poses had no reachable base poses at all

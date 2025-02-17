@@ -49,3 +49,6 @@ geometry_msgs/PoseArray valid_poses
 
 # Scores for each valid pose in order
 float32[] valid_pose_scores
+
+# The time taken for the query to complete
+float64 query_time
