@@ -334,7 +334,7 @@ class BaseNetServer(Node):
         pose_curobo = base_net_conversions.poses_to_curobo(poses, self.base_net_config.model.device)
         return torch.cat([pose_curobo.position, pose_curobo.quaternion], dim=1)
     
-    def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str) -> Tensor:
+    def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str, filter_std_dev: float = 0.0) -> Tensor:
         """
         Encode the xyz fields of a pointcloud into a PyTorch Tensor and transform to a given frame
         """
@@ -344,6 +344,10 @@ class BaseNetServer(Node):
             return torch.tensor([], device=self.base_net_config.model.device)
 
         pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
+        if filter_std_dev > 0.0:
+            pointcloud_open3d = open3d.geometry.PointCloud(points=pointcloud_points)
+            pointcloud_open3d = pointcloud_open3d.remove_statistical_outlier(nb_neighbors=10, std_ratio=filter_std_dev)
+            pointcloud_points = np.asarray(pointcloud_open3d.points)
         pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
 
         if target_frame != pointcloud.header.frame_id:
@@ -369,7 +373,7 @@ class BaseNetServer(Node):
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
             task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
-            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in base location callback: {e}')
             resp.success = False
@@ -630,7 +634,7 @@ class BaseNetServer(Node):
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
             task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
-            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame)
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in reachability callback: {e}')
             resp.success = False
