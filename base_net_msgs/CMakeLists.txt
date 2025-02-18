@@ -10,7 +10,6 @@ rosidl_generate_interfaces(
     ${PROJECT_NAME}
         "srv/QueryBaseLocation.srv"
         "srv/QueryReachablePoses.srv"
-        "srv/QueryReachablePosesGT.srv"
     DEPENDENCIES 
         geometry_msgs 
         sensor_msgs

@@ -24,7 +24,7 @@ from curobo.wrap.reacher.ik_solver import IKSolverConfig, IKSolver
 from curobo.geom.types import WorldConfig, Mesh
 from base_net.models.base_net import BaseNet
 from base_net.utils.base_net_config import BaseNetConfig
-from base_net_msgs.srv import QueryBaseLocation, QueryReachablePoses, QueryReachablePosesGT
+from base_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
 from base_net.utils import geometry, pose_scorer, inverse_reachability_map
 from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
@@ -105,7 +105,6 @@ class BaseNetServer(Node):
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
         self.reachable_pose_server = self.create_service(QueryReachablePoses, '~/query_reachable_poses', self.reachable_poses_callback)
-        self.reachable_pose_gt_server = self.create_service(QueryReachablePosesGT, '~/query_reachable_poses_gt', self.reachable_poses_gt_callback)
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
@@ -489,7 +488,7 @@ class BaseNetServer(Node):
         self.get_logger().info('Base placement query completed successfully')
         return resp
     
-    def reachable_poses_gt_callback(self, req: QueryReachablePosesGT.Request, resp: QueryReachablePosesGT.Response) -> QueryReachablePosesGT.Response:
+    def reachable_poses_gt_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:
         self.get_logger().info('Got a ReachabilityQuery using the Ground Truth method ------------------------ ')
         
         # Get the required transforms for the pointcloud and for the task poses
@@ -609,6 +608,13 @@ class BaseNetServer(Node):
             self.get_logger().info("Visualizing request now.")
             self.base_net_viz.visualize_query(req)
 
+        if req.mode == "ground_truth":
+            return self.reachable_poses_gt_callback(req, resp)
+        elif req.mode not in ["model", "irm"]:
+            self.get_logger().error(f'Invalid mode "{req.mode}" for reachability query. Options are ["model", "irm", "ground_truth"]')
+            resp.success = False
+            return resp
+
         # Get the required transforms for the pointcloud and for the task poses
         world_frame: str = self.params.world_frame
         ref_frame:   str = req.link_pose.header.frame_id
@@ -650,7 +656,7 @@ class BaseNetServer(Node):
         # Get the output from the model
         t1 = time.perf_counter()
         try:
-            model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, "model")
+            model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
         except RuntimeError as e:
             self.get_logger().error(f'Caught error calculating solution: {e}')
             resp.success = False

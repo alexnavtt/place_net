@@ -1,8 +1,9 @@
-# QueryReachablePosesGT.srv
+# QueryReachablePoses.srv
 
 # Given a robot base pose, an environment pointcloud, and a set of
 # end effector poses, determine which end effectors poses can be 
-# reached from that base pose using the BaseNet model
+# reached from that base pose using one of the BaseNet model, the
+# inverse reachability map, or direct IK calculations
 
 ## Request
 
@@ -19,6 +20,16 @@ float32 filter_std_dev 0.0
 # This link should be statically attached to the model base link
 string link_frame
 geometry_msgs/PoseStamped link_pose
+
+## IK Solver Params for the ground truth method
+float64 rotation_threshold 0.01
+float64 position_threshold 0.001
+int64 num_seeds 10
+bool check_self_collision true
+
+# The mode for ground truth calculations.
+# Options are [model, irm, ground_truth]
+string mode "model" 
 
 ---
 
