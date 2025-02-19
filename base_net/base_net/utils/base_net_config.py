@@ -150,6 +150,7 @@ class BaseNetModelConfig:
         external_classifier = model_settings.get('external_classifier', False)
         downsample_fraction = model_settings.get('downsample_fraction', 0.0)
         pointcloud_noise_stddev=model_settings.get('pointcloud_noise_stddev', 0.0)
+        tag = model_settings.get('tag', None)
         
         model_name = loss_fn_label
         model_name += '_b' + str(batch_size)
@@ -168,6 +169,8 @@ class BaseNetModelConfig:
             model_name += '_nn'
         if external_classifier: 
             model_name += '_pos'
+        if tag is not None:
+            model_name += f'_{tag}'
 
         log_base_path = model_settings.get('log_base_path', None)
         if log_base_path is not None:
