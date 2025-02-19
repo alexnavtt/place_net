@@ -41,6 +41,7 @@ class BaseNetDataset():
         split_tensor /= torch.sum(split_tensor)
 
         # Map out random indices for each pointcloud based on the data split
+        torch.seed(0)
         if mapped_indices is None:
             self.mapped_indices = {'training': {}, 'validation': {}, 'testing': {}}
             for pointcloud_name in model_config.tasks.keys():
