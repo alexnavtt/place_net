@@ -63,7 +63,7 @@ def main():
     
     base_net_model = BaseNet(base_net_config)
     optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
-    logger = Logger(base_net_config, checkpoint_path)
+    logger = Logger(base_net_config, checkpoint_path, bool(args.test))
 
     if args.checkpoint is not None:
         with warnings.catch_warnings():

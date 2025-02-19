@@ -17,10 +17,10 @@ from base_net.utils import task_visualization, geometry, pose_scorer
 
 
 class Logger:
-    def __init__(self, model_config: BaseNetConfig, existing_checkpoint_path: str = None):
+    def __init__(self, model_config: BaseNetConfig, existing_checkpoint_path: str = None, test: bool = False):
         # We log if paths are provided and we are not debugging
         self._log = model_config.model.log_base_path is not None and not model_config.debug
-        self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug
+        self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug and not test
         self._model_config = model_config
         self._scorer = pose_scorer.PoseScorer()
 
@@ -30,6 +30,9 @@ class Logger:
 
         # For differentiating between BaseNet and Classifier loss
         self.mode = 'BaseNet'
+
+        if existing_checkpoint_path is None and test:
+            raise RuntimeError("No checkpoint provided for a test run")
         
         if self._log:
             if existing_checkpoint_path is None:
