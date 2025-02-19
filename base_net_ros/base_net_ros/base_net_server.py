@@ -363,7 +363,8 @@ class BaseNetServer(Node):
         return pointcloud_tensor
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
-        self.get_logger().info(f"Received base location request with {len(req.end_effector_poses.poses)} task poses")
+        self.get_logger().info(' ')
+        self.get_logger().info(f'[BaseLocationQuery]: Determining base pose to reach {len(req.end_effector_poses.poses)} task poses')
         
         if self.params.visualize:
             self.get_logger().info("Visualizing request now.")
@@ -488,9 +489,7 @@ class BaseNetServer(Node):
         self.get_logger().info('Base placement query completed successfully')
         return resp
     
-    def reachable_poses_gt_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:
-        self.get_logger().info('Got a ReachabilityQuery using the Ground Truth method ------------------------ ')
-        
+    def reachable_poses_gt_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:        
         # Get the required transforms for the pointcloud and for the task poses
         task_frame: str = req.link_pose.header.frame_id
         model_base: str = self.base_net_config.robot_config.robot.kinematics.kinematics_config.base_link
@@ -598,11 +597,12 @@ class BaseNetServer(Node):
         reachable_poses.poses = [req.end_effector_poses.poses[idx] for idx in resp.valid_task_indices]
         self.base_net_viz.ground_truth_valid_pub.publish(reachable_poses)
 
-        self.get_logger().info('Ground truth reachability query completed successfully')
+        self.get_logger().info(f'Ground truth reachability query completed successfully with {len(resp.valid_task_indices)} poses')
         return resp
     
     def reachable_poses_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:
-        self.get_logger().info(f"Received reachability request with {len(req.end_effector_poses.poses)} task poses")
+        self.get_logger().info(' ')
+        self.get_logger().info(f'[ReachabilityQuery]: Determine which of {len(req.end_effector_poses.poses)} task poses can be reached')
         
         if self.params.visualize:
             self.get_logger().info("Visualizing request now.")
@@ -669,7 +669,7 @@ class BaseNetServer(Node):
         resp.success = True
         resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
 
-        self.get_logger().info(f'There are {len(resp.valid_task_indices)} valid poses')
+        self.get_logger().info(f'We can reach {len(resp.valid_task_indices)}/{len(req.end_effector_poses.poses)} task poses')
         return resp
 
 def main():
