@@ -19,13 +19,6 @@ class BaseNet(torch.nn.Module):
         self.pointcloud_encoder = self.config.encoder_type(use_normals=self.config.use_normals, feature_size=self.feature_size)
         self.pose_encoder = PoseEncoder(feature_size=self.feature_size)
 
-        # Define a cross-attention layer between the pose embedding and the pointcloud embedding
-        self.attention_layer = torch.nn.MultiheadAttention(
-            num_heads=1,
-            embed_dim=self.feature_size,
-            batch_first=True,
-        )
-
         self.num_channels = self.config.channel_count
         width, bredth, height = 4, 4, 4
         num_deconvolution_features = self.num_channels * width * bredth * height
@@ -144,20 +137,10 @@ class BaseNet(torch.nn.Module):
         # Encode the points into a feature vector
         task_embedding: Tensor = self.pose_encoder(task_encoding)
         pointcloud_embeddings: Tensor = self.pointcloud_encoder(pointcloud_tensor, padding_mask)
-
-        # Attend the pose data to the pointcloud data
-        output, weights = self.attention_layer(
-            query=task_embedding.unsqueeze(1),
-            key=pointcloud_embeddings.unsqueeze(1),
-            value=pointcloud_embeddings.unsqueeze(1)
-        )
-
-        weighted_pointcloud = torch.bmm(weights, pointcloud_embeddings.unsqueeze(1)).squeeze(1)
-        combined_vector = torch.concatenate([weighted_pointcloud, task_embedding], dim=-1)
-
-        final_vector: Tensor = self.linear_upscale(combined_vector)
+        combined_vector = torch.concatenate([pointcloud_embeddings, task_embedding], dim=-1)
 
         # Scale up to final 20x20x20 grid
+        final_vector: Tensor = self.linear_upscale(combined_vector)
         first_3d_layer = final_vector.view([-1, self.num_channels, 4, 4, 4])
         final_3d_grid = self.deconvolution(first_3d_layer)
 
