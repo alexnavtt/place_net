@@ -8,6 +8,9 @@ geometry_msgs/PoseArray end_effector_poses
 # The pointcloud representation of the collision environment. 
 sensor_msgs/PointCloud2 pointcloud
 
+# Filter std deviation for the pointcloud. If 0, no filtering is done
+float32 filter_std_dev 0.0
+
 # The name of the link for which the base poses should be returned
 string base_link
 
@@ -46,3 +49,6 @@ geometry_msgs/PoseArray valid_poses
 
 # Scores for each valid pose in order
 float32[] valid_pose_scores
+
+# The time taken for the query to complete
+float64 query_time
