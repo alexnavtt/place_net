@@ -442,6 +442,7 @@ class BaseNetServer(Node):
             t6 = time.perf_counter()
             best_pose_time = t6 - t5
             resp.query_time = model_run_time + master_grid_time + best_pose_time
+            resp.optimal_base_pose_index = best_pose_idx.item()
 
             best_pose = base_link_poses[best_pose_idx]
             resp.optimal_base_pose.header.frame_id = self.params.world_frame

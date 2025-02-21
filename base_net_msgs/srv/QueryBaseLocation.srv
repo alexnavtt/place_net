@@ -32,6 +32,9 @@ bool success
 # Whether or not there was at least one valid pose
 bool has_valid_pose
 
+# The index of the optimal base pose in the base poses array
+int64 optimal_base_pose_index
+
 # The base pose with the optimal positioning
 geometry_msgs/PoseStamped optimal_base_pose
 
