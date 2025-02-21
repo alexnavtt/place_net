@@ -72,7 +72,7 @@ def are_spheres_in_collision(
         
     return False
 
-def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: Tensor, close_poses: Tensor, far_poses: Tensor, robot_config: BaseNetRobotConfig, regions: PointcloudRegion) -> None:
+def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, sampled_poses: tuple[Tensor], robot_config: BaseNetRobotConfig, regions: PointcloudRegion) -> None:
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
@@ -83,12 +83,10 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, surface_poses: 
     # Get the end effector collision spheres to make sure samples poses are valid
     ee_spheres = get_end_effector_spheres(robot_config).cpu().numpy()
 
-    geometries = geometries + task_visualization.get_task_arrows(surface_poses, suffix='_surface')
-    geometries = geometries + task_visualization.get_task_arrows(close_poses, suffix='_close')
-    geometries = geometries + task_visualization.get_task_arrows(far_poses, suffix='_far')
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, surface_poses, color=[1.0, 0.5, 0.0], label='surface_poses')
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, close_poses, color=[1.0, 0.0, 0.5], label='close_poses')
-    geometries = geometries + task_visualization.get_spheres(ee_spheres, far_poses, color=[0.0, 1.0, 0.5], label='far_poses')
+    for idx, sample_pose_set in enumerate(sampled_poses):
+        geometries = geometries + task_visualization.get_task_arrows(sample_pose_set, suffix=f'_{idx}')
+        color = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 1.0, 0.0)][idx % 4]  # Cycle through red, green, blue, yellow
+        geometries = geometries + task_visualization.get_spheres(ee_spheres, sample_pose_set, color=color, label=f'sample_poses_{idx}')
     geometries += task_visualization.get_regions(regions)
 
     open3d.visualization.draw(geometry=geometries)
@@ -288,7 +286,7 @@ def main():
             print("No output path provided, generated poses have not been saved")
     
         if model_config.task_generation.visualize:
-            visualize_task_poses(original_pointcloud, *sampled_poses_list, model_config.robot_config, regions)
+            visualize_task_poses(original_pointcloud, sampled_poses_list, model_config.robot_config, regions)
 
     print(f'Sampled a total of {total_samples} task poses')
 
