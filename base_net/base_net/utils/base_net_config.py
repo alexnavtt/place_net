@@ -455,7 +455,8 @@ class BaseNetConfig:
 
         pointcloud_o3d = open3d.io.read_point_cloud(filepath)
         if not pointcloud_o3d.has_normals():
-            raise RuntimeError(f"Cannot load pointcloud from file \"{filepath}\" - it does not contain normals")
+            print(f"WARNING: Pointcloud \"{name}\" does not contain normals. Estimating normals...")
+            pointcloud_o3d.estimate_normals()
         
         pointcloud_o3d.translate([0, 0, -pointcloud_config.get('elevation', 0.0)])
         pointcloud_o3d = pointcloud_o3d.crop(height_filter)
