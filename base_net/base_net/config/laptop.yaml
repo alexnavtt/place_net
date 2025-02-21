@@ -1,4 +1,5 @@
 pointclouds:
+  # outside: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
   living_room_small: {elevation: 0.1}
   attic-draft: {}
   URSA_sample_valves: {elevation: -1.0}
@@ -52,6 +53,14 @@ task_geometry:
   min_pointcloud_elevation: 0.2
   max_pointcloud_elevation: 1.7
   max_pointcloud_radius: 2.0
+
+# task_generation:
+#   visualize: True
+#   offset_points:
+#     - {name: 'all', offset_bounds: [0.0, 2.0], density: 0.4596} 
+#   pointcloud_regions:
+#     outside:
+#       - {min_bound: [-14.0, -15.0, 0.0], max_bound: [18.0, 19.0, 2.0]}
 
 task_generation:
   visualize: False
