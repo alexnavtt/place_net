@@ -124,7 +124,7 @@ class PointNetEncoder(torch.nn.Module):
         transformation = transformation + self.tnet_identity_matrix.repeat((batch_size, 1))
         return transformation.view((batch_size, 64, 64))
     
-    def preprocess_inputs(self, pointclouds: list[torch.Tensor], task_rotation: torch.Tensor, task_position: torch.Tensor, geometry_config) -> torch.Tensor:
+    def preprocess_inputs(self, pointclouds: list[torch.Tensor], world_rot_flattened_task: torch.Tensor, task_position: torch.Tensor, geometry_config) -> torch.Tensor:
         # Step 1: Pad the pointclouds to have to the same length as the longest pointcloud so we can do Tensor math
         pointcloud_tensor, non_padded_indices = pad_pointclouds_to_same_size(pointclouds, self.num_channels, task_position.device)
 
@@ -136,12 +136,11 @@ class PointNetEncoder(torch.nn.Module):
             pointcloud_xy, pointcloud_z = pointcloud_tensor.split([2, 1], dim=-1)
         valid_elevations = ((pointcloud_z < geometry_config.max_pointcloud_elevation) & (pointcloud_z > geometry_config.min_pointcloud_elevation)).squeeze()
 
-        # Step 3: Transform the pointclouds to the task invariant frame
-        # TODO: Reorder these steps so that matrix multiplication happens after distance filtering
+        # Step 3: Transform the pointclouds to the task invariant frame (note that the transform is implicitly inverted through post-multiplication)
         pointcloud_xy -= task_xy
-        torch.matmul(pointcloud_xy, task_rotation, out=pointcloud_xy)
+        torch.matmul(pointcloud_xy, world_rot_flattened_task, out=pointcloud_xy)
         if self.use_normals:
-            torch.matmul(pointcloud_normals_xy, task_rotation, out=pointcloud_normals_xy)
+            torch.matmul(pointcloud_normals_xy, world_rot_flattened_task, out=pointcloud_normals_xy)
 
         # Step 4: Filter out all points too far from the task pose and pad these again
         distances_from_task = torch.norm(pointcloud_xy, dim=-1)

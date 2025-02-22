@@ -27,7 +27,7 @@ class PoseEncoder(torch.nn.Module):
         Input:
             poses - Tensor of shape (batch_size, 7) described as [x, y, z, qw, qx, qy, qz]
         Output: 
-            transform - Tensor of shape (batch_size, 4, 4) which can be used to transform 
+            transform - Tensor of shape (batch_size, 2, 2) which can be used to transform 
                         other geometric quantities from the global frame to the pose task
                         invariant frame
             adjusted_pose - Tensor of shape (batch_size, 3) representing a the z, pitch, roll 
@@ -46,11 +46,11 @@ class PoseEncoder(torch.nn.Module):
 
         cos_yaw = torch.cos(yaw_angles)
         sin_yaw = torch.sin(yaw_angles)
-        task_rot_world = torch.zeros((batch_size, 2, 2), device=poses.device, requires_grad=False)
-        task_rot_world[:, 0, 0] = cos_yaw
-        task_rot_world[:, 0, 1] = -sin_yaw
-        task_rot_world[:, 1, 0] = sin_yaw
-        task_rot_world[:, 1, 1] = cos_yaw
+        world_rot_flattened_task = torch.zeros((batch_size, 2, 2), device=poses.device, requires_grad=False)
+        world_rot_flattened_task[:, 0, 0] = cos_yaw
+        world_rot_flattened_task[:, 0, 1] = -sin_yaw
+        world_rot_flattened_task[:, 1, 0] = sin_yaw
+        world_rot_flattened_task[:, 1, 1] = cos_yaw
 
         adjusted_pose = geometry.encode_tasks(poses)
         z, pitch, roll = adjusted_pose.split([1, 1, 1], dim=1)
@@ -58,7 +58,7 @@ class PoseEncoder(torch.nn.Module):
         elevation_range_0_to_1 = (z - min_height)/(max_height - min_height)
         elevation_range_neg_1_to_1 = 2 * elevation_range_0_to_1 - 1
         task_encoding = torch.cat([elevation_range_neg_1_to_1, pitch/(torch.pi/2), torch.sin(roll), torch.cos(roll)], dim=1)
-        return task_rot_world, adjusted_pose, task_encoding
+        return world_rot_flattened_task, adjusted_pose, task_encoding
 
     def forward(self, encoded_poses: Tensor) -> Tensor:
         return self.task_embedding(encoded_poses)

@@ -120,7 +120,7 @@ class BaseNet(torch.nn.Module):
         with torch.no_grad():
             # Embed the task poses and get the transforms needed for the pointclouds
             tasks = tasks.to(self.config.device)
-            task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
+            world_rot_flattened_task, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
 
             # Downsample the pointclouds during training
             if self.training and self.config.downsample_fraction > 0.0:
@@ -128,7 +128,7 @@ class BaseNet(torch.nn.Module):
 
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
-            pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, task_rotation, tasks[:, :3], self.task_geometry)
+            pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, world_rot_flattened_task, tasks[:, :3], self.task_geometry)
 
             # Add noise to pointcloud during training
             if self.training and self.config.pointcloud_noise_stddev > 0.0:
