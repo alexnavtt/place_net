@@ -138,7 +138,8 @@ class PointNetEncoder(torch.nn.Module):
 
         # Step 3: Transform the pointclouds to the task invariant frame (note that the transform is implicitly inverted through post-multiplication)
         pointcloud_xy -= task_xy
-        torch.matmul(pointcloud_xy, world_rot_flattened_task, out=pointcloud_xy)
+        pc_xy_rot = torch.bmm(pointcloud_xy, world_rot_flattened_task)
+        pointcloud_xy[...] = pc_xy_rot
         if self.use_normals:
             torch.matmul(pointcloud_normals_xy, world_rot_flattened_task, out=pointcloud_normals_xy)
 
