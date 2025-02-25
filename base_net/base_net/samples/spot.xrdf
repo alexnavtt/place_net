@@ -1,0 +1,128 @@
+format: xrdf
+format_version: 1.0
+
+modifiers:
+  - set_base_frame: "arm0_base_link"
+
+default_joint_positions:
+  arm0_shoulder_yaw : 0.0
+  arm0_shoulder_pitch : 0.0
+  arm0_elbow_pitch : 0.0
+  arm0_elbow_roll : 0.0
+  arm0_wrist_pitch : 0.0
+  arm0_wrist_roll : 0.0
+  arm0_fingers : 0.0
+
+cspace:
+  joint_names:
+    - "body_height_joint"
+    - "body_pitch_joint"
+    - "body_yaw_joint"
+    - "body_roll_joint"
+
+    - "front_left_hip_x"
+    - "front_right_hip_x"
+    - "rear_left_hip_x"
+    - "rear_right_hip_x"
+    - "front_left_hip_y"
+    - "front_right_hip_y"
+    - "rear_left_hip_y"
+    - "rear_right_hip_y"
+    - "front_left_knee"
+    - "front_right_knee"
+    - "rear_left_knee"
+    - "rear_right_knee"
+
+    - "arm0_shoulder_yaw"
+    - "arm0_shoulder_pitch"
+    - "arm0_elbow_pitch"
+    - "arm0_elbow_roll"
+    - "arm0_wrist_pitch"
+    - "arm0_wrist_roll"
+    - "arm0_fingers"
+  acceleration_limits: [15.0, 15.0, 15.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
+  jerk_limits: [500.0, 500.0, 500.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
+
+tool_frames: ["arm0_hand"]
+
+collision:
+  geometry: "spot_collision_spheres"
+  buffer_distance:
+    arm0_shoulder_yaw: 0.05
+    arm0_shoulder_pitch: 0.05
+    arm0_elbow_pitch: 0.05
+    arm0_elbow_roll: 0.025
+    arm0_wrist_pitch: 0.005
+    arm0_wrist_roll: 0.005
+    velodyne: 0.05
+    body: 0.10 # Body has larger requirements due to BD collision avoidance
+
+self_collision:
+  geometry: "spot_collision_spheres"
+  ignore:
+    "arm0_base_link"     : ["arm0_shoulder_yaw"]
+    "arm0_shoulder_yaw"  : ["arm0_shoulder_pitch"]
+    "arm0_shoulder_pitch": ["arm0_elbow_pitch"]
+    "arm0_elbow_pitch"   : ["arm0_elbow_roll"]
+    "arm0_elbow_roll"    : ["arm0_wrist_pitch", "arm0_wrist_roll"]
+    "arm0_wrist_pitch"   : ["arm0_wrist_roll"]
+    "body"               : ["velodyne", "arm0_base_link", "arm0_shoulder_yaw"]
+  buffer_distance:
+    arm0_shoulder_yaw: 0.004
+    arm0_shoulder_pitch: 0.004
+    arm0_elbow_pitch: 0.004
+    arm0_elbow_roll: 0.004
+    arm0_wrist_pitch: 0.004
+    arm0_wrist_roll: 0.004
+
+geometry:
+  spot_collision_spheres: 
+    spheres:
+      arm0_shoulder_yaw:
+        - {center: [-0.01, -0.05, 0.0], radius: 0.07}
+        - {center: [-0.01, 0.05, 0.0] , radius: 0.07}
+      arm0_shoulder_pitch: 
+        - {center: [0.1, 0.0, 0.0] , radius: 0.05}
+        - {center: [0.05, 0.0, 0.0], radius: 0.05}
+        - {center: [0.15, 0.0, 0.0], radius: 0.05}
+        - {center: [0.2, 0.0, 0.0] , radius: 0.05}
+        - {center: [0.25, 0.0, 0.0], radius: 0.05}
+        - {center: [0.3, 0.0, 0.0] , radius: 0.05}
+      arm0_elbow_pitch: 
+        - {center: [0.0, 0.0, 0.0]  , radius: 0.05}
+        - {center: [0.05, 0.0, 0.05], radius: 0.07}
+        - {center: [0.1, 0.0, 0.08] , radius: 0.05}
+      arm0_elbow_roll: 
+        - {center: [-0.25, 0.0, 0.0], radius: 0.05}
+        - {center: [-0.2, 0.0, 0.0] , radius: 0.05}
+        - {center: [-0.15, 0.0, 0.0], radius: 0.05}
+        - {center: [-0.1, 0.0, 0.0] , radius: 0.05}
+        - {center: [-0.05, 0.0, 0.0], radius: 0.05}
+      arm0_wrist_pitch: 
+        - {center: [0.012, -0.009, 0.003], radius: 0.0597}
+        - {center: [0.0, -0.05, 0.0]     , radius: 0.05}
+      arm0_wrist_roll: 
+        - {center: [0.1, 0.0, 0.0] , radius: 0.07}
+        - {center: [0.15, 0.0, -0.01], radius: 0.06}
+        - {center: [0.20, 0.0, -0.025], radius: 0.045}
+      body:
+        - {center: [ 0.30,  0.10, -0.06], radius: 0.2}
+        - {center: [ 0.30, -0.10, -0.06], radius: 0.2}
+        - {center: [ 0.10,  0.10, -0.06], radius: 0.2}
+        - {center: [ 0.10, -0.10, -0.06], radius: 0.2}
+        - {center: [-0.10,  0.10, -0.06], radius: 0.2}
+        - {center: [-0.10, -0.10, -0.06], radius: 0.2}
+        - {center: [-0.30,  0.10, -0.06], radius: 0.2}
+        - {center: [-0.30, -0.10, -0.06], radius: 0.2}
+        - {center: [ 0.30,  0.10, -0.38], radius: 0.2}
+        - {center: [ 0.30, -0.10, -0.38], radius: 0.2}
+        - {center: [ 0.10,  0.10, -0.38], radius: 0.2}
+        - {center: [ 0.10, -0.10, -0.38], radius: 0.2}
+        - {center: [-0.10,  0.10, -0.38], radius: 0.2}
+        - {center: [-0.10, -0.10, -0.38], radius: 0.2}
+        - {center: [-0.30,  0.10, -0.38], radius: 0.2}
+        - {center: [-0.30, -0.10, -0.38], radius: 0.2}
+        - {center: [-0.46, -0.18, -0.21], radius: 0.1}
+        - {center: [-0.46,  0.18, -0.21], radius: 0.1}
+      velodyne:
+        - {center: [0, 0, 0], radius: 0.1}
