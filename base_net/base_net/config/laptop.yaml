@@ -1,21 +1,22 @@
 pointclouds:
   # outside: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
+  wooden_chair: {}
   living_room_small: {elevation: 0.1}
   attic-draft: {}
   URSA_sample_valves: {elevation: -1.0}
   geometry_env: {}
   office: {}
+  kitchen: {elevation: 0.15}
   nrg_map: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
   hallways: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
   apartment: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
-  kitchen: {elevation: 0.15}
 
 pointcloud_data_path: "base_net/data/pointclouds/"
 task_data_path: "base_net/data/tasks/"
 solution_data_path: "base_net/data/solutions/"
 fake_solutions: False
 max_ik_count: 500
-debug: True
+debug: False
 
 curobo_config_file:
   ros_package: spot_curobo_config
@@ -117,21 +118,21 @@ inverse_reachability_map:
 model_settings:
   # Configuration params
   pointcloud_encoder: 'PointNet'
-  loss_function: 'Tversky' # BCE, Dice, Focal, Tversky
+  loss_function: 'Focal' # BCE, Dice, Focal, Tversky
   use_normals: False
   external_classifier: False
-  downsample_fraction: 0.9
-  pointcloud_noise_stddev: 0.01
+  downsample_fraction: 0.5
+  pointcloud_noise_stddev: 0.04
 
   # Hyperparameters
   feature_size: 1024
   channel_count: 256
   data_split: [60, 20, 20]
   num_epochs: 2000
-  batch_size: 2
-  learning_rate: 0.0005
-  patience: 20
-  convolution_dropout: 0.0
+  batch_size: 4
+  learning_rate: 0.001
+  patience: 50
+  convolution_dropout: 0.3
 
   # Loss-function specific hyperparameters
   tversky_loss: {'alpha': 0.8, 'beta': 0.2}
@@ -140,6 +141,7 @@ model_settings:
   
   # System parameters
   cuda_device: 0
-  log_base_path: 'base_net/data/runs/v0.7.1/'
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.7.1/'
-  checkpoint_frequency: 100
+  log_base_path: 'base_net/data/runs/v0.9.0/'
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.9.0/'
+  tag: laptop
+  checkpoint_frequency: 200
