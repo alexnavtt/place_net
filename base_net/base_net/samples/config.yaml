@@ -1,0 +1,170 @@
+# Directory containing all your pointcloud files
+pointcloud_data_path: "base_net/data/pointclouds/"
+
+# Directory in which task poses are saved to during task generation, and from which tasks are loaded during ground truth calculations and training
+task_data_path: "base_net/data/tasks/"
+
+# Directory in which solution files are saved during ground truth caluclations, and from which solutions are loaded during training
+solution_data_path: "base_net/data/solutions/"
+
+# Specify the URDF file to use. This is used to load the robot model and its kinematics.
+# If ros_package is omitted, the path is assumed to be relative to the current working directory.
+urdf_file:
+  ros_package: my_robot_description
+  path: urdf/my_robot.urdf.xacro
+  xacro_args: 'arg1:=True arg2:=something_else'
+
+# Specify the curobo config file to use. This is used to load the robot model and its kinematics.
+# If ros_package is omitted, the path is assumed to be relative to the current working directory.
+# Both XRDF and raw cuRobo config YAML files are supported
+curobo_config_file:
+  ros_package: my_robot_curobo_config
+  path: config/my_robot.xrdf
+
+# Specify whether to use fake solutions (i.e. random solutions) during training. This is useful for debugging.
+fake_solutions: False
+
+# The maximum number of IK problems to run in parallel during ground truth calculations. This number is mainly dictated by the available VRAM. 
+# A conservative number might be 500, with larger GPUs going up to multiple thousand. Omit or set to `null` to disable count limiting.
+max_ik_count: 500
+
+# Set to True to enable debug mode. This will visualize different stages of the training and ground truth calculation processes
+debug: False
+
+# At the time of writing, cuRobo does not handle robots with multiple kinematic chains well. To combat this, we substitute dynamic 
+# joints in the URDF with static ones to collapse the model down to a single kinematic chain. This entry is a dictionary of joint 
+# names to joint values at which these joints will be frozen during IK problems.
+unused_joint_defaults:
+  front_left_hip_x  : -0.0058014001697301865
+  front_left_hip_y  :  0.7929132580757141
+  front_left_knee   : -1.5593334436416626
+  front_right_hip_x : -0.007982775568962097
+  front_right_hip_y :  0.7943171262741089
+  front_right_knee  : -1.5458697080612183
+  rear_left_hip_x   :  0.0062673864886164665
+  rear_left_hip_y   :  0.7941105961799622
+  rear_left_knee    : -1.5512280464172363
+  rear_right_hip_x  :  0.012335322797298431
+  rear_right_hip_y  :  0.8197641372680664
+  rear_right_knee   : -1.55510675907135
+  arm0_fingers      : -0.010957598686218262
+  body_height_joint : 0.52
+  body_yaw_joint    : 0.0
+  body_pitch_joint  : 0.0
+  body_roll_joint   : 0.0
+
+# Specify which pointclouds in the `pointcloud_data_path` should be used during calculations or training. 
+# Each entry is a name-value where the name is the file name for the pointcloud minus the extension. 
+# Currently only the file with the `.pcd` extension are supported. The value is a dictionary of proprocessing
+# steps to apply to the pointcloud. Options are:
+#
+#   - elevation - A vertical offset to apply to the pointcloud. For instance, if your pointcloud is defined 
+#                 such that the ground plane actually lies at the z-coordinate 0.5, you would set your pointlcoud elevation to 0.5.
+#   - filter_statistical_outliers - As many real-life pointclouds contain errant points due to noise or artifacts, PlaceNet 
+#                 provides a convenience filter setting which removes lonely points in the pointcloud. 
+#                 See the Open3D documentation for details
+#                 https://www.open3d.org/docs/latest/tutorial/Advanced/pointcloud_outlier_removal.html#Statistical-outlier-removal   
+#   - filter_std_dev - Only used if `filter_statistical_outliers` is True. Sets the number of standard deviations from the mean 
+#                 offset distance before a point is considered an outlier. Lower numbers result in more aggresive filtering.
+#   - filter_num_neighbors - Only used if `filter_statistical_outliers` is True. Sets the number of neighbors to consider when 
+#                 calculating a point's mean offset from other points in the cloud.
+pointclouds:
+  my_pointcloud1: {} # No preprocessing
+  my_pointcloud2: {elevation: 0.5} # Apply a vertical offset of 0.5
+  my_pointcloud3: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30} # Filter outliers
+
+# Define the task geometry. This is used to calculate the task space and to filter out tasks that are not reachable by the robot.
+task_geometry:
+  # The z-elevation of the *manipulator chain* base link. This does not necessarily have to be the root link of the URDF
+  base_link_elevation: 0.709
+  # The maximum distance from the task pose to consider potential base poses
+  max_radial_reach: 0.9
+  # The minimum and maximum task elevation to sample during task generation
+  min_task_elevation: 0.3
+  max_task_elevation: 1.6
+  # The minimum and maximum height of a point to consider as an obstacle. The minimum can be set to a value greater than zero
+  # for legged robots which can step over small objects
+  min_pointcloud_elevation: 0.2
+  max_pointcloud_elevation: 1.7
+  # The maximum distance from the manipulator chain base link at which a point could conceivably collide with the robot
+  max_pointcloud_radius: 2.0
+
+# Definitions of offsets and regions in which to sample task poses
+task_generation:
+  # Whether or not to show the generated task poses before saving to disk
+  visualize: False
+
+  # These points are sampled at a fixed offset from surfaces in the pointcloud, and are always facing directly towards 
+  # the surface. Useful for training for surface tasks such as wiping or scanning.
+  surface_points: 
+    offset: 0.15        # The distance from the surface to place the task
+    min_clearance: 0.0  # The minimum distance that the end effector collision can get to other points in the vicinity
+    density: 5          # The number of points to sample per cubic meter of the sample area
+
+  # Points sampled at random poses in the sample region
+  offset_points:
+    # name: A name assigned to the task pose set during visualization
+    # offset_bounds: Array of length 2. The minimum and maximum distance that the end effector can be from nearby points
+    #                to be considered a valid sample
+    # density: The number of points to sample per cubic meter of the sample area
+    - {name: 'close', offset_bounds: [0.15, 0.30], density: 5} 
+    - {name: 'far'  , offset_bounds: [0.40, 0.90], density: 2.5}
+
+  # Bounding box regions in which to sample task poses. There can be multiple per pointcloud
+  pointcloud_regions:
+    # Minimum and maximum coordinates for an axis aligned bounding box
+    my_pointcloud1:
+      - {min_bound: [-2.52, -1.95, 0.20], max_bound: [2.41, 4.01, 2.0]}
+
+    # Center point, box extents and orientation for a non-axis-algined bounding box
+    my_pointcloud2:
+      - {center: [-4.2, 0.0, 1.1], extent: [9, 18, 1.8], yaw: 153}
+      - {center: [-11.5, -1, 1.1], extent: [5.5, 6.0, 1.8], yaw: -23}
+      - {min_bound: [-3.7, -3.8, 0.0], max_bound: [3.9, 4.0, 2.0]} # types can be mixed and matched
+
+    # my_pointcloud3 is omitted - Task poses will be generated within the pointcloud bounding box
+    #                             plus the max radial reach of the robot
+
+inverse_reachability_map:
+  # Define the task sampling space for an IRM. Optional, only used if you want to generate an IRM
+  task_resolution: 
+    z: 100
+    pitch: 50
+    roll: 20
+
+  # Define the solutions space of the IRM as well as the ground truth data. This field is required
+  solution_resolution:
+    x: 20
+    y: 20
+    yaw: 20
+
+# Settings for the PyTorch Model
+model_settings:
+  # Configuration params
+  pointcloud_encoder: 'PointNet'  # Currently the only supported encoder, voxelization and 3D convolution is planned for a future release
+  loss_function: 'Focal'          # BCE, Dice, Focal, Tversky
+  use_normals: False              # Whether or not to use normals in the pointcloud. If True, normals must be present in the pointcloud files
+
+  # Hyperparameters
+  feature_size: 1024              # Size of the feature vector output by the pointcloud and task encoders
+  channel_count: 256              # Number of channels in the initial deconvolutional layer
+  data_split: [60, 20, 20]        # Percentage of data to use for training, validation and testing
+  num_epochs: 2000                # Maximum number of epochs to train for
+  batch_size: 4                   # Number of samples to process in parallel
+  learning_rate: 0.001            # Learning rate for the Adam optimizer
+  patience: 50                    # Number of epochs to wait before early stopping if validation loss does not improve
+  convolution_dropout: 0.3        # Dropout rate for the convolutional layers
+  downsample_fraction: 0.5        # Fraction of points to randomly sample from the pointcloud during training
+  pointcloud_noise_stddev: 0.04   # Standard deviation of Gaussian noise to add to the pointcloud during training
+
+  # Loss-function specific hyperparameters
+  tversky_loss: {'alpha': 0.8, 'beta': 0.2}   # Tversky loss hyperparameters. Alpha and beta are the weights for false positives and false negatives
+  bce: {'pos_weight': 5.0}                    # Binary cross-entropy loss hyperparameters. Pos_weight is the weight for positive samples
+  focal_loss: {'pos_weight': 5.0}             # Focal loss hyperparameters. Pos_weight is the weight for positive samples
+  
+  # System parameters
+  cuda_device: 0                                            # CUDA device to use for training. CPU is not supported
+  log_base_path: 'base_net/data/runs/v0.9.0/'               # Directory to save training logs and checkpoints
+  checkpoint_base_path: 'base_net/data/checkpoints/v0.9.0/' # Directory to save model checkpoints
+  tag: laptop                                               # Tag to append to the log and checkpoint files
+  checkpoint_frequency: 200                                 # Number of epochs between saving checkpoints
