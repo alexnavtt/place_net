@@ -3,10 +3,10 @@ import copy
 
 import torch
 from torch import Tensor
-from base_net.models.pose_encoder import PoseEncoder
-from base_net.utils.base_net_config import BaseNetConfig
-from base_net.models.pose_validity_checker import PoseValidityChecker
-from base_net.utils.inverse_reachability_map import InverseReachabilityMap
+from place_net.models.pose_encoder import PoseEncoder
+from place_net.utils.base_net_config import BaseNetConfig
+from place_net.models.pose_validity_checker import PoseValidityChecker
+from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 
 class BaseNet(torch.nn.Module):
     def __init__(self, config: BaseNetConfig):

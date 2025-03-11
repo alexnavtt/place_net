@@ -1,7 +1,7 @@
 import os
 import argparse
-from base_net.utils.base_net_config import BaseNetConfig
-from base_net.utils.inverse_reachability_map import InverseReachabilityMap
+from place_net.utils.base_net_config import BaseNetConfig
+from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 
 def load_arguments():
     """

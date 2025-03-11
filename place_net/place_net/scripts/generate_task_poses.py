@@ -13,9 +13,9 @@ from tqdm import tqdm
 from torch import Tensor
 from curobo.types.robot import RobotConfig
 
-from base_net.utils import task_visualization
-from base_net.utils.base_net_config import BaseNetConfig, BaseNetRobotConfig
-from base_net.utils.pointcloud_region import PointcloudRegion
+from place_net.utils import task_visualization
+from place_net.utils.base_net_config import BaseNetConfig, BaseNetRobotConfig
+from place_net.utils.pointcloud_region import PointcloudRegion
 
 def load_arguments() -> dict:
     parser = argparse.ArgumentParser(

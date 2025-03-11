@@ -1,11 +1,11 @@
 # Directory containing all your pointcloud files
-pointcloud_data_path: "base_net/data/pointclouds/"
+pointcloud_data_path: "place_net/data/pointclouds/"
 
 # Directory in which task poses are saved to during task generation, and from which tasks are loaded during ground truth calculations and training
-task_data_path: "base_net/data/tasks/"
+task_data_path: "place_net/data/tasks/"
 
 # Directory in which solution files are saved during ground truth caluclations, and from which solutions are loaded during training
-solution_data_path: "base_net/data/solutions/"
+solution_data_path: "place_net/data/solutions/"
 
 # Specify the URDF file to use. This is used to load the robot model and its kinematics.
 # If ros_package is omitted, the path is assumed to be relative to the current working directory.
@@ -164,7 +164,7 @@ model_settings:
   
   # System parameters
   cuda_device: 0                                            # CUDA device to use for training. CPU is not supported
-  log_base_path: 'base_net/data/runs/v0.9.0/'               # Directory to save training logs and checkpoints
-  checkpoint_base_path: 'base_net/data/checkpoints/v0.9.0/' # Directory to save model checkpoints
+  log_base_path: 'place_net/data/runs/v0.9.0/'               # Directory to save training logs and checkpoints
+  checkpoint_base_path: 'place_net/data/checkpoints/v0.9.0/' # Directory to save model checkpoints
   tag: laptop                                               # Tag to append to the log and checkpoint files
   checkpoint_frequency: 200                                 # Number of epochs between saving checkpoints

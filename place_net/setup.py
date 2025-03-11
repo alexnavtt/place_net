@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='base_net',
+    name='place_net',
     version='0.1',
     packages=find_packages(),
     include_package_data=True,
@@ -19,7 +19,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'base_net=base_net.cli:main'
+            'place_net=place_net.cli:main'
         ],
     },
     package_data={

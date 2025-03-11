@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from base_net.utils.base_net_config import BaseNetConfig
+from place_net.utils.base_net_config import BaseNetConfig
 
 class BaseNetDataset():
     """

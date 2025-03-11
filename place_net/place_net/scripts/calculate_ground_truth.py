@@ -27,9 +27,9 @@ from curobo.geom.types import WorldConfig, Mesh
 cuRoboTransform: TypeAlias = cuRoboPose
 
 # base_net
-from base_net.utils import task_visualization, geometry
-from base_net.utils.base_net_config import BaseNetConfig, tensor_hash
-from base_net.utils.pose_scorer import PoseScorer
+from place_net.utils import task_visualization, geometry
+from place_net.utils.base_net_config import BaseNetConfig, tensor_hash
+from place_net.utils.pose_scorer import PoseScorer
 
 def load_arguments():
     """

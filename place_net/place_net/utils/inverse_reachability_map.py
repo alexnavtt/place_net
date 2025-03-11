@@ -7,8 +7,8 @@ from curobo.types.robot import RobotConfig
 from curobo.types.math import Pose as cuRoboPose
 from curobo.wrap.reacher.ik_solver import IKSolver, IKSolverConfig, IKResult
 
-import base_net.utils.geometry as geometry
-from base_net.utils import task_visualization
+import place_net.utils.geometry as geometry
+from place_net.utils import task_visualization
 
 def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses: cuRoboPose) -> tuple[Tensor, Tensor]:
     if batch_size is None:

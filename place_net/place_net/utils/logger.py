@@ -13,7 +13,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from curobo.types.math import Pose as cuRoboPose
 
 from .base_net_config import BaseNetConfig
-from base_net.utils import task_visualization, geometry, pose_scorer
+from place_net.utils import task_visualization, geometry, pose_scorer
 
 
 class Logger:

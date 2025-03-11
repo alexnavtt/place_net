@@ -15,10 +15,10 @@ from urdf_parser_py.urdf import Robot
 from curobo.types.robot import RobotConfig
 from curobo.types.base import TensorDeviceType
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModelConfig
-from base_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
-from base_net.utils.invert_robot_model import main as invert_urdf
-from base_net.utils.pointcloud_region import PointcloudRegion
-from base_net.models.loss import FocalLoss, DiceLoss, TverskyLoss
+from place_net.models.pointcloud_encoder import PointNetEncoder, CNNEncoder
+from place_net.utils.invert_robot_model import main as invert_urdf
+from place_net.utils.pointcloud_region import PointcloudRegion
+from place_net.models.loss import FocalLoss, DiceLoss, TverskyLoss
 
 # Allow running even without ROS
 try:

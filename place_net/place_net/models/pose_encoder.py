@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from base_net.utils import geometry
+from place_net.utils import geometry
 
 class PoseEncoder(torch.nn.Module):
     def __init__(self, feature_size=1024):

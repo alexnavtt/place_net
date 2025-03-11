@@ -9,10 +9,10 @@ from PIL import Image
 from urdf_parser_py.urdf import Robot, Joint, Mesh, Cylinder, Box
 from curobo.types.math import Pose as cuRoboPose
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
-from base_net.utils.base_net_config import BaseNetConfig
-from base_net.utils.pointcloud_region import PointcloudRegion
-from base_net.utils.invert_robot_model import urdf_pose_to_matrix
-from base_net.utils.base_net_config import BaseNetRobotConfig
+from place_net.utils.base_net_config import BaseNetConfig
+from place_net.utils.pointcloud_region import PointcloudRegion
+from place_net.utils.invert_robot_model import urdf_pose_to_matrix
+from place_net.utils.base_net_config import BaseNetRobotConfig
 
 def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
 
