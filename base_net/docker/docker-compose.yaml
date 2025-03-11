@@ -23,7 +23,6 @@ services:
         no_proxy: $no_proxy
         ROS_DISTRO: $TARGET_ROS_DISTRO
         BUILD_TARGET: $BUILD_TARGET
-        CUDA_VERSION: $TARGET_CUDA_VERSION
 
   base_net_runtime:
     extends: base_net

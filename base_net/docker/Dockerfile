@@ -1,4 +1,3 @@
-ARG CUDA_VERSION
 ARG BUILD_TARGET=workstation
 
 FROM alexnavtt/curobo:${BUILD_TARGET} AS base_net

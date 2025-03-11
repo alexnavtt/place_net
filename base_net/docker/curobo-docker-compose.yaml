@@ -7,8 +7,8 @@ services:
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
     tty: true
-    container_name: curobo_${BUILD_TARGET}
-    image: alexnavtt/curobo:${BUILD_TARGET}
+    container_name: place_net_curobo
+    image: alexnavtt/place_net_curobo
     build:
       dockerfile: curobo.Dockerfile
       # platforms: 
