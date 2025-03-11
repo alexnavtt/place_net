@@ -1,3 +1,3 @@
 #!/bin/bash
 source ~/.profile
-base_net generate-inverse-reachability-map --config-file base_net/config/${BASE_NET_CONFIG} $@
+place_net generate-inverse-reachability-map --config-file place_net/config/${PLACE_NET_CONFIG} $@

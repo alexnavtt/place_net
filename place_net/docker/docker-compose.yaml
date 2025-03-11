@@ -1,5 +1,5 @@
 services:
-  base_net:
+  place_net:
     environment:
       # Load in the ROS distro
       - ROS_DISTRO=$TARGET_ROS_DISTRO
@@ -7,8 +7,8 @@ services:
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
     tty: true
-    container_name: base_net_${BUILD_TARGET}_dev
-    image: alexnavtt/base_net:${BUILD_TARGET}
+    container_name: place_net_${BUILD_TARGET}_dev
+    image: alexnavtt/place_net:${BUILD_TARGET}
     build:
       context: ./..
       dockerfile: docker/Dockerfile
@@ -24,30 +24,30 @@ services:
         ROS_DISTRO: $TARGET_ROS_DISTRO
         BUILD_TARGET: $BUILD_TARGET
 
-  base_net_runtime:
-    extends: base_net
+  place_net_runtime:
+    extends: place_net
     volumes:
-      - ${PWD}/..:/base_net
+      - ${PWD}/..:/place_net
     environment:
       - SPOT_URDF_EXTRAS
-      - BASE_NET_CONFIG
+      - PLACE_NET_CONFIG
 
   generate_task_poses:
-    extends: base_net_runtime
-    container_name: base_net_task_pose_generation
+    extends: place_net_runtime
+    container_name: place_net_task_pose_generation
     entrypoint: docker/entrypoints/generate_task_poses.sh
 
   calculate_ground_truth:
-    extends: base_net_runtime
-    container_name: base_net_ground_truth_calculation
+    extends: place_net_runtime
+    container_name: place_net_ground_truth_calculation
     entrypoint: docker/entrypoints/calculate_ground_truth.sh
 
   train_model:
-    extends: base_net_runtime
-    container_name: base_net_training
+    extends: place_net_runtime
+    container_name: place_net_training
     entrypoint: docker/entrypoints/train_model.sh
 
   generate_irm:
-    extends: base_net_runtime
-    container_name: base_net_inverse_reachability_map_generation
+    extends: place_net_runtime
+    container_name: place_net_inverse_reachability_map_generation
     entrypoint: docker/entrypoints/generate_irm.sh

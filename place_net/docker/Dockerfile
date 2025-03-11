@@ -29,11 +29,11 @@ RUN apt update && apt upgrade -y \
 
 # Install BaseNet dependencies
 RUN apt install -y libgl1
-ADD setup.py /base_net/setup.py
-WORKDIR /base_net
+ADD setup.py /place_net/setup.py
+WORKDIR /place_net
 RUN pip install -e . --no-build-isolation
 
-FROM base_net AS base_net_nrg
+FROM place_net AS place_net_nrg
 SHELL ["/bin/bash", "-l", "-c"]
 
 # Install NRG ros package dependencies
