@@ -11,8 +11,8 @@ Contents:
  - [Running](#usage)
    - [Native](#usage)
    - [Docker](#running-with-docker)
- - [Inverse Reachability Map]() [Docs TBD]
- - [ROS2 Server]() [Docs TBD]
+ - [Inverse Reachability Map](#generating-an-inverse-reachability-map-irm)
+ - [ROS2 Server]() [DOCS TBD]
 
 ## Overview
 
@@ -96,12 +96,14 @@ You will first have to export your desired CUDA version for the docker image as 
 
 ```bash
 cd base_net/docker
-export CUDA_VERSION=12.4
+export TARGET_CUDA_VERSION=12.4
 DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build
 ```
 
 **Step 5 - Build the main PlaceNet docker image**
 ```bash
+export BUILD_TARGET=workstation # or jetson
+export TARGET_ROS_VERSION=humble # other distros have not yet been tested
 docker compose build
 ```
 
@@ -138,7 +140,7 @@ Once the task poses are generated, you can set up the ground truth calculations.
 base_net calculate-ground-truth --config-file <path/to/your/config.yaml>
 ```
 
-If you have the debug flag enabled, you will see two outputs for every task pose. The first is a solution to the IK problem with only self collisions enabled. This helps to reduce the number of IK problems to run with the full pointcloud. The second is the final solution with the full collision environment as well as the robot model placed at the highest scoring IK pose. This is usually a good place to verify that everything is working correctly.
+If you have the debug flag enabled, you will see two outputs for every task pose. The first is a solution to the IK problem with only self collisions enabled. This helps to reduce the number of IK problems to run with the full pointcloud. The second is the final solution with the full collision environment as well as the robot model placed at the highest scoring IK pose. This is usually a good place to verify that everything is working correctly, though there are occasionally rendering issues when operating with docker.
 
 <img src="assets/solution_no_obs.png" alt="Solution with no obstacles" height=300/>
 <img src="assets/solution_with_obs.png" alt="Solution with no obstacles" height=300/>
@@ -152,9 +154,18 @@ base_net train --config-file <path/to/your/config.yaml>
 
 Training will begin after a short setup period, and progress can be tracked using tensorboard in the log directory specified in your config file.
 
+#### Generating an Inverse Reachability Map (IRM)
+IRMs are what PlaceNet was designed to replace. Naturally, therefore, there is a capability to build and deploy IRMs in this project as it was used as a benchmark for testing accuracy and runtime. If you wish, you can create an IRM for your robot and run it in the same way as PlaceNet, but keep in mind that IRMs are incapable of accounting for obstacles in the environment and so you must provide your own collision checking in post-processing.
+
+The resolution of the IRM is configured in the same config file as PlaceNet, under the heading `inverse_reachability_map.task_resolution`. For robots with continuous, symmetric end effectors you can streamline the process by setting the `roll` resolution to 1.
+
+```bash
+base_net generate-inverse-reachability-map --config-file <path/to/your/config.yaml>
+```
+
 ### Running with Docker
 
-The main 4 steps - set up the config, generate task poses, calculate ground truth, and train model - are the same when running with docker. The docker compose is set up to mount the entire place_net directory when started, so any changes you make to files inside the repop structure - including pointclouds, config, tasks, and solutions - will be reflected in the docker container. The commands are slightly different and depends on the `BASE_NET_CONFIG` environment variable to indicate where within the base_net repo to look for your config file.
+The main 4 steps - set up the config, generate task poses, calculate ground truth, and train model - are the same when running with docker. The docker compose is set up to mount the entire place_net directory when started, so any changes you make to files inside the repo structure - including pointclouds, config, tasks, and solutions - will be reflected in the docker container. The commands are slightly different and depends on the `BASE_NET_CONFIG` environment variable to indicate where within the base_net repo to look for your config file.
 
 ```bash
 docker compose run --rm generate_task_poses
@@ -162,4 +173,46 @@ docker compose run --rm calculate_ground_truth
 docker compose run --rm train_model
 ```
 
-## Running with ROS
+## Deploying with ROS
+The main deployment scenario for PlaceNet is through the Robot Operating System (ROS). PlaceNet has been tested on ROS2 Humble and is not supported on any ROS1 distros. We define two ROS2 packages to support this deployment:
+
+ - `base_net_msgs` : All message and service files used in deployment
+ - `base_net_ros`  : The main ROS2 wrapper package
+ - `base_net_behaviors` : [Coming Soon] This will be a wrapper around `base_net_msgs` to allow PlaceNet to be used in applications using on the [BT.CPP](https://www.behaviortree.dev/) behavior tree library in tandem with ROS2
+
+`base_net_ros` is also an excellent resource for those who wish to use PlaceNet in your own projects outside of ROS. The Python interface is relatively straightforward and a quick glance into [`base_net_server.py`](base_net_ros/base_net_ros/base_net_server.py) should demonstrate how to go from input to output with a trained model. 
+
+For the remainder of this section we will assume that 
+
+ 1. You have an appropriate version of ROS2 installed
+ 2. This repo is cloned into your Colcon workspace source directory
+ 3. You already have a trained model
+
+#### Setup
+
+The first step is to install the `base_net_msgs` and `base_net_server` dependencies and build the packages on your local system. If you followed along with the Docker installation instructions, then this portion has already been handled for you.
+
+```bash
+cd <path/to/your/colcon/ws>
+rospep install --from-paths src/place_net -i -y
+colcon build --packages-up-to base_net_server # plus any arguments you wish to add (eg. --symlink-install, --cmake-args -DCMAKE_BUILD_TYPE=Release)
+```
+
+Next you must create a configuration file for your setup. A sample file is found at [sample_params.yaml](base_net_ros/config/sample_params.yaml). Keep in mind that all paths are absolute. This file should be invoked whenever you launch the PlaceNet server.
+
+```bash
+ros2 run base_net_ros base_net_server --ros-args --params-file <path/to/your/ros/config/file>
+```
+
+After waiting a few seconds for the server to start up and load your model, you should see an output similar to 
+
+```
+[TODO] Put output here
+```
+
+Similarly, examining the available ROS2 topics and services should now show the base placement quert service as well as the visualization topics, which can be viewed in RViz.
+
+```bash
+[TODO] Put services here
+[TODO] Put topics here
+```
