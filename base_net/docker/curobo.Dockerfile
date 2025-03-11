@@ -1,5 +1,4 @@
 ARG CUDA_VERSION
-ARG BUILD_TARGET=workstation
 
 # === Regular Desktop Workstation Install === #
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS base_workstation
