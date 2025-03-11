@@ -4,11 +4,11 @@ from setuptools import setup
 from generate_parameter_library_py.setup_helper import generate_parameter_module
 
 generate_parameter_module(
-    "base_net_ros_parameters",
-    "base_net_ros/base_net_params.yaml"
+    "place_net_ros_parameters",
+    "place_net_ros/place_net_params.yaml"
 )
 
-package_name = 'base_net_ros'
+package_name = 'place_net_ros'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*launch.py')),
         (os.path.join('share', package_name, 'models'), glob('models/*')),
     ],
-    install_requires=['setuptools', 'base_net', 'rclpy'],
+    install_requires=['setuptools', 'place_net', 'rclpy'],
     zip_safe=True,
     author='Alex Navarro',
     author_email='alexnavtt@utexas.edu',
@@ -31,11 +31,11 @@ setup(
         'License :: BSD 3-Clause License',
         'Programming Language :: Python',
     ],
-    description='A ROS2 interface for the base_net package',
+    description='A ROS2 interface for the place_net package',
     license='BSD',
     entry_points={
         'console_scripts': [
-            'base_net_server = base_net_ros.base_net_server:main',
+            'place_net_server = place_net_ros.place_net_server:main',
         ],
     },
 )

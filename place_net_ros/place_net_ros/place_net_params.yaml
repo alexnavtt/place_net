@@ -1,4 +1,4 @@
-base_net_ros_params:
+place_net_ros_params:
   checkpoint_path:
     type: string
     read_only: True

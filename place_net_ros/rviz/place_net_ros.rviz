@@ -81,7 +81,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/query/pointcloud
+            Value: /place_net_server/query/pointcloud
           Use Fixed Frame: true
           Use rainbow: false
           Value: false
@@ -104,7 +104,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/query/task_poses
+            Value: /place_net_server/query/task_poses
           Value: true
       Enabled: true
       Name: Query
@@ -120,7 +120,7 @@ Visualization Manager:
             Durability Policy: Transient Local
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/response/aggregate_pose_scores
+            Value: /place_net_server/response/aggregate_pose_scores
           Value: true
         - Alpha: 1
           Axes Length: 0.30000001192092896
@@ -140,7 +140,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/response/optimal_pose
+            Value: /place_net_server/response/optimal_pose
           Value: true
         - Alpha: 1
           Arrow Length: 0.05000000074505806
@@ -161,7 +161,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/response/valid_poses
+            Value: /place_net_server/response/valid_poses
           Value: false
         - Alpha: 1
           Arrow Length: 0.30000001192092896
@@ -182,7 +182,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/response/reachable_tasks
+            Value: /place_net_server/response/reachable_tasks
           Value: false
       Enabled: true
       Name: Response
@@ -207,7 +207,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/ground_truth/task_poses
+            Value: /place_net_server/ground_truth/task_poses
           Value: false
         - Alpha: 1
           Arrow Length: 0.30000001192092896
@@ -228,7 +228,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/ground_truth/valid_poses
+            Value: /place_net_server/ground_truth/valid_poses
           Value: true
       Enabled: true
       Name: GroundTruth
@@ -244,7 +244,7 @@ Visualization Manager:
             Durability Policy: Transient Local
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/model_output
+            Value: /place_net_server/model_output
           Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
@@ -276,7 +276,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/points_in_range
+            Value: /place_net_server/points_in_range
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -310,7 +310,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /base_net_server/ground_truth_points
+            Value: /place_net_server/ground_truth_points
           Use Fixed Frame: true
           Use rainbow: true
           Value: false

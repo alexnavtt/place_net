@@ -12,14 +12,14 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from curobo.types.math import Pose as cuRoboPose
 
-from base_net_msgs.srv import QueryBaseLocation
-from base_net.utils.base_net_config import PlaceNetConfig
-from base_net.utils import geometry
+from place_net_msgs.srv import QueryBaseLocation
+from place_net.utils.place_net_config import PlaceNetConfig
+from place_net.utils import geometry
 
 class BaseNetVisualizer:
-    def __init__(self, ros_node: Node, base_net_config: PlaceNetConfig):
+    def __init__(self, ros_node: Node, place_net_config: PlaceNetConfig):
         self.ros_node = ros_node
-        self.base_net_config = base_net_config
+        self.place_net_config = place_net_config
 
         latching_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
 
@@ -115,8 +115,8 @@ class BaseNetVisualizer:
         delete_marker.id = -1
         markers.markers.append(delete_marker)
 
-        tasks = tasks.to(self.base_net_config.model.device)
-        tasks[:, 2] = self.base_net_config.task_geometry.base_link_elevation
+        tasks = tasks.to(self.place_net_config.model.device)
+        tasks[:, 2] = self.place_net_config.task_geometry.base_link_elevation
         model_output = model_output.cpu()
 
         # Only show a loading bar for larger batch sizes
@@ -139,9 +139,9 @@ class BaseNetVisualizer:
 
         point_mask = torch.zeros(pointcloud.size(0), dtype=bool, device=pointcloud.device)
         for task in tasks:
-            point_mask |= (pointcloud[:, :2] - task[:2]).norm(dim=-1) < self.base_net_config.task_geometry.max_pointcloud_radius
-        point_mask &= pointcloud[:, 2] > self.base_net_config.task_geometry.min_pointcloud_elevation
-        point_mask &= pointcloud[:, 2] < self.base_net_config.task_geometry.max_pointcloud_elevation
+            point_mask |= (pointcloud[:, :2] - task[:2]).norm(dim=-1) < self.place_net_config.task_geometry.max_pointcloud_radius
+        point_mask &= pointcloud[:, 2] > self.place_net_config.task_geometry.min_pointcloud_elevation
+        point_mask &= pointcloud[:, 2] < self.place_net_config.task_geometry.max_pointcloud_elevation
 
         valid_points = pointcloud[point_mask]
         valid_points_ros = create_cloud_xyz32(header=Header(frame_id=frame_id, stamp=self.ros_node.get_clock().now().to_msg()), points=valid_points.cpu().numpy())

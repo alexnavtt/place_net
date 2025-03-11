@@ -22,15 +22,15 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.types.base import TensorDeviceType
 from curobo.wrap.reacher.ik_solver import IKSolverConfig, IKSolver
 from curobo.geom.types import WorldConfig, Mesh
-from base_net.models.base_net import BaseNet
-from base_net.utils.base_net_config import PlaceNetConfig
-from base_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
-from base_net.utils import geometry, pose_scorer, inverse_reachability_map
-from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
+from place_net.models.place_net import BaseNet
+from place_net.utils.place_net_config import PlaceNetConfig
+from place_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
+from place_net.utils import geometry, pose_scorer, inverse_reachability_map
+from place_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
-from .base_net_visualizer import BaseNetVisualizer
-from . import base_net_conversions
-from .base_net_ros_parameters import base_net_ros_params
+from .place_net_visualizer import BaseNetVisualizer
+from . import place_net_conversions
+from .place_net_ros_parameters import place_net_ros_params
 
 class PoseGrid:
     def __init__(self, x_range: float, y_range: float, x_res: int, y_res: int, yaw_res: int, z_elevation: float, device):
@@ -60,23 +60,23 @@ class PoseGrid:
 
 class BaseNetServer(Node):
     def __init__(self):
-        super().__init__(node_name='base_net_server')
+        super().__init__(node_name='place_net_server')
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
 
         # Load the model from the checkpoint path
-        param_listener = base_net_ros_params.ParamListener(self)
+        param_listener = place_net_ros_params.ParamListener(self)
         self.params = param_listener.get_params()
 
         # Load the model if a checkpoint path is provided
         if self.params.checkpoint_path:
             base_path, _ = os.path.split(self.params.checkpoint_path)
-            self.base_net_config = PlaceNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
+            self.place_net_config = PlaceNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
             if self.params.max_ik_count > 0:
-                self.base_net_config.max_ik_count = self.params.max_ik_count
-            self.base_net_model = BaseNet(self.base_net_config)
+                self.place_net_config.max_ik_count = self.params.max_ik_count
+            self.place_net_model = BaseNet(self.place_net_config)
         else:
-            self.base_net_model = None
+            self.place_net_model = None
 
         # Load the inverse reachability map if a checkpoint path is provided
         if self.params.inverse_reachability_map_path:
@@ -87,20 +87,20 @@ class BaseNetServer(Node):
 
         self.pose_scorer = pose_scorer.PoseScorer(max_angular_window=torch.pi)
 
-        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.base_net_config.model.device, weights_only=True)
-        self.base_net_model.load_state_dict(checkpoint_config['base_net_model'])
-        self.base_net_model.eval()
+        checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.place_net_config.model.device, weights_only=True)
+        self.place_net_model.load_state_dict(checkpoint_config['place_net_model'])
+        self.place_net_model.eval()
 
         # Load the model geometry
         self.base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
-            half_x_range=self.base_net_config.task_geometry.max_radial_reach,
-            half_y_range=self.base_net_config.task_geometry.max_radial_reach,
-            x_res=self.base_net_config.inverse_reachability.solution_resolution['x'],
-            y_res=self.base_net_config.inverse_reachability.solution_resolution['y'],
-            yaw_res=self.base_net_config.inverse_reachability.solution_resolution['yaw'],
-            device=self.base_net_config.model.device
+            half_x_range=self.place_net_config.task_geometry.max_radial_reach,
+            half_y_range=self.place_net_config.task_geometry.max_radial_reach,
+            x_res=self.place_net_config.inverse_reachability.solution_resolution['x'],
+            y_res=self.place_net_config.inverse_reachability.solution_resolution['y'],
+            yaw_res=self.place_net_config.inverse_reachability.solution_resolution['yaw'],
+            device=self.place_net_config.model.device
         )
-        self.base_net_viz = BaseNetVisualizer(self, self.base_net_config)
+        self.place_net_viz = BaseNetVisualizer(self, self.place_net_config)
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
@@ -112,11 +112,11 @@ class BaseNetServer(Node):
 
         model_output = torch.zeros(
             batch_size, 
-            self.base_net_config.inverse_reachability.solution_resolution['y'],
-            self.base_net_config.inverse_reachability.solution_resolution['x'],
-            self.base_net_config.inverse_reachability.solution_resolution['yaw'], 
+            self.place_net_config.inverse_reachability.solution_resolution['y'],
+            self.place_net_config.inverse_reachability.solution_resolution['x'],
+            self.place_net_config.inverse_reachability.solution_resolution['yaw'], 
             dtype=bool,
-            device=self.base_net_config.model.device
+            device=self.place_net_config.model.device
         )
         
         with torch.no_grad():
@@ -125,7 +125,7 @@ class BaseNetServer(Node):
                 index_end = min(index_start + mini_batch_size, batch_size)
                 pointcloud_slice = pointcloud_list[index_start:index_end]
                 task_slice = task_poses[index_start:index_end]
-                logits = self.base_net_model(pointcloud_slice, task_slice)
+                logits = self.place_net_model(pointcloud_slice, task_slice)
                 model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
 
         return model_output
@@ -150,24 +150,24 @@ class BaseNetServer(Node):
             # ground truth values for the master grid. This keeps results consistent between the model
             # and ground truth calculations
             base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
-                half_x_range=self.base_net_config.task_geometry.max_radial_reach,
-                half_y_range=self.base_net_config.task_geometry.max_radial_reach,
-                x_res=self.base_net_config.inverse_reachability.solution_resolution['x'],
-                y_res=self.base_net_config.inverse_reachability.solution_resolution['y'],
-                yaw_res=self.base_net_config.inverse_reachability.solution_resolution['yaw'],
-                device=self.base_net_config.model.device
+                half_x_range=self.place_net_config.task_geometry.max_radial_reach,
+                half_y_range=self.place_net_config.task_geometry.max_radial_reach,
+                x_res=self.place_net_config.inverse_reachability.solution_resolution['x'],
+                y_res=self.place_net_config.inverse_reachability.solution_resolution['y'],
+                yaw_res=self.place_net_config.inverse_reachability.solution_resolution['yaw'],
+                device=self.place_net_config.model.device
             )
 
             # Convert the pointcloud to open3d
             pointcloud_z = pointcloud[:, 2]
-            pointcloud = pointcloud[(pointcloud_z > self.base_net_config.task_geometry.min_pointcloud_elevation) & (pointcloud_z < self.base_net_config.task_geometry.max_pointcloud_elevation)]
+            pointcloud = pointcloud[(pointcloud_z > self.place_net_config.task_geometry.min_pointcloud_elevation) & (pointcloud_z < self.place_net_config.task_geometry.max_pointcloud_elevation)]
             pointcloud_o3d = open3d.geometry.PointCloud()
             pointcloud_o3d.points.extend(pointcloud.cpu().numpy())
-            return get_ground_truth_tensor(task_poses, pointcloud_o3d, base_poses_in_flattened_task_frame, self.base_net_config).to(self.base_net_config.model.device)
+            return get_ground_truth_tensor(task_poses, pointcloud_o3d, base_poses_in_flattened_task_frame, self.place_net_config).to(self.place_net_config.model.device)
             
         elif mode == 'model':
-            if self.base_net_model is None:
-                raise RuntimeError('Received base_net model query but no model has been loaded!')
+            if self.place_net_model is None:
+                raise RuntimeError('Received place_net model query but no model has been loaded!')
             return self.run_model(task_poses, pointcloud)
             
         elif mode == 'irm':
@@ -175,7 +175,7 @@ class BaseNetServer(Node):
                 raise RuntimeError('Received an inverse reachability map query but no IRM has been loaded!')
             if pointcloud.numel() > 0:
                 self.get_logger().warn('A pointcloud was passed to an IRM base pose query. Collision avoidance for IRM queries is not supported')
-            return self.irm.query_pose(task_poses.cpu()).to(self.base_net_config.model.device)
+            return self.irm.query_pose(task_poses.cpu()).to(self.place_net_config.model.device)
 
         else:
             raise RuntimeError(f'Unable to process base placement request for mode {mode}, options are ["model", "ground_truth", "irm"]')
@@ -184,16 +184,16 @@ class BaseNetServer(Node):
         min_x, min_y = torch.amin(task_poses[:, :2], dim=0)
         max_x, max_y = torch.amax(task_poses[:, :2], dim=0)
 
-        x_cell_size: float = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['x'] - 1)
-        y_cell_size: float = 2*self.base_net_config.task_geometry.max_radial_reach / (self.base_net_config.inverse_reachability.solution_resolution['y'] - 1)
+        x_cell_size: float = 2*self.place_net_config.task_geometry.max_radial_reach / (self.place_net_config.inverse_reachability.solution_resolution['x'] - 1)
+        y_cell_size: float = 2*self.place_net_config.task_geometry.max_radial_reach / (self.place_net_config.inverse_reachability.solution_resolution['y'] - 1)
 
-        x_range: float = max_x - min_x + 2*self.base_net_config.task_geometry.max_radial_reach
-        y_range: float = max_y - min_y + 2*self.base_net_config.task_geometry.max_radial_reach
+        x_range: float = max_x - min_x + 2*self.place_net_config.task_geometry.max_radial_reach
+        y_range: float = max_y - min_y + 2*self.place_net_config.task_geometry.max_radial_reach
         x_res: int = math.floor(x_range / x_cell_size) + 1
         y_res: int = math.floor(y_range / y_cell_size) + 1
-        yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
+        yaw_res: int = self.place_net_config.inverse_reachability.solution_resolution['yaw']
 
-        return PoseGrid(x_range, y_range, x_res, y_res, yaw_res, self.base_net_config.task_geometry.base_link_elevation, self.base_net_config.model.device)
+        return PoseGrid(x_range, y_range, x_res, y_res, yaw_res, self.place_net_config.task_geometry.base_link_elevation, self.place_net_config.model.device)
     
     def populate_master_score_grid(self, master_grid: PoseGrid, task_poses: Tensor, pose_scores: Tensor) -> None:
         """ 
@@ -223,7 +223,7 @@ class BaseNetServer(Node):
 
             # Calculate the indices into the yaw angles
             yaw_index_offset: int = round(yaw_angle.item() / (2*math.pi / yaw_res))
-            yaw_indices = torch.arange(yaw_res, device=self.base_net_config.model.device) + yaw_index_offset
+            yaw_indices = torch.arange(yaw_res, device=self.place_net_config.model.device) + yaw_index_offset
             yaw_indices = torch.remainder(yaw_indices, yaw_res)
             yaw_indices = yaw_indices.long()
 
@@ -235,7 +235,7 @@ class BaseNetServer(Node):
 
             # Calculate the offsets from the nearest grid cells
             fractional_offsets = torch.frac(float_grid_indices)
-            for grid_offset in torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], device=self.base_net_config.model.device):
+            for grid_offset in torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], device=self.place_net_config.model.device):
                 # Get the indices for this particular corner of the grid cell
                 offset_grid_indices = grid_indices + grid_offset
                 valid_indices = ((offset_grid_indices >= 0) & (offset_grid_indices < master_grid.grid_size)).prod(dim=1, dtype=bool)
@@ -294,9 +294,9 @@ class BaseNetServer(Node):
         x_min, y_min = torch.amin(reference_poses_in_task.position[:, :2], dim=0)
         x_max, y_max = torch.amax(reference_poses_in_task.position[:, :2], dim=0)
 
-        yaw_res: int = self.base_net_config.inverse_reachability.solution_resolution['yaw']
-        x_res: int = self.base_net_config.inverse_reachability.solution_resolution['x']
-        y_res: int = self.base_net_config.inverse_reachability.solution_resolution['y']
+        yaw_res: int = self.place_net_config.inverse_reachability.solution_resolution['yaw']
+        x_res: int = self.place_net_config.inverse_reachability.solution_resolution['x']
+        y_res: int = self.place_net_config.inverse_reachability.solution_resolution['y']
 
         yaw_indices: Tensor = torch.round(yaw_angles / (two_pi / (yaw_res-1)))
         x_indices = (x_res - 1) * ((x_pos - x_min) / (x_max - x_min))
@@ -330,7 +330,7 @@ class BaseNetServer(Node):
         else:
             poses = pose_array.poses
 
-        pose_curobo = base_net_conversions.poses_to_curobo(poses, self.base_net_config.model.device)
+        pose_curobo = place_net_conversions.poses_to_curobo(poses, self.place_net_config.model.device)
         return torch.cat([pose_curobo.position, pose_curobo.quaternion], dim=1)
     
     def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str, filter_std_dev: float = 0.0) -> Tensor:
@@ -340,14 +340,14 @@ class BaseNetServer(Node):
 
         # Handle the case of an empty pointcloud
         if pointcloud.width == 0:
-            return torch.tensor([], device=self.base_net_config.model.device)
+            return torch.tensor([], device=self.place_net_config.model.device)
 
         pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
         if filter_std_dev > 0.0:
             pointcloud_open3d = open3d.geometry.PointCloud(points=pointcloud_points)
             pointcloud_open3d = pointcloud_open3d.remove_statistical_outlier(nb_neighbors=10, std_ratio=filter_std_dev)
             pointcloud_points = np.asarray(pointcloud_open3d.points)
-        pointcloud_tensor = torch.tensor(pointcloud_points, device=self.base_net_config.model.device)
+        pointcloud_tensor = torch.tensor(pointcloud_points, device=self.place_net_config.model.device)
 
         if target_frame != pointcloud.header.frame_id:
             self.get_logger().info(f'Transforming pointcloud from {pointcloud.header.frame_id} to {target_frame}')
@@ -357,7 +357,7 @@ class BaseNetServer(Node):
                 time=rclpy.time.Time.from_msg(pointcloud.header.stamp),
                 timeout=rclpy.duration.Duration(seconds=1.0)
             ).transform
-            world_tform_pointcloud = base_net_conversions.transform_to_curobo(transform, self.base_net_config.model.device)
+            world_tform_pointcloud = place_net_conversions.transform_to_curobo(transform, self.place_net_config.model.device)
             pointcloud_tensor = world_tform_pointcloud.transform_points(pointcloud_tensor)
 
         return pointcloud_tensor
@@ -368,7 +368,7 @@ class BaseNetServer(Node):
         
         if self.params.visualize:
             self.get_logger().info("Visualizing request now.")
-            self.base_net_viz.visualize_query(req)
+            self.place_net_viz.visualize_query(req)
 
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
@@ -408,7 +408,7 @@ class BaseNetServer(Node):
         self.get_logger().info(f'Score grid population took {master_grid_time:.3f} seconds')
 
         # The robot is inverted here so ee is actually base_link
-        model_base_link: str = self.base_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
+        model_base_link: str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
 
         # Transform poses to the requested base link frame
         if model_base_link != req.base_link:
@@ -421,11 +421,11 @@ class BaseNetServer(Node):
                     timeout=rclpy.duration.Duration(seconds=0.25)
                 ).transform
             except LookupException as e:
-                self.get_logger().warn(f'Unable to transform base_net results to requested link frame "{req.base_link}": {e}')
+                self.get_logger().warn(f'Unable to transform place_net results to requested link frame "{req.base_link}": {e}')
                 resp.has_valid_pose = False
                 return resp
 
-            manipulation_tform_base_link_ros = base_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.base_net_config.model.device)
+            manipulation_tform_base_link_ros = place_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.place_net_config.model.device)
             base_link_poses = master_grid.poses.multiply(manipulation_tform_base_link_ros.repeat(master_grid.poses.batch))
         else:
             base_link_poses = master_grid.poses
@@ -447,7 +447,7 @@ class BaseNetServer(Node):
             best_pose = base_link_poses[best_pose_idx]
             resp.optimal_base_pose.header.frame_id = self.params.world_frame
             resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
-            resp.optimal_base_pose.pose = base_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
+            resp.optimal_base_pose.pose = place_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
             resp.optimal_score = master_grid.scores.flatten()[best_pose_idx].double().item()
             self.get_logger().info(f'Optimal score is {resp.optimal_score:.3f}')
@@ -470,21 +470,21 @@ class BaseNetServer(Node):
 
         valid_pose_mask = master_grid.scores.bool()
         resp.valid_poses.header.frame_id = self.params.world_frame
-        resp.valid_poses.poses = base_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
+        resp.valid_poses.poses = place_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
         resp.valid_pose_scores = master_grid.scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
 
         # === Visualize the output === #
 
         if self.params.visualize:
             self.get_logger().info(f'Visualizing final scores')
-            self.base_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
+            self.place_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
             self.get_logger().info(f'Done')
             
-            self.base_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
+            self.place_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
 
-            if self.base_net_viz.model_output_pub.get_subscription_count() > 0:
+            if self.place_net_viz.model_output_pub.get_subscription_count() > 0:
                 self.get_logger().info(f'Visualizing model output')
-                model_output_thread = Thread(target=self.base_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
+                model_output_thread = Thread(target=self.place_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
                 model_output_thread.start()
 
         self.get_logger().info('Base placement query completed successfully')
@@ -493,9 +493,9 @@ class BaseNetServer(Node):
     def reachable_poses_gt_callback(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response) -> QueryReachablePoses.Response:        
         # Get the required transforms for the pointcloud and for the task poses
         task_frame: str = req.link_pose.header.frame_id
-        model_base: str = self.base_net_config.robot_config.robot.kinematics.kinematics_config.base_link
+        model_base: str = self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
         robot_link: str = req.link_frame
-        inverted_model_base: str = self.base_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
+        inverted_model_base: str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
         try:
             task_tform_pointcloud_stamped = self.tf_buffer.lookup_transform(
                 task_frame,
@@ -530,38 +530,38 @@ class BaseNetServer(Node):
         pointcloud_points = read_points_numpy(req.pointcloud, ['x', 'y', 'z'], skip_nans=True)
         
         # Transform pointcloud into model base frame
-        robot_base_tform_task_mat = np.linalg.inv(base_net_conversions.pose_to_matrix(req.link_pose))
-        model_tform_robot_mat = base_net_conversions.transform_to_matrix(model_base_tform_robot_link_stamped)
-        task_tform_pointcloud_mat = base_net_conversions.transform_to_matrix(task_tform_pointcloud_stamped)
+        robot_base_tform_task_mat = np.linalg.inv(place_net_conversions.pose_to_matrix(req.link_pose))
+        model_tform_robot_mat = place_net_conversions.transform_to_matrix(model_base_tform_robot_link_stamped)
+        task_tform_pointcloud_mat = place_net_conversions.transform_to_matrix(task_tform_pointcloud_stamped)
         model_tform_pointcloud = model_tform_robot_mat @ robot_base_tform_task_mat @ task_tform_pointcloud_mat
         pointcloud_points = pointcloud_points @ model_tform_pointcloud[:3, :3].T + model_tform_pointcloud[:3, 3]
 
         # Filter out points too far away to matter
-        elevations = pointcloud_points[:, 2] + model_elevation_change + self.base_net_config.task_geometry.base_link_elevation
+        elevations = pointcloud_points[:, 2] + model_elevation_change + self.place_net_config.task_geometry.base_link_elevation
         xy_norms = np.linalg.norm(pointcloud_points[:, :2], axis=1)
-        xy_mask = xy_norms < self.base_net_config.task_geometry.max_pointcloud_radius
-        z_mask = (elevations > self.base_net_config.task_geometry.min_pointcloud_elevation) & (elevations < self.base_net_config.task_geometry.max_pointcloud_elevation)
+        xy_mask = xy_norms < self.place_net_config.task_geometry.max_pointcloud_radius
+        z_mask = (elevations > self.place_net_config.task_geometry.min_pointcloud_elevation) & (elevations < self.place_net_config.task_geometry.max_pointcloud_elevation)
         pointcloud_points = pointcloud_points[xy_mask & z_mask, :]
 
         # DEBUG: Visualize the transformed points
         pointcloud_ros = create_cloud_xyz32(header=Header(frame_id=model_base), points=pointcloud_points)
-        self.base_net_viz.gt_points_pub.publish(pointcloud_ros)
+        self.place_net_viz.gt_points_pub.publish(pointcloud_ros)
 
         # Convert the end effector poses into a cuRobo pose
-        end_effector_poses = base_net_conversions.poses_to_curobo(req.end_effector_poses, self.base_net_config.model.device)
+        end_effector_poses = place_net_conversions.poses_to_curobo(req.end_effector_poses, self.place_net_config.model.device)
 
         # Transform end effector poses into model base frame
-        task_tform_robot_base = base_net_conversions.pose_to_curobo(req.link_pose.pose, self.base_net_config.model.device)
+        task_tform_robot_base = place_net_conversions.pose_to_curobo(req.link_pose.pose, self.place_net_config.model.device)
         robot_base_tform_task: cuRoboPose = task_tform_robot_base.inverse()
-        task_tform_ee = base_net_conversions.transform_to_curobo(task_tform_end_effector_stamped.transform, self.base_net_config.model.device)
-        model_tform_robot_base = base_net_conversions.transform_to_curobo(model_base_tform_robot_link_stamped.transform, self.base_net_config.model.device)
+        task_tform_ee = place_net_conversions.transform_to_curobo(task_tform_end_effector_stamped.transform, self.place_net_config.model.device)
+        model_tform_robot_base = place_net_conversions.transform_to_curobo(model_base_tform_robot_link_stamped.transform, self.place_net_config.model.device)
         model_tform_ee = model_tform_robot_base.multiply(robot_base_tform_task.multiply(task_tform_ee))
         end_effector_poses = model_tform_ee.repeat(end_effector_poses.batch).multiply(end_effector_poses)
 
         # DEBUG: Visualize transformed task poses
         end_effector_poses_ros = PoseArray(header=pointcloud_ros.header)
-        end_effector_poses_ros.poses = base_net_conversions.curobo_pose_to_pose_list(end_effector_poses)
-        self.base_net_viz.ground_truth_task_pub.publish(end_effector_poses_ros)
+        end_effector_poses_ros.poses = place_net_conversions.curobo_pose_to_pose_list(end_effector_poses)
+        self.place_net_viz.ground_truth_task_pub.publish(end_effector_poses_ros)
 
         # Generate the environment model
         if len(pointcloud_points) > 0:
@@ -572,21 +572,21 @@ class BaseNetServer(Node):
         
         # Generate an IK solver for this problem
         ik_solver_config = IKSolverConfig.load_from_robot_config(
-            self.base_net_config.robot_config.robot,
+            self.place_net_config.robot_config.robot,
             world_config,
             rotation_threshold=req.rotation_threshold,
             position_threshold=req.position_threshold,
             num_seeds=req.num_seeds,
             self_collision_check=req.check_self_collision,
             self_collision_opt=req.check_self_collision,
-            tensor_args=TensorDeviceType(device=self.base_net_config.model.device),
+            tensor_args=TensorDeviceType(device=self.place_net_config.model.device),
             use_cuda_graph=True
         )
         ik_solver = IKSolver(ik_solver_config)
         
         # Solve the IK problem
         self.get_logger().info(f'Solving IK problem for {end_effector_poses.batch} poses')
-        success, joint_states = solve_batched_ik(ik_solver, self.base_net_config.max_ik_count, end_effector_poses)
+        success, joint_states = solve_batched_ik(ik_solver, self.place_net_config.max_ik_count, end_effector_poses)
         self.get_logger().info(f'IK solving complete. There were {torch.sum(success, dtype=int)} reachable poses')
 
         resp.success = True
@@ -596,7 +596,7 @@ class BaseNetServer(Node):
         self.get_logger().info('Visualizing reachable poses')
         reachable_poses = PoseArray(header=req.end_effector_poses.header)
         reachable_poses.poses = [req.end_effector_poses.poses[idx] for idx in resp.valid_task_indices]
-        self.base_net_viz.ground_truth_valid_pub.publish(reachable_poses)
+        self.place_net_viz.ground_truth_valid_pub.publish(reachable_poses)
 
         self.get_logger().info(f'Ground truth reachability query completed successfully with {len(resp.valid_task_indices)} poses')
         return resp
@@ -607,7 +607,7 @@ class BaseNetServer(Node):
         
         if self.params.visualize:
             self.get_logger().info("Visualizing request now.")
-            self.base_net_viz.visualize_query(req)
+            self.place_net_viz.visualize_query(req)
 
         if req.mode == "ground_truth":
             return self.reachable_poses_gt_callback(req, resp)
@@ -620,7 +620,7 @@ class BaseNetServer(Node):
         world_frame: str = self.params.world_frame
         ref_frame:   str = req.link_pose.header.frame_id
         robot_link:  str = req.link_frame
-        model_base:  str = self.base_net_config.robot_config.robot.kinematics.kinematics_config.base_link
+        model_base:  str = self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
         try:
             world_tform_ref_stamped = self.tf_buffer.lookup_transform(
                 world_frame,
@@ -640,9 +640,9 @@ class BaseNetServer(Node):
             return resp
         
         # Given the supplied base link, determine the pose of the model base link in the world frame
-        world_tform_ref = base_net_conversions.transform_to_curobo(world_tform_ref_stamped.transform, self.base_net_config.model.device)
-        ref_tform_robot_link = base_net_conversions.pose_to_curobo(req.link_pose.pose, self.base_net_config.model.device)
-        robot_link_tform_model_base = base_net_conversions.transform_to_curobo(robot_link_tform_model_base_stamped.transform, self.base_net_config.model.device)
+        world_tform_ref = place_net_conversions.transform_to_curobo(world_tform_ref_stamped.transform, self.place_net_config.model.device)
+        ref_tform_robot_link = place_net_conversions.pose_to_curobo(req.link_pose.pose, self.place_net_config.model.device)
+        robot_link_tform_model_base = place_net_conversions.transform_to_curobo(robot_link_tform_model_base_stamped.transform, self.place_net_config.model.device)
         world_tform_model_base = world_tform_ref.multiply(ref_tform_robot_link).multiply(robot_link_tform_model_base)
             
         # Make sure the task poses and pointclouds are represented in the same frame
@@ -675,9 +675,9 @@ class BaseNetServer(Node):
 
 def main():
     rclpy.init()
-    base_net_server = BaseNetServer()
-    base_net_server.get_logger().info(f'BaseNet server online, using cuda device {base_net_server.params.device}')
-    rclpy.spin(base_net_server)
+    place_net_server = BaseNetServer()
+    place_net_server.get_logger().info(f'BaseNet server online, using cuda device {place_net_server.params.device}')
+    rclpy.spin(place_net_server)
 
 if __name__ == '__main__':
     main()
