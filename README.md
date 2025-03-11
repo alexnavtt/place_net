@@ -92,8 +92,11 @@ sudo systemctl restart docker
 If you do not have admin privileges, you can instead reboot the system.
 
 **Step 4 - Build the cuRobo docker image**
+You will first have to export your desired CUDA version for the docker image as an environment variable. PlaceNet supports CUDA v12.0 and higher.
+
 ```bash
 cd base_net/docker
+export CUDA_VERSION=12.4
 DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build
 ```
 
