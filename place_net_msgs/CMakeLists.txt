@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(base_net_msgs)
+project(place_net_msgs)
 
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
