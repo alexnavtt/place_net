@@ -1,6 +1,6 @@
 import os
 import argparse
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 
 def load_arguments():
@@ -16,7 +16,7 @@ def load_arguments():
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=False, load_tasks=False, load_pointclouds=False)
+    model_config = PlaceNetConfig.from_yaml_file(args.config_file, load_solutions=False, load_tasks=False, load_pointclouds=False)
 
     irm_config = model_config.inverse_reachability
     inverse_reachability_map = InverseReachabilityMap(
@@ -28,7 +28,7 @@ def main():
     )
 
     inverse_reachability_map.solve(model_config.robot_config.inverted_robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count)
-    inverse_reachability_map.save(os.path.join(model_config.solution_path, 'base_net_irm.pt'))
+    inverse_reachability_map.save(os.path.join(model_config.solution_path, 'place_net_irm.pt'))
 
 if __name__ == "__main__":
     main()

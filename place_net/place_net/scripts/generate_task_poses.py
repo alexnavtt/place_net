@@ -14,7 +14,7 @@ from torch import Tensor
 from curobo.types.robot import RobotConfig
 
 from place_net.utils import task_visualization
-from place_net.utils.base_net_config import BaseNetConfig, BaseNetRobotConfig
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig, BaseNetRobotConfig
 from place_net.utils.pointcloud_region import PointcloudRegion
 
 def load_arguments() -> dict:
@@ -91,7 +91,7 @@ def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, sampled_poses: 
 
     open3d.visualization.draw(geometry=geometries)
 
-def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: BaseNetConfig, sample_config: dict) -> Tensor:
+def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: PlaceNetConfig, sample_config: dict) -> Tensor:
     """
     Generate poses at random locations in the environment and only accept those that contain obstacles 
     in a given 'maximum distance' sphere while having no obstacles within a 'minimum distance' sphere
@@ -168,7 +168,7 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Bas
     print(f'  [{sample_config["name"]}]: {points_sampled}/{sample_quota}')
     return torch.concatenate([position_tensor, quaternion_tensor], dim=1)
 
-def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: BaseNetConfig) -> Tensor:
+def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: PlaceNetConfig) -> Tensor:
     """
     Generate poses which are very close to surfaces in the environment with the end effect
     oriented such that the x-axis is parallel to the surface normal. Roll is randomly assigned
@@ -262,7 +262,7 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Bas
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml_file(args.config_file, load_tasks=False)
+    model_config = PlaceNetConfig.from_yaml_file(args.config_file, load_tasks=False)
     task_config = model_config.task_generation
 
     # If we are checking collisions then we need to sample based on the pointcloud geometry

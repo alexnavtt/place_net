@@ -13,11 +13,11 @@ from visualization_msgs.msg import Marker, MarkerArray
 from curobo.types.math import Pose as cuRoboPose
 
 from base_net_msgs.srv import QueryBaseLocation
-from base_net.utils.base_net_config import BaseNetConfig
+from base_net.utils.base_net_config import PlaceNetConfig
 from base_net.utils import geometry
 
 class BaseNetVisualizer:
-    def __init__(self, ros_node: Node, base_net_config: BaseNetConfig):
+    def __init__(self, ros_node: Node, base_net_config: PlaceNetConfig):
         self.ros_node = ros_node
         self.base_net_config = base_net_config
 

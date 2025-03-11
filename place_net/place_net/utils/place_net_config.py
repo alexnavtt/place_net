@@ -31,14 +31,14 @@ def tensor_hash(tensor: Tensor):
     return hashlib.sha256(tensor_bytes).hexdigest()
 
 @dataclass
-class BaseNetRobotConfig:
+class PlaceNetRobotConfig:
     robot: RobotConfig
     inverted_robot: RobotConfig
     urdf: Robot
     inverted_urdf: Robot
 
 @dataclass
-class BaseNetModelConfig:
+class PlaceNetModelConfig:
 
     # Whether or not to use pointcloud normals for training and inference
     use_normals: bool = True
@@ -180,7 +180,7 @@ class BaseNetModelConfig:
         if checkpoint_base_path is not None:
             checkpoint_base_path = os.path.join(checkpoint_base_path, model_name)
 
-        return BaseNetModelConfig(
+        return PlaceNetModelConfig(
             use_normals=use_normals,
             feature_size=feature_size,
             channel_count=channel_count,
@@ -341,7 +341,7 @@ class InverseReachabilityMapConfig:
         )
 
 @dataclass
-class BaseNetConfig:
+class PlaceNetConfig:
     # Used for saving and loading config. A direct copy of the yaml
     # file used to create this config object
     yaml_source: dict 
@@ -351,10 +351,10 @@ class BaseNetConfig:
     pointclouds: dict[str, open3d.geometry.PointCloud]
 
     # The robot model
-    robot_config: BaseNetRobotConfig
+    robot_config: PlaceNetRobotConfig
 
     # The configuration related the PyTorch model 
-    model: BaseNetModelConfig
+    model: PlaceNetModelConfig
 
     # The configuration related to the workspace bounds and robot geometry
     task_geometry: TaskGeometryConfig
@@ -397,17 +397,17 @@ class BaseNetConfig:
 
         if device is not None:
             yaml_config['model_settings']['cuda_device'] = device
-        return BaseNetConfig.from_yaml_dict(yaml_config, load_pointclouds, load_tasks, load_solutions)
+        return PlaceNetConfig.from_yaml_dict(yaml_config, load_pointclouds, load_tasks, load_solutions)
 
     @staticmethod
     def from_yaml_dict(yaml_config: dict, load_pointclouds = True, load_tasks = True, load_solutions = False):
-        model_config = BaseNetModelConfig.from_yaml_dict(yaml_config)
+        model_config = PlaceNetModelConfig.from_yaml_dict(yaml_config)
         task_geometry = TaskGeometryConfig.from_yaml_dict(yaml_config)
 
         pointclouds = {}
         if load_pointclouds:
             for pointcloud_name, pointcloud_config in yaml_config['pointclouds'].items():
-                name, pointcloud = BaseNetConfig.load_pointcloud(
+                name, pointcloud = PlaceNetConfig.load_pointcloud(
                     filepath=os.path.join(yaml_config['pointcloud_data_path'], f'{pointcloud_name}.pcd'), 
                     min_elevation=task_geometry.min_pointcloud_elevation, 
                     max_elevation=task_geometry.max_pointcloud_elevation, 
@@ -419,13 +419,13 @@ class BaseNetConfig:
                 pointclouds[name] = pointcloud
 
         task_generation_config = TaskGenerationConfig.from_yaml_dict(yaml_config, pointclouds)
-        tasks     = BaseNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None
-        solutions = BaseNetConfig.load_solutions(yaml_config, pointclouds, yaml_config.get('fake_solutions', False), tasks) if load_solutions else None
+        tasks     = PlaceNetConfig.load_tasks(yaml_config, pointclouds) if load_tasks else None
+        solutions = PlaceNetConfig.load_solutions(yaml_config, pointclouds, yaml_config.get('fake_solutions', False), tasks) if load_solutions else None
 
-        return BaseNetConfig(
+        return PlaceNetConfig(
             yaml_source=copy.deepcopy(yaml_config),
             pointclouds=pointclouds,
-            robot_config=BaseNetConfig.load_robot_config(yaml_config, model_config.device),
+            robot_config=PlaceNetConfig.load_robot_config(yaml_config, model_config.device),
             model=model_config,
             task_geometry=task_geometry,
             task_generation=task_generation_config,
@@ -632,7 +632,7 @@ class BaseNetConfig:
         )
 
         # Issues with cuRobo robot loading prevent the forward robot model from being loaded
-        return BaseNetRobotConfig(
+        return PlaceNetRobotConfig(
             robot=forward_config,
             inverted_robot=inverted_config,
             urdf=forward_robot_urdf,

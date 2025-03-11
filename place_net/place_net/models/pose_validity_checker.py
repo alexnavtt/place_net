@@ -4,10 +4,10 @@ from torch import Tensor
 
 from .pointcloud_encoder import PointNetEncoder
 from .pose_encoder import PoseEncoder
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
 
 class PoseValidityChecker(torch.nn.Module):
-    def __init__(self, config: BaseNetConfig):
+    def __init__(self, config: PlaceNetConfig):
         super(PoseValidityChecker, self).__init__()
 
         self.device = config.model.device

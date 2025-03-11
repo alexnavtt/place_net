@@ -26,9 +26,9 @@ from curobo.geom.types import WorldConfig, Mesh
 
 cuRoboTransform: TypeAlias = cuRoboPose
 
-# base_net
+# PlaceNet
 from place_net.utils import task_visualization, geometry
-from place_net.utils.base_net_config import BaseNetConfig, tensor_hash
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig, tensor_hash
 from place_net.utils.pose_scorer import PoseScorer
 
 def load_arguments():
@@ -42,14 +42,14 @@ def load_arguments():
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     return parser.parse_args()
 
-def trim_pointcloud(model_config: BaseNetConfig, pointcloud: Tensor):
+def trim_pointcloud(model_config: PlaceNetConfig, pointcloud: Tensor):
     valid_indices = []
     for idx, point in enumerate(np.asarray(pointcloud.points)):
         if np.linalg.norm(point) < model_config.task_geometry.max_pointcloud_radius:
             valid_indices.append(idx)
     return pointcloud.select_by_index(valid_indices)
 
-def load_ik_solver(model_config: BaseNetConfig, pointcloud: Tensor | None = None):
+def load_ik_solver(model_config: PlaceNetConfig, pointcloud: Tensor | None = None):
     """
     Consolidate the robot config and environment data to create a collision-aware IK
     solver for this particular environment.
@@ -102,7 +102,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     geometries = geometries + task_visualization.get_base_arrows(base_poses, best_pose_scores, prefix='final_')
     open3d.visualization.draw(geometry=geometries)
 
-def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: BaseNetConfig, pointcloud = None):
+def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_poses: cuRoboPose, model_config: PlaceNetConfig, pointcloud = None):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. Reachable base link poses will be colored green, 
@@ -186,7 +186,7 @@ def solve_batched_ik(ik_solver: IKSolver, batch_size: int, poses: cuRoboPose) ->
 
     return success, joint_states
 
-def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometry.PointCloud, base_poses_in_flattened_task_frame: cuRoboPose, model_config: BaseNetConfig) -> Tensor:
+def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometry.PointCloud, base_poses_in_flattened_task_frame: cuRoboPose, model_config: PlaceNetConfig) -> Tensor:
     """
     Give a set of end effector poses, generate a grid of boolean reachability masks for each
 
@@ -194,7 +194,7 @@ def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometr
         task_pose_tensor [Tensor(n, 7)]: The task poses that the robot is trying to reach defined in the world frame
         pointcloud [open3d.geometry.PointCloud]: The environment pointcloud defined in the world frame
         base_poses_in_flattened_task_frame [cuRoboPose]: The base poses to solve for, defined centered at the origin
-        model_config [BaseNetConfig]: The model config settings
+        model_config [PlaceNetConfig]: The model config settings
 
     Returns:
         A PyTorch tensor of shape [n, ny, nx, ntheta] where each entry is a 3D mask of valid poses for the robot 
@@ -277,7 +277,7 @@ def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometr
 
 def main():
     args = load_arguments()
-    model_config = BaseNetConfig.from_yaml_file(args.config_file)
+    model_config = PlaceNetConfig.from_yaml_file(args.config_file)
 
     x_count = model_config.inverse_reachability.solution_resolution['x']
     y_count = model_config.inverse_reachability.solution_resolution['y']

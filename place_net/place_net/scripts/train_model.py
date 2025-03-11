@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 
 from place_net.models.place_net import BaseNet
 from place_net.models.pose_validity_checker import PoseValidityChecker
-from place_net.models.basenet_dataset import BaseNetDataset
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.place_net.place_net.models.placenet_dataset import BaseNetDataset
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils.logger import Logger
 
 def load_arguments():
@@ -21,7 +21,7 @@ def load_arguments():
         prog="train_model.py",
         description="Script to train the BaseNet model based on the setting provided in a configuration file",
     )
-    parser.add_argument('--config-file', default='base_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
+    parser.add_argument('--config-file', default='place_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     parser.add_argument('--checkpoint', help='path to a model checkpoint from which to resume training or evaluate')
     parser.add_argument('--test', default=False, type=bool, help='Whether or not to evaluate the model on the test portion of the dataset')
     parser.add_argument('--device', help='CUDA device override')
@@ -48,28 +48,28 @@ def main():
     # Load the model from a checkpoint if necessary        
     if args.checkpoint is None:
         checkpoint_path = None
-        base_net_config = BaseNetConfig.from_yaml_file(args.config_file, load_solutions=True, device=args.device)
+        place_net_config = PlaceNetConfig.from_yaml_file(args.config_file, load_solutions=True, device=args.device)
     else:
         checkpoint_path, _ = os.path.split(args.checkpoint)
-        base_net_config = BaseNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True, device=args.device)
+        place_net_config = PlaceNetConfig.from_yaml_file(os.path.join(checkpoint_path, 'config.yaml'), load_solutions=True, device=args.device)
         
     # Override the debug flag if necessary
     if args.debug is not None:
-        base_net_config.debug = args.debug
+        place_net_config.debug = args.debug
 
     # Override the number of training epochs if necessary
     if args.num_epochs is not None:
-        base_net_config.model.num_epochs = int(args.num_epochs)
+        place_net_config.model.num_epochs = int(args.num_epochs)
     
-    base_net_model = BaseNet(base_net_config)
-    optimizer = torch.optim.Adam(base_net_model.parameters(), lr=base_net_config.model.learning_rate)
-    logger = Logger(base_net_config, checkpoint_path, bool(args.test))
+    place_net_model = BaseNet(place_net_config)
+    optimizer = torch.optim.Adam(place_net_model.parameters(), lr=place_net_config.model.learning_rate)
+    logger = Logger(place_net_config, checkpoint_path, bool(args.test))
 
     if args.checkpoint is not None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            checkpoint = torch.load(args.checkpoint, map_location=base_net_config.model.device, weights_only=False)
-        base_net_model.load_state_dict(checkpoint['base_net_model'])
+            checkpoint = torch.load(args.checkpoint, map_location=place_net_config.model.device, weights_only=False)
+        place_net_model.load_state_dict(checkpoint['place_net_model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         mapped_indices = checkpoint['mapped_indices'] if 'mapped_indices' in checkpoint else None
         start_epoch = checkpoint['epoch']
@@ -77,60 +77,60 @@ def main():
         mapped_indices = None
         start_epoch = 0
 
-    loss_fn = base_net_config.model.loss_fn_type()
+    loss_fn = place_net_config.model.loss_fn_type()
 
     # Create an external classifier if required
-    base_net_config.model.external_classifier = base_net_config.model.external_classifier or classifier_only
-    if base_net_config.model.external_classifier:
-        external_classifier = PoseValidityChecker(base_net_config)
+    place_net_config.model.external_classifier = place_net_config.model.external_classifier or classifier_only
+    if place_net_config.model.external_classifier:
+        external_classifier = PoseValidityChecker(place_net_config)
         positive_only = True
 
     # Load the data
-    dataset = BaseNetDataset(base_net_config, mapped_indices=mapped_indices)
+    dataset = BaseNetDataset(place_net_config, mapped_indices=mapped_indices)
     if args.test:
         test_loader = DataLoader(dataset.get_dataset('testing', exclude_negative=False), collate_fn=collate_fn)
-        base_net_model.eval()
+        place_net_model.eval()
     else:
         train_data = dataset.get_dataset('training')
         validate_data = dataset.get_dataset('validation')
 
         if positive_only and not classifier_only:
             positive_train_data = dataset.get_dataset('training', exclude_negative=True)
-            train_loader = DataLoader(positive_train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+            train_loader = DataLoader(positive_train_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
 
             positive_validate_data = dataset.get_dataset('validation', exclude_negative=True)
-            validate_loader = DataLoader(positive_validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+            validate_loader = DataLoader(positive_validate_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
-        if base_net_config.model.external_classifier:
-            classifier_train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
-            classifier_validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+        if place_net_config.model.external_classifier:
+            classifier_train_loader = DataLoader(train_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+            classifier_validate_loader = DataLoader(validate_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
 
             classifier_loss_fn = torch.nn.BCEWithLogitsLoss()
-            classifier_optimizer = torch.optim.Adam(external_classifier.parameters(), lr=base_net_config.model.learning_rate)
+            classifier_optimizer = torch.optim.Adam(external_classifier.parameters(), lr=place_net_config.model.learning_rate)
 
             print(f'There are {len(positive_train_data)}/{len(train_data)} positive training data points')
             print(f'There are {len(positive_validate_data)}/{len(validate_data)} positive validation data points')
         else:
-            train_loader = DataLoader(train_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
-            validate_loader = DataLoader(validate_data, batch_size=base_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
+            train_loader = DataLoader(train_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=True)
+            validate_loader = DataLoader(validate_data, batch_size=place_net_config.model.batch_size, shuffle=True, collate_fn=collate_fn)
 
     # Convenience function for debug visualization
     def visualize_if_debug(output, solution, task_tensor, pointcloud_list) -> None:
-        if not base_net_config.debug: return
+        if not place_net_config.debug: return
         logger.log_visualization(
             model_output = output[0, :, :, :],
-            ground_truth = solution[0, :, :, :].to(base_net_config.model.device),
+            ground_truth = solution[0, :, :, :].to(place_net_config.model.device),
             step         = 0,
             task_pose    = task_tensor[0, :],
             pointcloud   = pointcloud_list[0] if pointcloud_list[0] is not None else None,
-            device       = base_net_config.model.device
+            device       = place_net_config.model.device
         )
 
     if args.test:
         print('Testing:')
         with torch.no_grad():
             for task_tensor, pointcloud_list, solution in tqdm(test_loader, ncols=100):
-                output = base_net_model(pointcloud_list, task_tensor)      
+                output = place_net_model(pointcloud_list, task_tensor)      
                 loss = loss_fn(output, solution)
 
                 logger.add_data_point(loss, output, solution, task_tensor)
@@ -140,14 +140,14 @@ def main():
             logger.flush()
             return
     
-    for epoch in range(start_epoch, base_net_config.model.num_epochs):
+    for epoch in range(start_epoch, place_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
         if not classifier_only:
             print('Training BaseNet:')
-            base_net_model.train()
+            place_net_model.train()
             for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
                 optimizer.zero_grad()
-                output = base_net_model(pointcloud_list, task_tensor)
+                output = place_net_model(pointcloud_list, task_tensor)
                 loss = loss_fn(output, solution)
                 loss.backward()
                 optimizer.step()
@@ -156,7 +156,7 @@ def main():
 
             logger.log_statistics(epoch, 'train')
         
-        if base_net_config.model.external_classifier:
+        if place_net_config.model.external_classifier:
             print('Training Classifier:')
             external_classifier.train()
             for task_tensor, pointcloud_list, solution in tqdm(classifier_train_loader, ncols=100):
@@ -173,16 +173,16 @@ def main():
         with torch.no_grad():
             if not classifier_only:
                 print('Validating BaseNet:')
-                base_net_model.eval()
+                place_net_model.eval()
                 for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
-                    output = base_net_model(pointcloud_list, task_tensor)
+                    output = place_net_model(pointcloud_list, task_tensor)
                     loss = loss_fn(output, solution)
                     logger.add_data_point(loss, output, solution, task_tensor)
                     visualize_if_debug(output, solution, task_tensor, pointcloud_list)
 
                 logger.log_statistics(epoch, 'validate')
 
-            if base_net_config.model.external_classifier:
+            if place_net_config.model.external_classifier:
                 print(f'Validating Classifier:')
                 external_classifier.eval()
                 for task_tensor, pointcloud_list, solution in tqdm(classifier_validate_loader, ncols=100):
@@ -194,14 +194,14 @@ def main():
                 logger.log_statistics(epoch, 'validate')
 
         # At regular intervals, save the model checkpoint
-        if logger.was_best() or (epoch != start_epoch and epoch % base_net_config.model.checkpoint_frequency == 0):
-            logger.save_checkpoint(base_net_model, optimizer, epoch, dataset.mapped_indices)
+        if logger.was_best() or (epoch != start_epoch and epoch % place_net_config.model.checkpoint_frequency == 0):
+            logger.save_checkpoint(place_net_model, optimizer, epoch, dataset.mapped_indices)
 
-        if logger.is_training_done(patience=base_net_config.model.patience):
-            print(f'No improvement was seen in validation loss over the last {base_net_config.model.patience} epochs, terminating training early')
+        if logger.is_training_done(patience=place_net_config.model.patience):
+            print(f'No improvement was seen in validation loss over the last {place_net_config.model.patience} epochs, terminating training early')
             break
 
-    logger.save_checkpoint(base_net_model, optimizer, epoch, dataset.mapped_indices)
+    logger.save_checkpoint(place_net_model, optimizer, epoch, dataset.mapped_indices)
     logger.flush()
 
 if __name__ == "__main__":

@@ -12,12 +12,12 @@ from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 from torch.utils.tensorboard.writer import SummaryWriter
 from curobo.types.math import Pose as cuRoboPose
 
-from .base_net_config import BaseNetConfig
+from .place_net_config import PlaceNetConfig
 from place_net.utils import task_visualization, geometry, pose_scorer
 
 
 class Logger:
-    def __init__(self, model_config: BaseNetConfig, existing_checkpoint_path: str = None, test: bool = False):
+    def __init__(self, model_config: PlaceNetConfig, existing_checkpoint_path: str = None, test: bool = False):
         # We log if paths are provided and we are not debugging
         self._log = model_config.model.log_base_path is not None and not model_config.debug
         self._record_checkpoints = model_config.model.checkpoint_base_path is not None and not model_config.debug and not test
@@ -269,7 +269,7 @@ class Logger:
 
         torch.save(
             {
-                'base_net_model': model.state_dict(),
+                'place_net_model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
                 'mapped_indices': mapped_indices

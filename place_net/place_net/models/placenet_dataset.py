@@ -5,14 +5,14 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.utils.place_net_config import PlaceNetConfig
 
-class BaseNetDataset():
+class PlaceNetDataset():
     """
     A dataset class for loading and managing data for BaseNet.
 
     Args:
-        model_config (BaseNetConfig): The configuration object containing model and data information.
+        model_config (PlaceNetConfig): The configuration object containing model and data information.
         mode (str): The mode of the dataset, one of 'training', 'validation', or 'testing'.
         mapped_indices (Optional[Dict[str, Dict[str, Tensor]]]): Predefined indices for data splitting. If None, indices are generated.
     """
@@ -30,7 +30,7 @@ class BaseNetDataset():
             pose, pointcloud_name, sol = self.data_points[index]
             return (pose.to(self.device), self.task_pointclouds[pointcloud_name].to(self.device), sol.to(self.device))
 
-    def __init__(self, model_config: BaseNetConfig, mapped_indices: Optional[dict[str, dict[str, Tensor]]] = None):
+    def __init__(self, model_config: PlaceNetConfig, mapped_indices: Optional[dict[str, dict[str, Tensor]]] = None):
         self.device = model_config.model.device
         self.data = {'training': [], 'validation': [], 'testing': []}
 

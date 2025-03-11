@@ -4,13 +4,13 @@ import copy
 import torch
 from torch import Tensor
 from place_net.models.pose_encoder import PoseEncoder
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
 from place_net.models.pose_validity_checker import PoseValidityChecker
 from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 
-class BaseNet(torch.nn.Module):
-    def __init__(self, config: BaseNetConfig):
-        super(BaseNet, self).__init__()
+class PlaceNet(torch.nn.Module):
+    def __init__(self, config: PlaceNetConfig):
+        super(PlaceNet, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
 
@@ -155,9 +155,9 @@ class BaseNet(torch.nn.Module):
         indices = torch.randperm(num_points_in_cloud)[:num_points_to_keep]
         return pointcloud[indices]
 
-class BaseNetLite(torch.nn.Module):
-    def __init__(self, config: BaseNetConfig):
-        super(BaseNetLite, self).__init__()
+class PlaceNetLite(torch.nn.Module):
+    def __init__(self, config: PlaceNetConfig):
+        super(PlaceNetLite, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
 

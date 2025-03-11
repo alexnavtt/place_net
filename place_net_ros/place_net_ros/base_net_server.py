@@ -23,7 +23,7 @@ from curobo.types.base import TensorDeviceType
 from curobo.wrap.reacher.ik_solver import IKSolverConfig, IKSolver
 from curobo.geom.types import WorldConfig, Mesh
 from base_net.models.base_net import BaseNet
-from base_net.utils.base_net_config import BaseNetConfig
+from base_net.utils.base_net_config import PlaceNetConfig
 from base_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
 from base_net.utils import geometry, pose_scorer, inverse_reachability_map
 from base_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
@@ -71,7 +71,7 @@ class BaseNetServer(Node):
         # Load the model if a checkpoint path is provided
         if self.params.checkpoint_path:
             base_path, _ = os.path.split(self.params.checkpoint_path)
-            self.base_net_config = BaseNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
+            self.base_net_config = PlaceNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
             if self.params.max_ik_count > 0:
                 self.base_net_config.max_ik_count = self.params.max_ik_count
             self.base_net_model = BaseNet(self.base_net_config)

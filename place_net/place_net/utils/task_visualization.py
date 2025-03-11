@@ -9,10 +9,10 @@ from PIL import Image
 from urdf_parser_py.urdf import Robot, Joint, Mesh, Cylinder, Box
 from curobo.types.math import Pose as cuRoboPose
 from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
-from place_net.utils.base_net_config import BaseNetConfig
+from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils.pointcloud_region import PointcloudRegion
 from place_net.utils.invert_robot_model import urdf_pose_to_matrix
-from place_net.utils.base_net_config import BaseNetRobotConfig
+from place_net.place_net.place_net.utils.place_net_config import BaseNetRobotConfig
 
 def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> list[open3d.geometry.TriangleMesh]:
 
@@ -275,7 +275,7 @@ def get_robot_geometry_at_joint_state(
 
     return geometries
 
-def get_pointcloud(pointcloud_tensor: torch.Tensor, task: torch.Tensor, model_config: BaseNetConfig) -> list[open3d.geometry.Geometry]:
+def get_pointcloud(pointcloud_tensor: torch.Tensor, task: torch.Tensor, model_config: PlaceNetConfig) -> list[open3d.geometry.Geometry]:
     # Filter the pointcloud to all points in the appropriate radius around the task
     distances = (pointcloud_tensor[:, :2] - task[:2]).norm(dim=1)
     valid_points = pointcloud_tensor[distances < model_config.task_geometry.max_pointcloud_radius, :]
