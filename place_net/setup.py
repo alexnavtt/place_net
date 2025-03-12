@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='place_net',
-    version='0.1',
+    version='0.9',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
