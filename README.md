@@ -1,7 +1,5 @@
 # PlaceNet
 
-**Note:** We're currectly undergoing a rename from BaseNet to PlaceNet due to a name clash with a similar project. If you see any references to BaseNet it's because that particular aspect has not been migrated yet.
-
 ### Obstacle Aware Mobile Manipulator Base Placement through Deep Learning
 
 Contents:
