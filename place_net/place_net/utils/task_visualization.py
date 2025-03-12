@@ -229,7 +229,7 @@ def get_robot_geometry_at_joint_state(
         inverted: bool = False
     ) -> list[open3d.geometry.TriangleMesh]:
 
-    robot_model = CudaRobotModel(config=robot_config.inverted_robot.kinematics)
+    robot_model = CudaRobotModel(config=robot_config.inverted_robot.kinematics if inverted else robot_config.robot.kinematics)
     geometries = []
     
     robot_spheres = robot_model.get_robot_as_spheres(q=joint_state.cuda(robot_model.tensor_args.device))[0]
@@ -239,7 +239,7 @@ def get_robot_geometry_at_joint_state(
         robot_sphere_o3d.paint_uniform_color(np.random.rand(1).repeat(3))
         geometries.append({'geometry': robot_sphere_o3d.compute_triangle_normals(), 'group': 'robot_spheres', 'name': robot_sphere.name})
 
-    kinematics_config = robot_config.inverted_robot.kinematics.kinematics_config
+    kinematics_config = robot_config.inverted_robot.kinematics.kinematics_config if inverted else robot_config.robot.kinematics.kinematics_config
     robot_urdf: Robot = robot_config.inverted_urdf if inverted else robot_config.urdf
     chain_links = robot_urdf.get_chain(kinematics_config.base_link, kinematics_config.ee_link, links=True, joints=False)
     chain_joints = robot_urdf.get_chain(kinematics_config.base_link, kinematics_config.ee_link, links=False, joints=True)
