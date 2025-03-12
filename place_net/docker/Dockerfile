@@ -1,6 +1,4 @@
-ARG BUILD_TARGET=workstation
-
-FROM alexnavtt/curobo:${BUILD_TARGET} AS base_net
+FROM alexnavtt/place_net_curobo AS place_net
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO=humble
@@ -27,8 +25,7 @@ RUN apt update && apt upgrade -y \
     && apt update \
     && apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
-# Install BaseNet dependencies
-RUN apt install -y libgl1
+# Install PlaceNet dependencies
 ADD setup.py /place_net/setup.py
 WORKDIR /place_net
 RUN pip install -e . --no-build-isolation
@@ -53,6 +50,8 @@ RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
     && sed -i 's/01;32m/01;36m/g; s/01;34m/01;35m/g' "/root/.bashrc"
 
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
-    && echo "source /colcon_ws/install/setup.bash" >> ~/.profile
+    && echo "source /colcon_ws/install/setup.bash" >> ~/.profile \ 
+    && echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc \
+    && echo "source /colcon_ws/install/setup.bash" >> ~/.bashrc
 
-WORKDIR /base_net
+WORKDIR /place_net

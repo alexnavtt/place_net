@@ -1,8 +1,5 @@
 services:
   curobo:
-    environment:
-      # Get the build target
-      - BUILD_TARGET=$BUILD_TARGET
     runtime: nvidia
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
@@ -11,14 +8,13 @@ services:
     image: alexnavtt/place_net_curobo
     build:
       dockerfile: curobo.Dockerfile
-      # platforms: 
-      #   - linux/${BUILD_ARCHITECTURE}
       args:
+        # Include proxy settings if working in a proxy-ed environment
         HTTP_PROXY: $HTTP_PROXY
         HTTPS_PROXY: $HTTPS_PROXY
         NO_PROXY: $NO_PROXY
         http_proxy: $http_proxy
         https_proxy: $https_proxy
         no_proxy: $no_proxy
-        BUILD_TARGET: $BUILD_TARGET
+        # Build for CUDA version set by the user
         CUDA_VERSION: $TARGET_CUDA_VERSION

@@ -10,7 +10,7 @@ RUN apt update \
         python3-pip \
     && pip install torch setuptools==61
 
-FROM base_${BUILD_TARGET} AS build
+FROM base_workstation AS build
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install cuRobo

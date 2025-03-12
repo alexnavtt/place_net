@@ -128,7 +128,7 @@ If you have visualize set to True in your config file, you should see an output 
 
 ![Generated Task Poses](assets/generated_task_poses.png)
 
-where the diffirent colord spheres represent the end effector collision geometry for your different task generation sets. Task poses are saved immediately upon closing the preview so if you wish to discard the result you have to terminate the program. Alternatively, if you want to generated task poses without saving them for testing purposes, you can comment out or remove the `task_data_path` entry from your config file. 
+where the diffirent colord spheres represent the end effector collision geometry for your different task generation sets. Task poses are saved immediately upon closing the preview so if you wish to discard the result you have to terminate the program. Alternatively, if you want to generated task poses without saving them for testing purposes, you can comment out or remove the `task_data_path` entry from your config file. Note that this rendering process can use up quite a lot of CPU RAM for larger environment, so adjust accordingly.
 
 #### Ground Truth Calculation
 
@@ -138,7 +138,7 @@ Once the task poses are generated, you can set up the ground truth calculations.
 place_net calculate-ground-truth --config-file <path/to/your/config.yaml>
 ```
 
-If you have the debug flag enabled, you will see two outputs for every task pose. The first is a solution to the IK problem with only self collisions enabled. This helps to reduce the number of IK problems to run with the full pointcloud. The second is the final solution with the full collision environment as well as the robot model placed at the highest scoring IK pose. This is usually a good place to verify that everything is working correctly, though there are occasionally rendering issues when operating with docker.
+If you have the debug flag enabled, you will see two outputs for every task pose. The first is a solution to the IK problem with only self collisions enabled. This helps to reduce the number of IK problems to run with the full pointcloud. The second is the final solution with the full collision environment as well as the robot model placed at the highest scoring IK pose. This is usually a good place to verify that everything is working correctly.
 
 <img src="assets/solution_no_obs.png" alt="Solution with no obstacles" height=300/>
 <img src="assets/solution_with_obs.png" alt="Solution with no obstacles" height=300/>
