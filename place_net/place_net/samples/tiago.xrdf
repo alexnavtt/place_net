@@ -1,0 +1,112 @@
+format: xrdf
+format_version: 1.0
+
+modifiers:
+    - set_base_frame: "base_link"
+
+default_joint_positions: 
+    wheel_right_joint: 0.0
+    wheel_left_joint:  0.0
+    gripper_right_finger_joint: 0.0225
+    gripper_left_finger_joint: 0.0225
+    head_1_joint: 0.0
+    head_2_joint: 0.0
+
+cspace:
+    joint_names:
+        - torso_lift_joint
+        - arm_1_joint
+        - arm_2_joint
+        - arm_3_joint
+        - arm_4_joint
+        - arm_5_joint
+        - arm_6_joint
+        - arm_7_joint
+    acceleration_limits: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    jerk_limits: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+tool_frames: ["gripper_grasping_frame"]
+
+collision:
+    geometry: "tiago_collision_spheres"
+    buffer_distance:
+        base_link: 0.05
+        torso_fixed_link: 0.05
+        torso_lift_link: 0.05
+        arm_1_link: 0.05
+        arm_2_link: 0.05
+        arm_3_link: 0.05
+        arm_4_link: 0.05
+        arm_5_link: 0.05
+        arm_6_link: 0.05
+        arm_7_link: 0.05
+        gripper_link: 0.02
+        gripper_right_finger_link: 0.01
+        gripper_left_finger_link: 0.01
+        head_2_link: 0.05
+
+self_collision:
+    geometry: "tiago_collision_spheres"
+    ignore:
+        base_link: [torso_fixed_link]
+        torso_fixed_link: [torso_lift_link]
+        torso_lift_link: [head_2_link, arm_1_link]
+        arm_1_link: [arm_2_link]
+        arm_2_link: [arm_3_link]
+        arm_3_link: [arm_4_link]
+        arm_4_link: [arm_5_link]
+        arm_5_link: [arm_6_link]
+        arm_6_link: [arm_7_link]
+        arm_7_link: [gripper_link]
+        gripper_link: [gripper_right_finger_link, gripper_left_finger_link]
+        gripper_right_finger_link: [gripper_left_finger_link]
+        gripper_left_finger_link: []
+        head_2_link: []
+    buffer_distance:
+        base_link: 0.004
+        torso_fixed_link: 0.004
+        torso_lift_link: 0.004
+        arm_1_link: 0.004
+        arm_2_link: 0.004
+        arm_3_link: 0.004
+        arm_4_link: 0.004
+        arm_5_link: 0.004
+        arm_6_link: 0.004
+        arm_7_link: 0.004
+        gripper_link: 0.004
+        gripper_right_finger_link: 0.004
+        gripper_left_finger_link: 0.004
+        head_2_link: 0.004
+
+geometry:
+    tiago_collision_spheres: 
+        spheres:
+            base_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            torso_fixed_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            torso_lift_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_1_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_2_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_3_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_4_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_5_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_6_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            arm_7_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            gripper_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            gripper_right_finger_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            gripper_left_finger_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            head_2_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.0010}
+            

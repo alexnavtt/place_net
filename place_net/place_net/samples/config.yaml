@@ -10,16 +10,15 @@ solution_data_path: "place_net/data/solutions/"
 # Specify the URDF file to use. This is used to load the robot model and its kinematics.
 # If ros_package is omitted, the path is assumed to be relative to the current working directory.
 urdf_file:
-  ros_package: my_robot_description
-  path: urdf/my_robot.urdf.xacro
-  xacro_args: 'arg1:=True arg2:=something_else'
+  ros_package: tiago_description
+  path: robots/tiago.urdf.xacro
+  xacro_args: base_type:=pmb2 ft_sensor:=no-ft-sensor camera_model:=no-camera end_effector:=pal-gripper
 
 # Specify the curobo config file to use. This is used to load the robot model and its kinematics.
 # If ros_package is omitted, the path is assumed to be relative to the current working directory.
 # Both XRDF and raw cuRobo config YAML files are supported
 curobo_config_file:
-  ros_package: my_robot_curobo_config
-  path: config/my_robot.xrdf
+  path: place_net/samples/tiago.xrdf
 
 # Specify whether to use fake solutions (i.e. random solutions) during training. This is useful for debugging.
 fake_solutions: False
@@ -35,23 +34,12 @@ debug: True
 # joints in the URDF with static ones to collapse the model down to a single kinematic chain. This entry is a dictionary of joint 
 # names to joint values at which these joints will be frozen during IK problems.
 unused_joint_defaults:
-  front_left_hip_x  : -0.0058014001697301865
-  front_left_hip_y  :  0.7929132580757141
-  front_left_knee   : -1.5593334436416626
-  front_right_hip_x : -0.007982775568962097
-  front_right_hip_y :  0.7943171262741089
-  front_right_knee  : -1.5458697080612183
-  rear_left_hip_x   :  0.0062673864886164665
-  rear_left_hip_y   :  0.7941105961799622
-  rear_left_knee    : -1.5512280464172363
-  rear_right_hip_x  :  0.012335322797298431
-  rear_right_hip_y  :  0.8197641372680664
-  rear_right_knee   : -1.55510675907135
-  arm0_fingers      : -0.010957598686218262
-  body_height_joint : 0.52
-  body_yaw_joint    : 0.0
-  body_pitch_joint  : 0.0
-  body_roll_joint   : 0.0
+  wheel_right_joint: 0.0
+  wheel_left_joint:  0.0
+  gripper_right_finger_joint: 0.0225
+  gripper_left_finger_joint: 0.0225
+  head_1_joint: 0.0
+  head_2_joint: 0.0
 
 # Specify which pointclouds in the `pointcloud_data_path` should be used during calculations or training. 
 # Each entry is a name-value where the name is the file name for the pointcloud minus the extension. 

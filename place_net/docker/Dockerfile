@@ -35,6 +35,9 @@ SHELL ["/bin/bash", "-l", "-c"]
 
 # Install NRG ros package dependencies
 WORKDIR /colcon_ws/src
+
+RUN apt install -y ros-${ROS_DISTRO}-tiago-description
+
 RUN mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 RUN --mount=type=ssh git clone git@github.com:UTNuclearRobotics/spot_ros.git -b devel \
     && git clone git@github.com:UTNuclearRobotics/nrg_spot_manipulation.git -b curobo
