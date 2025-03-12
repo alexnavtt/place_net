@@ -14,7 +14,7 @@ from torch import Tensor
 from curobo.types.robot import RobotConfig
 
 from place_net.utils import task_visualization
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig, BaseNetRobotConfig
+from place_net.utils.place_net_config import PlaceNetConfig, PlaceNetRobotConfig
 from place_net.utils.pointcloud_region import PointcloudRegion
 
 def load_arguments() -> dict:
@@ -25,7 +25,7 @@ def load_arguments() -> dict:
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='Config yaml file in which to look for a list of pointclouds')
     return parser.parse_args()
 
-def get_end_effector_spheres(robot_config: BaseNetRobotConfig) -> torch.Tensor:
+def get_end_effector_spheres(robot_config: PlaceNetRobotConfig) -> torch.Tensor:
     """
     Get all of the collision spheres on the end effector link and all links
     with fixed joints to the end effector link. The output tensor is in 
@@ -72,7 +72,7 @@ def are_spheres_in_collision(
         
     return False
 
-def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, sampled_poses: tuple[Tensor], robot_config: BaseNetRobotConfig, regions: PointcloudRegion) -> None:
+def visualize_task_poses(pointcloud: open3d.geometry.PointCloud, sampled_poses: tuple[Tensor], robot_config: PlaceNetRobotConfig, regions: PointcloudRegion) -> None:
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame

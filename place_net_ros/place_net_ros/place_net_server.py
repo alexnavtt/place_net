@@ -22,13 +22,13 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.types.base import TensorDeviceType
 from curobo.wrap.reacher.ik_solver import IKSolverConfig, IKSolver
 from curobo.geom.types import WorldConfig, Mesh
-from place_net.models.place_net import BaseNet
+from place_net.models.place_net import PlaceNet
 from place_net.utils.place_net_config import PlaceNetConfig
 from place_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
 from place_net.utils import geometry, pose_scorer, inverse_reachability_map
 from place_net.scripts.calculate_ground_truth import solve_batched_ik, get_ground_truth_tensor
 
-from .place_net_visualizer import BaseNetVisualizer
+from .place_net_visualizer import PlaceNetVisualizer
 from . import place_net_conversions
 from .place_net_ros_parameters import place_net_ros_params
 
@@ -58,7 +58,7 @@ class PoseGrid:
         self.lower_bound += translation
         self.upper_bound += translation
 
-class BaseNetServer(Node):
+class PlaceNetServer(Node):
     def __init__(self):
         super().__init__(node_name='place_net_server')
         self.tf_buffer = Buffer()
@@ -74,7 +74,7 @@ class BaseNetServer(Node):
             self.place_net_config = PlaceNetConfig.from_yaml_file(os.path.join(base_path, 'config.yaml'), load_pointclouds=False, load_solutions=False, load_tasks=False, device=self.params.device)
             if self.params.max_ik_count > 0:
                 self.place_net_config.max_ik_count = self.params.max_ik_count
-            self.place_net_model = BaseNet(self.place_net_config)
+            self.place_net_model = PlaceNet(self.place_net_config)
         else:
             self.place_net_model = None
 
@@ -100,7 +100,7 @@ class BaseNetServer(Node):
             yaw_res=self.place_net_config.inverse_reachability.solution_resolution['yaw'],
             device=self.place_net_config.model.device
         )
-        self.place_net_viz = BaseNetVisualizer(self, self.place_net_config)
+        self.place_net_viz = PlaceNetVisualizer(self, self.place_net_config)
 
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
@@ -137,7 +137,7 @@ class BaseNetServer(Node):
             task_poses [Tensor (n, 7)] : The set of task poses to try to reach defined in a gravity aligned frame
             pointcloud [Tensor (m, 3)] : A set of points to consider as obstacles. Ignore in IRM mode
             mode [str]: The method to use in determining the set of base locations.\nOptions are:
-                        'model' - Use BaseNet to determine base locations\n
+                        'model' - Use PlaceNet to determine base locations\n
                         'ground_truth' - Use cuRobo to perform a collision aware inverse reachability calculation\n
                         'irm' - Use a precomuted inverse reachability map. This method requires that the 
                                 'inverse_reachability_map_path' ROS parameter be set with a valid IRM file
@@ -675,8 +675,8 @@ class BaseNetServer(Node):
 
 def main():
     rclpy.init()
-    place_net_server = BaseNetServer()
-    place_net_server.get_logger().info(f'BaseNet server online, using cuda device {place_net_server.params.device}')
+    place_net_server = PlaceNetServer()
+    place_net_server.get_logger().info(f'PlaceNet server online, using cuda device {place_net_server.params.device}')
     rclpy.spin(place_net_server)
 
 if __name__ == '__main__':

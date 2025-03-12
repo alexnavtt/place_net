@@ -16,7 +16,7 @@ from place_net_msgs.srv import QueryBaseLocation
 from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils import geometry
 
-class BaseNetVisualizer:
+class PlaceNetVisualizer:
     def __init__(self, ros_node: Node, place_net_config: PlaceNetConfig):
         self.ros_node = ros_node
         self.place_net_config = place_net_config

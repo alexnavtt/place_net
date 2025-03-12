@@ -2,7 +2,7 @@
 
 # Given a robot base pose, an environment pointcloud, and a set of
 # end effector poses, determine which end effectors poses can be 
-# reached from that base pose using one of the BaseNet model, the
+# reached from that base pose using one of the PlaceNet model, the
 # inverse reachability map, or direct IK calculations
 
 ## Request

@@ -1,6 +1,6 @@
 import os
 import argparse
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
+from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 
 def load_arguments():
@@ -9,7 +9,7 @@ def load_arguments():
     """
     parser = argparse.ArgumentParser(
         prog="generate_inverse_reachability_map.py",
-        description="Script to calculate the ground truth reachability values for BaseNet in the absence of obstacles",
+        description="Script to calculate the ground truth reachability values for PlaceNet in the absence of obstacles",
     )
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     return parser.parse_args()

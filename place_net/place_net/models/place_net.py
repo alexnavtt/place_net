@@ -4,7 +4,7 @@ import copy
 import torch
 from torch import Tensor
 from place_net.models.pose_encoder import PoseEncoder
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
+from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.models.pose_validity_checker import PoseValidityChecker
 from place_net.utils.inverse_reachability_map import InverseReachabilityMap
 

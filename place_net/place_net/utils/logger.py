@@ -28,8 +28,8 @@ class Logger:
         self._best_loss = float('inf')
         self._num_epochs_without_improvement = 0
 
-        # For differentiating between BaseNet and Classifier loss
-        self.mode = 'BaseNet'
+        # For differentiating between PlaceNet and Classifier loss
+        self.mode = 'PlaceNet'
 
         if existing_checkpoint_path is None and test:
             raise RuntimeError("No checkpoint provided for a test run")
@@ -88,7 +88,7 @@ class Logger:
 
     def add_data_point(self, loss: Tensor, model_output: Tensor, ground_truth: Tensor, input_poses: Tensor):
         if not self._log: return
-        self.mode = 'BaseNet'
+        self.mode = 'PlaceNet'
 
         binary_output = torch.sigmoid(model_output) >= 0.5
         ground_truth = ground_truth.bool()
@@ -184,7 +184,7 @@ class Logger:
             self._writer.add_scalar(f'{prefix}{name}/Avg/{label}', metric_tensor.mean().item(), epoch)        
             self._writer.add_histogram(f'{prefix}{name}/{label}', metric_tensor, epoch)
 
-        if self.mode == 'BaseNet':
+        if self.mode == 'PlaceNet':
             self._last_loss = torch.tensor(self._metrics['Loss']).mean().item()
 
             if label == 'validate':

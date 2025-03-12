@@ -7,10 +7,10 @@ from tqdm import tqdm
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from place_net.models.place_net import BaseNet
+from place_net.models.place_net import PlaceNet
 from place_net.models.pose_validity_checker import PoseValidityChecker
-from place_net.place_net.place_net.models.placenet_dataset import BaseNetDataset
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
+from place_net.models.placenet_dataset import PlaceNetDataset
+from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils.logger import Logger
 
 def load_arguments():
@@ -19,7 +19,7 @@ def load_arguments():
     """
     parser = argparse.ArgumentParser(
         prog="train_model.py",
-        description="Script to train the BaseNet model based on the setting provided in a configuration file",
+        description="Script to train the PlaceNet model based on the setting provided in a configuration file",
     )
     parser.add_argument('--config-file', default='place_net/config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     parser.add_argument('--checkpoint', help='path to a model checkpoint from which to resume training or evaluate')
@@ -28,7 +28,7 @@ def load_arguments():
     parser.add_argument('--debug', help='Debug override flag')
     parser.add_argument('--num-epochs', help='Max epoch override')
     parser.add_argument('--classifier-only', default='False', help='Set to True to only train the classifier')
-    parser.add_argument('--positive-cases-only', default='False', help='Set to True to only train BaseNet on cases with valid solutions')
+    parser.add_argument('--positive-cases-only', default='False', help='Set to True to only train PlaceNet on cases with valid solutions')
     return parser.parse_args()
 
 def collate_fn(data_tuple: list[tuple[Tensor, Tensor, Tensor]]) -> tuple[Tensor, list[Tensor], Tensor]:
@@ -61,7 +61,7 @@ def main():
     if args.num_epochs is not None:
         place_net_config.model.num_epochs = int(args.num_epochs)
     
-    place_net_model = BaseNet(place_net_config)
+    place_net_model = PlaceNet(place_net_config)
     optimizer = torch.optim.Adam(place_net_model.parameters(), lr=place_net_config.model.learning_rate)
     logger = Logger(place_net_config, checkpoint_path, bool(args.test))
 
@@ -86,7 +86,7 @@ def main():
         positive_only = True
 
     # Load the data
-    dataset = BaseNetDataset(place_net_config, mapped_indices=mapped_indices)
+    dataset = PlaceNetDataset(place_net_config, mapped_indices=mapped_indices)
     if args.test:
         test_loader = DataLoader(dataset.get_dataset('testing', exclude_negative=False), collate_fn=collate_fn)
         place_net_model.eval()
@@ -143,7 +143,7 @@ def main():
     for epoch in range(start_epoch, place_net_config.model.num_epochs):
         print(f'Epoch {epoch}:')
         if not classifier_only:
-            print('Training BaseNet:')
+            print('Training PlaceNet:')
             place_net_model.train()
             for task_tensor, pointcloud_list, solution in tqdm(train_loader, ncols=100):
                 optimizer.zero_grad()
@@ -172,7 +172,7 @@ def main():
 
         with torch.no_grad():
             if not classifier_only:
-                print('Validating BaseNet:')
+                print('Validating PlaceNet:')
                 place_net_model.eval()
                 for task_tensor, pointcloud_list, solution in tqdm(validate_loader, ncols=100):
                     output = place_net_model(pointcloud_list, task_tensor)

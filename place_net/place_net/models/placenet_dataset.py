@@ -9,7 +9,7 @@ from place_net.utils.place_net_config import PlaceNetConfig
 
 class PlaceNetDataset():
     """
-    A dataset class for loading and managing data for BaseNet.
+    A dataset class for loading and managing data for PlaceNet.
 
     Args:
         model_config (PlaceNetConfig): The configuration object containing model and data information.

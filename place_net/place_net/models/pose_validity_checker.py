@@ -4,7 +4,7 @@ from torch import Tensor
 
 from .pointcloud_encoder import PointNetEncoder
 from .pose_encoder import PoseEncoder
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig
+from place_net.utils.place_net_config import PlaceNetConfig
 
 class PoseValidityChecker(torch.nn.Module):
     def __init__(self, config: PlaceNetConfig):

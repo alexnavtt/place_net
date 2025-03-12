@@ -28,7 +28,7 @@ cuRoboTransform: TypeAlias = cuRoboPose
 
 # PlaceNet
 from place_net.utils import task_visualization, geometry
-from place_net.place_net.place_net.utils.place_net_config import PlaceNetConfig, tensor_hash
+from place_net.utils.place_net_config import PlaceNetConfig, tensor_hash
 from place_net.utils.pose_scorer import PoseScorer
 
 def load_arguments():
@@ -37,7 +37,7 @@ def load_arguments():
     """
     parser = argparse.ArgumentParser(
         prog="calculate_ground_truth.py",
-        description="Script to calculate the ground truth reachability values for BaseNet",
+        description="Script to calculate the ground truth reachability values for PlaceNet",
     )
     parser.add_argument('--config-file', default='../config/task_definitions.yaml', help='configuration yaml file for the robot and task definitions')
     return parser.parse_args()
