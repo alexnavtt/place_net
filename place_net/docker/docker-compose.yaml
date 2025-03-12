@@ -27,7 +27,10 @@ services:
   place_net_runtime:
     extends: place_net
     volumes:
+      # The main code base
       - ${PWD}/../place_net:/place_net/place_net
+      # The docker entrypoints
+      - ${PWD}/entrypoints:/place_net/docker/entrypoints
       # mount the X11 socket to enable graphics display
       - /tmp/.X11-unix:/tmp/.X11-unix
       # required for non-nvidia users, comment out for nvidia users
