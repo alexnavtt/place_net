@@ -1,5 +1,5 @@
 # Directory containing all your pointcloud files
-pointcloud_data_path: "place_net/data/pointclouds/"
+pointcloud_data_path: "place_net/samples/pointclouds/"
 
 # Directory in which task poses are saved to during task generation, and from which tasks are loaded during ground truth calculations and training
 task_data_path: "place_net/data/tasks/"
@@ -29,7 +29,7 @@ fake_solutions: False
 max_ik_count: 500
 
 # Set to True to enable debug mode. This will visualize different stages of the training and ground truth calculation processes
-debug: False
+debug: True
 
 # At the time of writing, cuRobo does not handle robots with multiple kinematic chains well. To combat this, we substitute dynamic 
 # joints in the URDF with static ones to collapse the model down to a single kinematic chain. This entry is a dictionary of joint 
@@ -69,9 +69,9 @@ unused_joint_defaults:
 #   - filter_num_neighbors - Only used if `filter_statistical_outliers` is True. Sets the number of neighbors to consider when 
 #                 calculating a point's mean offset from other points in the cloud.
 pointclouds:
-  my_pointcloud1: {} # No preprocessing
-  my_pointcloud2: {elevation: 0.5} # Apply a vertical offset of 0.5
-  my_pointcloud3: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30} # Filter outliers
+  geometry_env: {} # No preprocessing
+  kitchen: {elevation: 0.15} # Apply a vertical offset of 0.15
+  outside: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30} # Filter outliers
 
 # Define the task geometry. This is used to calculate the task space and to filter out tasks that are not reachable by the robot.
 task_geometry:
@@ -92,14 +92,14 @@ task_geometry:
 # Definitions of offsets and regions in which to sample task poses
 task_generation:
   # Whether or not to show the generated task poses before saving to disk
-  visualize: False
+  visualize: True
 
   # These points are sampled at a fixed offset from surfaces in the pointcloud, and are always facing directly towards 
   # the surface. Useful for training for surface tasks such as wiping or scanning.
   surface_points: 
     offset: 0.15        # The distance from the surface to place the task
     min_clearance: 0.0  # The minimum distance that the end effector collision can get to other points in the vicinity
-    density: 5          # The number of points to sample per cubic meter of the sample area
+    density: 0.5        # The number of points to sample per cubic meter of the sample area
 
   # Points sampled at random poses in the sample region
   offset_points:
@@ -107,8 +107,8 @@ task_generation:
     # offset_bounds: Array of length 2. The minimum and maximum distance that the end effector can be from nearby points
     #                to be considered a valid sample
     # density: The number of points to sample per cubic meter of the sample area
-    - {name: 'close', offset_bounds: [0.15, 0.30], density: 5} 
-    - {name: 'far'  , offset_bounds: [0.40, 0.90], density: 2.5}
+    - {name: 'close', offset_bounds: [0.15, 0.30], density: 1} 
+    - {name: 'far'  , offset_bounds: [0.40, 0.90], density: 0.5}
 
   # Bounding box regions in which to sample task poses. There can be multiple per pointcloud
   pointcloud_regions:
