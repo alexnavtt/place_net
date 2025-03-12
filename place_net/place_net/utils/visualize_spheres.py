@@ -18,7 +18,7 @@ def load_arguments():
 
 def main():
     args = load_arguments()
-    model_config = PlaceNetConfig.from_yaml_file(args.config_file)
+    model_config = PlaceNetConfig.from_yaml_file(args.config_file, load_pointclouds=False, load_solutions=False, load_tasks=False)
 
     joint_positions = torch.zeros(model_config.robot_config.inverted_robot.kinematics.kinematics_config.n_dof)
     visualize(get_robot_geometry_at_joint_state(model_config.robot_config, joint_positions, np.eye(4), inverted=False))
