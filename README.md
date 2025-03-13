@@ -116,7 +116,9 @@ PlaceNet runs with a single configuration YAML file which covers settings for:
   - Inverse Reachability Map generation (optional)
   - PlaceNet model settings
 
-See the [config file](place_net/place_net/samples/config.yaml) in the sample directory for details on the available options. Once the config file is appropriately filled out and all the supporting files are placed in the respective directories (pointclouds, URDF, cuRobo config, etc.), the first step is to generate task poses within each pointcloud. 
+See the [config file](place_net/place_net/samples/config.yaml) in the sample directory for details on the available options. We provide sample cuRobo XRDF files in the [sample](place_net/place_net/samples) folder to use as a reference for your own robot. Additionally, when filling out the collision sphere geometry, we provide a convenience [visualization script](place_net/place_net/utils/visualize_spheres.py) to check your sphere settings against the robot model. Once the config file is appropriately filled out and all the supporting files are placed in the respective directories (pointclouds, URDF, cuRobo config, etc.), the next step is to generate task poses within each pointcloud. 
+
+For the next few sections, if you just want to try PlaceNet out without going through all the work to configure your own robot, simply set the config path to `place_net/samples/config.yaml` and run the commands from same directory as `setup.py`. Instructions for running with Docker are handled in the [next section](#running-with-docker).
 
 #### Task Pose Generation
 
@@ -166,6 +168,16 @@ place_net generate-inverse-reachability-map --config-file <path/to/your/config.y
 The main 4 steps - set up the config, generate task poses, calculate ground truth, and train model - are the same when running with docker. The docker compose is set up to mount the entire place_net directory when started, so any changes you make to files inside the repo structure - including pointclouds, config, tasks, and solutions - will be reflected in the docker container. The commands are slightly different and depends on the `PLACE_NET_CONFIG` environment variable to indicate where within the place_net repo to look for your config file.
 
 ```bash
+# Optional - set up sample files to use test code
+cd place_net/docker
+cp ../place_net/samples/config.yaml ../place_net/config/
+export PLACE_NET_CONFIG=config.yaml
+
+# Create the output directories for generated solutions
+touch ../place_net/data/solutions
+touch ../place_net/data/tasks
+
+# Run the docker files on the sample data
 docker compose run --rm generate_task_poses
 docker compose run --rm calculate_ground_truth
 docker compose run --rm train_model
