@@ -214,8 +214,8 @@ def get_urdf_visual_geometry(visual) -> open3d.geometry.TriangleMesh:
     try:
         if hasattr(visual.geometry, 'scale') and visual.geometry.scale is not None:
             # URDF has per-axis scaling and Open3D has uniform scaling
-            scale = np.array(visual.geometry.scale)
-            mesh = mesh.scale(scale.mean(), center=np.zeros(3))
+            scale_matrix = np.diag([*visual.geometry.scale, 1])
+            mesh.transform(scale_matrix)
     except Exception as e:
         print(f'Error scaling mesh: {e}')
 

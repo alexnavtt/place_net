@@ -49,12 +49,12 @@ def urdf_pose_to_matrix(pose: urdf.Pose) -> np.ndarray:
     if pose is None:
         return matrix
     
-    matrix[:3, :3] = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(pose.rpy)), degrees=False).as_matrix()
+    matrix[:3, :3] = scipy.spatial.transform.Rotation.from_euler(seq="xyz", angles=list(pose.rpy), degrees=False).as_matrix()
     matrix[:3,  3] = np.array(pose.xyz)
     return matrix
 
 def matrix_to_urdf_pose(matrix: np.ndarray) -> urdf.Pose:
-    rpy = scipy.spatial.transform.Rotation.from_matrix(matrix[:3, :3]).as_euler("zyx", degrees=False)
+    rpy = scipy.spatial.transform.Rotation.from_matrix(matrix[:3, :3]).as_euler("xyz", degrees=False)
     xyz = matrix[:3, 3].tolist()
     return urdf.Pose(xyz=xyz, rpy=rpy)
 
@@ -62,15 +62,15 @@ def invert_pose(pose: urdf.Pose) -> urdf.Pose | None:
     if pose is None: 
         return None
 
-    rot_mat = scipy.spatial.transform.Rotation.from_euler(seq="zyx", angles=list(reversed(pose.rpy)), degrees=False).as_matrix()
+    rot_mat = scipy.spatial.transform.Rotation.from_euler(seq="xyz", angles=list(pose.rpy), degrees=False).as_matrix()
     translation = np.array(pose.xyz)
 
     inverted_rot_mat = rot_mat.T
     inverted_translation = -inverted_rot_mat@translation
 
-    inverted_rpy = scipy.spatial.transform.Rotation.from_matrix(inverted_rot_mat).as_euler("zyx", degrees=False)
+    inverted_rpy = scipy.spatial.transform.Rotation.from_matrix(inverted_rot_mat).as_euler("xyz", degrees=False)
 
-    return urdf.Pose(xyz=inverted_translation.tolist(), rpy=list(reversed(inverted_rpy)))
+    return urdf.Pose(xyz=inverted_translation.tolist(), rpy=list(inverted_rpy))
 
 def invert_axis(axis) -> list:
     return (-np.array(axis)).tolist()
