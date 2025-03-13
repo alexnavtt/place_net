@@ -64,18 +64,18 @@ pointclouds:
 # Define the task geometry. This is used to calculate the task space and to filter out tasks that are not reachable by the robot.
 task_geometry:
   # The z-elevation of the *manipulator chain* base link. This does not necessarily have to be the root link of the URDF
-  base_link_elevation: 0.709
+  base_link_elevation: 0.099
   # The maximum distance from the task pose to consider potential base poses
-  max_radial_reach: 0.9
+  max_radial_reach: 1.1
   # The minimum and maximum task elevation to sample during task generation
-  min_task_elevation: 0.3
+  min_task_elevation: 0.2
   max_task_elevation: 1.6
   # The minimum and maximum height of a point to consider as an obstacle. The minimum can be set to a value greater than zero
   # for legged robots which can step over small objects
-  min_pointcloud_elevation: 0.2
+  min_pointcloud_elevation: 0.1
   max_pointcloud_elevation: 1.7
   # The maximum distance from the manipulator chain base link at which a point could conceivably collide with the robot
-  max_pointcloud_radius: 2.0
+  max_pointcloud_radius: 1.4
 
 # Definitions of offsets and regions in which to sample task poses
 task_generation:
