@@ -206,6 +206,10 @@ class Logger:
         model_labels[model_labels > 0.5] = 1
         model_labels[model_labels < 0.5] = 0
 
+        # Determine which pose the model chose for each item in the batch
+        _, model_pose_choice_indices = self._scorer.select_best_pose(torch.sigmoid(model_output.unsqueeze(0)) >= 0.5)
+        _, ground_truth_pose_choice_indices = self._scorer.select_best_pose(ground_truth.unsqueeze(0))
+
         # Retrieve the bases poses
         base_poses_in_flattened_task_frame = geometry.load_base_pose_array(
             half_x_range=self._model_config.task_geometry.max_radial_reach,
@@ -221,12 +225,18 @@ class Logger:
         base_poses_in_world = world_tform_flattened_task.repeat(base_poses_in_flattened_task_frame.batch).multiply(base_poses_in_flattened_task_frame)
         base_poses_in_world.position[:, 2] = self._model_config.task_geometry.base_link_elevation
 
-        # Get the geometry for the ground truth, the model output, and their agreement metric
+        # Get the geometry for the ground truth, best_pose, the model output, and their agreement metric
         agreement = model_labels == ground_truth.flatten()
+        model_pose            = task_visualization.get_task_arrows(base_poses_in_world[model_pose_choice_indices], suffix='model')
+        ground_truth_pose     = task_visualization.get_task_arrows(base_poses_in_world[ground_truth_pose_choice_indices], suffix='ground_truth')
         task_geometry         = task_visualization.get_task_arrows(task_pose)
         ground_truth_geometry = task_visualization.get_base_arrows(base_poses_in_world, ground_truth.flatten(), prefix='ground_truth')
         output_geometry       = task_visualization.get_base_arrows(base_poses_in_world, model_labels, prefix='model_output')
         aggreement_geometry   = task_visualization.get_base_arrows(base_poses_in_world, agreement, prefix='agreement')
+
+        # Temporary fix, adjust the colors and size of the base poses
+        model_pose[0]['geometry'].paint_uniform_color([1.0, 0.0, 1.0])
+        ground_truth_pose[0]['geometry'].paint_uniform_color([1.0, 0.0, 1.0])
 
         # Additionally log the pointcloud if provided
         if pointcloud is not None:
@@ -243,7 +253,7 @@ class Logger:
 
         # If debug is enabled, immediately show the geometry
         if self._model_config.debug:
-            geometries = [*task_geometry, *ground_truth_geometry, *output_geometry, *aggreement_geometry]
+            geometries = [*task_geometry, *ground_truth_geometry, *output_geometry, *aggreement_geometry, *model_pose, *ground_truth_pose]
             if pointcloud is not None:
                 geometries += pointcloud_geometry
             open3d.visualization.draw(geometries)
