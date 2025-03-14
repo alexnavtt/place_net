@@ -1,0 +1,66 @@
+services:
+  place_net:
+    environment:
+      # Load in the ROS distro
+      - ROS_DISTRO=$TARGET_ROS_DISTRO
+    runtime: nvidia
+    # enable stdin and tty to allow the user to run bash interactively
+    stdin_open: true
+    tty: true
+    container_name: place_net_${BUILD_TARGET}_dev
+    image: alexnavtt/place_net:${BUILD_TARGET}
+    build:
+      context: ./..
+      dockerfile: docker/Dockerfile
+      ssh:
+        - default
+      args:
+        HTTP_PROXY: $HTTP_PROXY
+        HTTPS_PROXY: $HTTPS_PROXY
+        NO_PROXY: $NO_PROXY
+        http_proxy: $http_proxy
+        https_proxy: $https_proxy
+        no_proxy: $no_proxy
+        ROS_DISTRO: $TARGET_ROS_DISTRO
+        BUILD_TARGET: $BUILD_TARGET
+
+  place_net_runtime:
+    extends: place_net
+    volumes:
+      # The main code base
+      - ${PWD}/../place_net:/place_net/place_net
+      # The docker entrypoints
+      - ${PWD}/entrypoints:/place_net/docker/entrypoints
+      # mount the X11 socket to enable graphics display
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # required for non-nvidia users, comment out for nvidia users
+      - /dev/dri:/dev/dri
+      # add the .Xauthority file to use ssh X11 forwarding
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+    environment:
+      - SPOT_URDF_EXTRAS
+      - PLACE_NET_CONFIG
+      # pass the display variable to the container
+      - DISPLAY=${DISPLAY}
+      # Enable the GPU for all purposes (without this line, OpenGL uses CPU rendering with llvmpipe)
+      - NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
+
+  generate_task_poses:
+    extends: place_net_runtime
+    container_name: place_net_task_pose_generation
+    entrypoint: docker/entrypoints/generate_task_poses.sh
+
+  calculate_ground_truth:
+    extends: place_net_runtime
+    container_name: place_net_ground_truth_calculation
+    entrypoint: docker/entrypoints/calculate_ground_truth.sh
+
+  train_model:
+    extends: place_net_runtime
+    container_name: place_net_training
+    entrypoint: docker/entrypoints/train_model.sh
+
+  generate_irm:
+    extends: place_net_runtime
+    container_name: place_net_inverse_reachability_map_generation
+    entrypoint: docker/entrypoints/generate_irm.sh

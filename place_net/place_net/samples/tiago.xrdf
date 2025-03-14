@@ -1,0 +1,117 @@
+format: xrdf
+format_version: 1.0
+
+modifiers:
+    - set_base_frame: "base_link"
+
+default_joint_positions: []
+
+cspace:
+    joint_names:
+        - torso_lift_joint
+        - arm_1_joint
+        - arm_2_joint
+        - arm_3_joint
+        - arm_4_joint
+        - arm_5_joint
+        - arm_6_joint
+        - arm_7_joint
+    acceleration_limits: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    jerk_limits: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+tool_frames: ["gripper_grasping_frame"]
+
+collision:
+    geometry: "tiago_collision_spheres"
+    buffer_distance:
+        base_link: 0.05
+        torso_fixed_link: 0.05
+        torso_lift_link: 0.05
+        arm_1_link: 0.05
+        arm_2_link: 0.05
+        arm_3_link: 0.05
+        arm_4_link: 0.05
+        arm_5_link: 0.05
+        arm_6_link: 0.05
+        arm_7_link: 0.05
+        gripper_link: 0.02
+        gripper_right_finger_link: 0.01
+        gripper_left_finger_link: 0.01
+        head_2_link: 0.05
+
+self_collision:
+    geometry: "tiago_collision_spheres"
+    ignore:
+        base_link: [torso_fixed_link, torso_lift_link]
+        torso_fixed_link: [torso_lift_link]
+        torso_lift_link: [head_2_link, arm_1_link, arm_2_link, arm_3_link]
+        arm_1_link: [head_2_link, arm_2_link]
+        arm_2_link: [arm_3_link]
+        arm_3_link: [arm_4_link]
+        arm_4_link: [arm_5_link]
+        arm_5_link: [arm_6_link, arm_7_link]
+        arm_6_link: [arm_7_link, gripper_link, gripper_right_finger_link, gripper_left_finger_link]
+        arm_7_link: [gripper_link, gripper_right_finger_link, gripper_left_finger_link]
+        gripper_link: [gripper_right_finger_link, gripper_left_finger_link]
+        gripper_right_finger_link: [gripper_left_finger_link]
+        gripper_left_finger_link: []
+        head_2_link: []
+    buffer_distance:
+        base_link: 0.004
+        torso_fixed_link: 0.004
+        torso_lift_link: 0.004
+        arm_1_link: 0.004
+        arm_2_link: 0.004
+        arm_3_link: 0.004
+        arm_4_link: 0.004
+        arm_5_link: 0.004
+        arm_6_link: 0.004
+        arm_7_link: 0.004
+        gripper_link: 0.004
+        gripper_right_finger_link: 0.004
+        gripper_left_finger_link: 0.004
+        head_2_link: 0.004
+
+geometry:
+    tiago_collision_spheres: 
+        spheres:
+            base_link:
+                - {center: [0, 0, 0.06], radius: 0.29}
+            torso_fixed_link:
+                - {center: [0.0, 0.0, 0.06], radius: 0.17}
+            torso_lift_link:
+                - {center: [0.0, 0.0, -0.08], radius: 0.20}
+                - {center: [0.0, 0.0, -0.2], radius: 0.17}
+                - {center: [0.0, 0.0, -0.4], radius: 0.17}
+            arm_1_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.1}
+            arm_2_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.08}
+            arm_3_link:
+                - {center: [0.0, 0.0,  0.0], radius: 0.07}
+                - {center: [0.0, 0.0, -0.1], radius: 0.07}
+                - {center: [0.0, 0.0, -0.2], radius: 0.07}
+            arm_4_link:
+                - {center: [-0.05, 0.02, 0.025], radius: 0.07}
+                - {center: [-0.15, 0.02, 0.025], radius: 0.07}
+            arm_5_link:
+                - {center: [0.0, 0.0, 0.02], radius: 0.07}
+                - {center: [0.0, 0.0, 0.08], radius: 0.07}
+            arm_6_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.07}
+            arm_7_link:
+                - {center: [0.0, 0.0, 0.0], radius: 0.005}
+            gripper_link:
+                - {center: [0.0, 0.0, -0.025], radius: 0.06}
+                - {center: [0.0, 0.0, -0.075], radius: 0.06}
+            gripper_right_finger_link:
+                - {center: [0.0, 0.0, -0.15], radius: 0.02}
+                - {center: [0.0, 0.0, -0.18], radius: 0.02}
+                - {center: [0.0, 0.0, -0.21], radius: 0.02}
+            gripper_left_finger_link:
+                - {center: [0.0, 0.0, -0.15], radius: 0.02}
+                - {center: [0.0, 0.0, -0.18], radius: 0.02}
+                - {center: [0.0, 0.0, -0.21], radius: 0.02}
+            head_2_link:
+                - {center: [0.0, 0.03, 0.0], radius: 0.15}
+            

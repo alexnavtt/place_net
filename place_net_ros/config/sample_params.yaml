@@ -1,0 +1,18 @@
+place_net_server:
+  ros__parameters:
+    # Absolute path to your trained model. Must have the associated config.yaml file in the same directory
+    checkpoint_path: /home/john_smith/colcon_ws/src/place_net/place_net/place_net/data/trained_model/v0.9.0/best.pt
+    # Absolute path to your inverse reachability map .pt file
+    inverse_reachability_map_path: /home/john_smith/colcon_ws/src/place_net/place_net/place_net/data/solutions/place_net_irm.pt
+    # Numerical index of the CUDA device to load the model onto. Omitting this will result in the model loading
+    # to the same device that was used for training
+    device: 1
+    # Maxmimum number of forward passes to execute in parallel. Reduce this for devices with limited VRAM
+    max_batch_size: 16
+    # Maximum number of IK problems to solve in parallel for ground truth queries. Reduce this for devices with limited VRAM
+    max_ik_count: 2000
+    # The ROS world static frame ID. Query responses and visualizations will be defined in this frame
+    world_frame: map
+    # Whether or not to visualize results. Visualizations are useful for debugging but can take a while to compute
+    # and render, and so disabling this option may be desired for deployment scenarios
+    vislualize: True
