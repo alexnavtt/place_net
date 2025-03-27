@@ -49,7 +49,7 @@ with pip.
 
 ```bash
 git clone https://github.com/alexnavtt/place_net.git
-cd place_net
+cd place_net/place_net
 pip install -e .
 ```
 
