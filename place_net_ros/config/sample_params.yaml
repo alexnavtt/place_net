@@ -15,4 +15,4 @@ place_net_server:
     world_frame: map
     # Whether or not to visualize results. Visualizations are useful for debugging but can take a while to compute
     # and render, and so disabling this option may be desired for deployment scenarios
-    vislualize: True
+    visualize: True

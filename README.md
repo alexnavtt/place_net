@@ -118,7 +118,16 @@ PlaceNet runs with a single configuration YAML file which covers settings for:
 
 See the [config file](place_net/place_net/samples/config.yaml) in the sample directory for details on the available options. We provide sample cuRobo XRDF files in the [sample](place_net/place_net/samples) folder to use as a reference for your own robot. Additionally, when filling out the collision sphere geometry, we provide a convenience [visualization script](place_net/place_net/utils/visualize_spheres.py) to check your sphere settings against the robot model. Once the config file is appropriately filled out and all the supporting files are placed in the respective directories (pointclouds, URDF, cuRobo config, etc.), the next step is to generate task poses within each pointcloud. 
 
-For the next few sections, if you just want to try PlaceNet out without going through all the work to configure your own robot, simply set the config path to `place_net/samples/config.yaml` and run the commands from same directory as `setup.py`. Instructions for running with Docker are handled in the [next section](#running-with-docker).
+For the next few sections, if you just want to try PlaceNet out without going through all the work to configure your own robot, simply set the config path to `place_net/samples/config.yaml` and run the commands from same directory as `setup.py`. You will also need to download or install the `tiago_description` ROS2 package. This can be installed with `sudo apt install ros-<distro>-tiago-description` or downloaded from their [Github repository](https://github.com/pal-robotics/tiago_robot). If you donwload the source files, change the config entry for `urdf_file` to remove the `ros_package` value and put the absolute path under `path`. Instructions for running with Docker are handled in the [next section](#running-with-docker).
+
+First create data directories to hold the results from each stage:
+```bash
+# Assuming your are in the base level repo directory
+mkdir -p place_net/place_net/data/tasks
+mkdir -p place_net/place_net/data/solutions
+mkdir -p place_net/place_net/data/runs
+mkdir -p place_net/place_net/data/checkpoints
+```
 
 #### Task Pose Generation
 
@@ -184,11 +193,11 @@ docker compose run --rm train_model
 ```
 
 ## Deploying with ROS
-The main deployment scenario for PlaceNet is through the Robot Operating System (ROS). PlaceNet has been tested on ROS2 Humble and is not supported on any ROS1 distros. We define two ROS2 packages to support this deployment:
+The main deployment scenario for PlaceNet is through the Robot Operating System (ROS). PlaceNet has been tested on ROS2 Humble and is not supported on any ROS1 distros. We define three ROS2 packages to support this deployment:
 
  - `place_net_msgs` : All message and service files used in deployment
  - `place_net_ros`  : The main ROS2 wrapper package
- - `place_net_behaviors` : [Coming Soon] This will be a wrapper around `place_net_msgs` to allow PlaceNet to be used in applications using on the [BT.CPP](https://www.behaviortree.dev/) behavior tree library in tandem with ROS2
+ - `place_net_behaviors` : **[Coming Soon]** This will be a wrapper around `place_net_msgs` to allow PlaceNet to be used in applications using on the [BT.CPP](https://www.behaviortree.dev/) behavior tree library in tandem with ROS2
 
 `place_net_ros` is also an excellent resource for those who wish to use PlaceNet in your own projects outside of ROS. The Python interface is relatively straightforward and a quick glance into [`place_net_server.py`](place_net_ros/place_net_ros/place_net_server.py) should demonstrate how to go from input to output with a trained model. 
 
@@ -220,7 +229,7 @@ After waiting a few seconds for the server to start up and load your model, you 
 [TODO] Put output here
 ```
 
-Similarly, examining the available ROS2 topics and services should now show the base placement quert service as well as the visualization topics, which can be viewed in RViz.
+Similarly, examining the available ROS2 topics and services should now show the base placement query service as well as the visualization topics, which can be viewed in RViz.
 
 ```bash
 [TODO] Put services here
