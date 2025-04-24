@@ -94,7 +94,7 @@ You will first have to export your desired CUDA version for the docker image as 
 
 ```bash
 cd place_net/docker
-export TARGET_CUDA_VERSION=12.4
+export TARGET_CUDA_VERSION=12.4.0
 DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build
 ```
 
