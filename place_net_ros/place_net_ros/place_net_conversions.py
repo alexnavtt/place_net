@@ -3,7 +3,7 @@ import numpy as np
 from geometry_msgs.msg import Point, Quaternion, Transform, TransformStamped, PoseArray
 from geometry_msgs.msg import Pose as RosPose, PoseStamped as RosPoseStamped
 from curobo.types.math import Pose as cuRoboPose
-from tf_transformations import quaternion_matrix
+from transforms3d.quaternions import quat2mat
 
 def tensor_to_point(point_tensor: torch.Tensor) -> Point:
     point_tensor = point_tensor.cpu().numpy().astype(float)
@@ -50,7 +50,7 @@ def transform_to_matrix(tform: Transform | TransformStamped) -> np.ndarray:
 
     rot = tform.rotation
     tran = tform.translation
-    transform_mat = quaternion_matrix([rot.x, rot.y, rot.z, rot.w])
+    transform_mat = quat2mat([rot.w, rot.x, rot.y, rot.z])
     transform_mat[:3, 3] = np.array([tran.x, tran.y, tran.z])
     return transform_mat
 
@@ -60,6 +60,6 @@ def pose_to_matrix(pose: RosPose | RosPoseStamped) -> np.ndarray:
         
     quat = pose.orientation
     pos = pose.position
-    transform_mat = quaternion_matrix([quat.x, quat.y, quat.z, quat.w])
+    transform_mat = quat2mat([quat.w, quat.x, quat.y, quat.z])
     transform_mat[:3, 3] = np.array([pos.x, pos.y, pos.z])
     return transform_mat
