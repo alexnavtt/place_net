@@ -10,17 +10,11 @@ services:
     container_name: place_net_${BUILD_TARGET}_dev
     image: alexnavtt/place_net:${BUILD_TARGET}
     build:
-      context: ./..
-      dockerfile: docker/Dockerfile
+      context: ./../..
+      dockerfile: place_net/docker/Dockerfile
       ssh:
         - default
       args:
-        HTTP_PROXY: $HTTP_PROXY
-        HTTPS_PROXY: $HTTPS_PROXY
-        NO_PROXY: $NO_PROXY
-        http_proxy: $http_proxy
-        https_proxy: $https_proxy
-        no_proxy: $no_proxy
         ROS_DISTRO: $TARGET_ROS_DISTRO
         BUILD_TARGET: $BUILD_TARGET
 
@@ -48,19 +42,26 @@ services:
   generate_task_poses:
     extends: place_net_runtime
     container_name: place_net_task_pose_generation
-    entrypoint: docker/entrypoints/generate_task_poses.sh
+    entrypoint: /place_net/docker/entrypoints/generate_task_poses.sh
 
   calculate_ground_truth:
     extends: place_net_runtime
     container_name: place_net_ground_truth_calculation
-    entrypoint: docker/entrypoints/calculate_ground_truth.sh
+    entrypoint: /place_net/docker/entrypoints/calculate_ground_truth.sh
 
   train_model:
     extends: place_net_runtime
     container_name: place_net_training
-    entrypoint: docker/entrypoints/train_model.sh
+    entrypoint: /place_net/docker/entrypoints/train_model.sh
 
   generate_irm:
     extends: place_net_runtime
     container_name: place_net_inverse_reachability_map_generation
-    entrypoint: docker/entrypoints/generate_irm.sh
+    entrypoint: /place_net/docker/entrypoints/generate_irm.sh
+
+  ros_server:
+    extends: place_net_runtime
+    container_name: place_net_ros_server
+    entrypoint: /place_net/docker/entrypoints/launch_ros_server.sh
+    environment:
+      - PLACE_NET_PARAMS_FILE

@@ -26,7 +26,7 @@ RUN apt update && apt upgrade -y \
     && apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools
 
 # Install PlaceNet dependencies
-ADD setup.py /place_net/setup.py
+ADD place_net/setup.py /place_net/setup.py
 WORKDIR /place_net
 RUN pip install -e . --no-build-isolation
 
@@ -47,6 +47,11 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && rosdep init && rosdep update && 
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to spot_description
 RUN cd /colcon_ws/src/nrg_spot_manipulation/spot_curobo_config/ && bash setup.bash
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to spot_curobo_config
+
+ADD place_net_ros /colcon_ws/src/place_net_ros
+ADD place_net_msgs /colcon_ws/src/place_net_msgs
+RUN rosdep install --from-paths /colcon_ws/src -i -y
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros
 
 # Set up terminal and bashrc
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
