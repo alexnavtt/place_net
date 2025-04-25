@@ -38,6 +38,7 @@ services:
       - DISPLAY=${DISPLAY}
       # Enable the GPU for all purposes (without this line, OpenGL uses CPU rendering with llvmpipe)
       - NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
+    network_mode: host
 
   generate_task_poses:
     extends: place_net_runtime
@@ -63,5 +64,7 @@ services:
     extends: place_net_runtime
     container_name: place_net_ros_server
     entrypoint: /place_net/docker/entrypoints/launch_ros_server.sh
-    environment:
-      - PLACE_NET_PARAMS_FILE
+    volumes:
+      - ${PLACE_NET_PARAMS_FILE}:/place_net_ros_params.yaml
+      - ${PLACE_NET_MODEL_FILE}:/place_net_model.pt
+      - ${PLACE_NET_MODEL_FILE}/../config.yaml:/config.yaml

@@ -225,13 +225,43 @@ ros2 run place_net_ros place_net_server --ros-args --params-file <path/to/your/r
 
 After waiting a few seconds for the server to start up and load your model, you should see an output similar to 
 
-```
-[TODO] Put output here
+```bash
+NOTE: The modifier setting the robot base frame to arm0_base_link has been removed from the forward robot model. This model is for debugging and does not affect normal operations
+Finished inverting URDF
+[INFO] [1745609783.179166023] [place_net_server]: PlaceNet server online, using cuda device 0
 ```
 
 Similarly, examining the available ROS2 topics and services should now show the base placement query service as well as the visualization topics, which can be viewed in RViz.
 
 ```bash
-[TODO] Put services here
-[TODO] Put topics here
+# Services
+/place_net_server/query_base_location
+/place_net_server/query_reachable_poses
+
+# Topics (mostly for visualization)
+/place_net_server/ground_truth/task_poses
+/place_net_server/ground_truth/valid_poses
+/place_net_server/ground_truth_points
+/place_net_server/model_output
+/place_net_server/points_in_range
+/place_net_server/query/pointcloud
+/place_net_server/query/task_poses
+/place_net_server/response/aggregate_pose_scores
+/place_net_server/response/optimal_pose
+/place_net_server/response/pose_scores
+/place_net_server/response/reachable_tasks
+/place_net_server/response/unreachable_tasks
+/place_net_server/response/valid_poses
+```
+
+## ROS Server in Docker
+
+The ROS packages and services are also available in Docker. Naturally, you must mount your trained model and any supporting config files as volumes into the docker container. This is achieved through the following environment variables:
+ * `PLACE_NET_PARAMS_FILE` - The path on the host system to the ROS config file
+ * `PLACE_NET_MODEL_FILE` - The path on the host system to the trained model file
+
+Once those are set, you can launch the server with the command
+
+```bash
+docker compose up ros_server
 ```
