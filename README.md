@@ -213,8 +213,8 @@ The first step is to install the `place_net_msgs` and `place_net_server` depende
 
 ```bash
 cd <path/to/your/colcon/ws>
-rospep install --from-paths src/place_net -i -y
-colcon build --packages-up-to place_net_server # plus any arguments you wish to add (eg. --symlink-install, --cmake-args -DCMAKE_BUILD_TYPE=Release)
+rosdep install --from-paths src/place_net -i -y
+colcon build --packages-up-to place_net_ros # plus any arguments you wish to add (eg. --symlink-install, --cmake-args -DCMAKE_BUILD_TYPE=Release)
 ```
 
 Next you must create a configuration file for your setup. A sample file is found at [sample_params.yaml](place_net_ros/config/sample_params.yaml). Keep in mind that all paths are absolute. This file should be invoked whenever you launch the PlaceNet server.
