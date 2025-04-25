@@ -88,7 +88,10 @@ class PlaceNetServer(Node):
         self.pose_scorer = pose_scorer.PoseScorer(max_angular_window=torch.pi)
 
         checkpoint_config = torch.load(self.params.checkpoint_path, map_location=self.place_net_config.model.device, weights_only=True)
-        self.place_net_model.load_state_dict(checkpoint_config['place_net_model'])
+        if 'place_net_model' in checkpoint_config:
+            self.place_net_model.load_state_dict(checkpoint_config['place_net_model'])
+        else:
+            self.place_net_model.load_state_dict(checkpoint_config['base_net_model'])
         self.place_net_model.eval()
 
         # Load the model geometry
