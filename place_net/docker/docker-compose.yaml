@@ -17,6 +17,7 @@ services:
       args:
         ROS_DISTRO: $TARGET_ROS_DISTRO
         BUILD_TARGET: $BUILD_TARGET
+        GUEST_PACKAGES: $GUEST_PACKAGES
 
   place_net_runtime:
     extends: place_net
