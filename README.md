@@ -10,7 +10,7 @@ Contents:
    - [Native](#usage)
    - [Docker](#running-with-docker)
  - [Inverse Reachability Map](#generating-an-inverse-reachability-map-irm)
- - [ROS2 Server]() [DOCS TBD]
+ - [ROS2 Server](#deploying-with-ros)
 
 ## Overview
 
@@ -254,7 +254,7 @@ Similarly, examining the available ROS2 topics and services should now show the 
 /place_net_server/response/valid_poses
 ```
 
-## ROS Server in Docker
+### ROS Server in Docker
 
 The ROS packages and services are also available in Docker. Naturally, you must mount your trained model and any supporting config files as volumes into the docker container. This is achieved through the following environment variables:
  * `PLACE_NET_PARAMS_FILE` - The path on the host system to the ROS config file
