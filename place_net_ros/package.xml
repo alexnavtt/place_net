@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
   <exec_depend>place_net_msgs</exec_depend>
   <exec_depend>python3-pyassimp</exec_depend>
   <exec_depend>python-transforms3d-pip</exec_depend>
