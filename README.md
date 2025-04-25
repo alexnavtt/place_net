@@ -259,9 +259,16 @@ Similarly, examining the available ROS2 topics and services should now show the 
 The ROS packages and services are also available in Docker. Naturally, you must mount your trained model and any supporting config files as volumes into the docker container. This is achieved through the following environment variables:
  * `PLACE_NET_PARAMS_FILE` - The path on the host system to the ROS config file
  * `PLACE_NET_MODEL_FILE` - The path on the host system to the trained model file
+ * `PLACE_NET_IRM_FILE` - The path on the host system to an IRM file
  * `GUEST_PACKAGES` - A semi-colon delimited string of the git clone URL's for all extra packages that must be cloned into the image and built. For instance, the `tiago-description` package is needed to run the sample commands for this repo, and so if you wanted to use the trained file that you obtained from those you would set `GUEST_PACKGES` equal to `"https://github.com/pal-robotics/tiago_robot.git -b humble-devel"`. All packages are cloned to the location `/guest_ws/src` within the image, in case you ever need to reference the exact file locations.
 
-Note that any checkpoint path set inside your config file will be ignored in favor of the `PLACE_NET_MODEL_FILE` path. Once those are set, you can launch the server with the command
+A couple things to note:
+ 1. The `checkpoint_path` field of your ROS config must be `/place_net_model.pt`
+ 1. If you are also loading an IRM file, then the `inverse_reachability_map_path` in your ROS config file must be `/place_net_irm.pt`
+ 1. The packages cloned through `GUEST_PACKAGES` must be able to build without extra instructions. All that will happen during the build is a `rosdep install` and a `colcon build`
+ 1. Just like the native execution, there must be a corresponding `config.yaml` file in the same directory as the model file
+
+Once those are set, you can launch the server with the command
 
 ```bash
 docker compose up ros_server

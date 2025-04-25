@@ -67,5 +67,6 @@ services:
     entrypoint: /place_net/docker/entrypoints/launch_ros_server.sh
     volumes:
       - ${PLACE_NET_PARAMS_FILE:-/dev/null}:/place_net_ros_params.yaml
+      - ${PLACE_NET_IRM_FILE:-/dev/null}:/place_net_irm.pt
       - ${PLACE_NET_MODEL_FILE:-/dev/null}:/place_net_model.pt
       - ${PLACE_NET_MODEL_FILE:-/dev/null}/../config.yaml:/config.yaml
