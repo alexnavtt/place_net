@@ -192,6 +192,8 @@ docker compose run --rm calculate_ground_truth
 docker compose run --rm train_model
 ```
 
+If you want to turn visualizations on, then you have to run the addition command `xhost +local:docker` to authorize docker to generate graphics windows.
+
 ## Deploying with ROS
 The main deployment scenario for PlaceNet is through the Robot Operating System (ROS). PlaceNet has been tested on ROS2 Humble and is not supported on any ROS1 distros. We define three ROS2 packages to support this deployment:
 

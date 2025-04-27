@@ -47,6 +47,13 @@ ADD place_net_msgs /colcon_ws/src/place_net_msgs
 RUN rosdep update && apt update && rosdep install --from-paths /colcon_ws/src -i -y
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros
 
+# Set up terminal and bashrc
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
+    && sed -i 's/01;32m/01;36m/g; s/01;34m/01;35m/g' "/root/.bashrc"
+
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
+    && echo "source /colcon_ws/install/setup.bash" >> ~/.profile
+
 # Clone and build any guest packages
 WORKDIR /guest_ws/src
 ARG GUEST_PACKAGES
@@ -57,18 +64,10 @@ RUN --mount=type=ssh \
             git clone $item; \
         done && \
         rosdep install --from-paths . -i -y; \
+        echo "source /guest_ws/install/setup.bash" >> ~/.profile; \
     fi;
     
 WORKDIR /guest_ws
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build
-
-# Set up terminal and bashrc
-RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
-    && sed -i 's/01;32m/01;36m/g; s/01;34m/01;35m/g' "/root/.bashrc"
-
-RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
-    && echo "source /colcon_ws/install/setup.bash" >> ~/.profile \ 
-    && echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc \
-    && echo "source /colcon_ws/install/setup.bash" >> ~/.bashrc
 
 WORKDIR /place_net
