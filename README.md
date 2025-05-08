@@ -67,7 +67,10 @@ Refer to the [official install guide](https://docs.docker.com/engine/install/) f
 **Step 2 - Install NVIDIA Container Toolkit**\
 Refer to the [official install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for setup.
 
-**Step 3 - Set nvidia as your default docker runtime**
+**Step 3 - Set nvidia as your default docker runtime [Optional]**
+
+*This step simplifies building by automatically detecting your [GPU compute capability](https://developer.nvidia.com/cuda-gpus). However, if you know your capability number then it may be easier to skip this step*
+
 Edit your `/etc/docker/daemon.json` file to include the line `"default-runtime": "nvidia"`. After this step, the file should look similar to
 ```yaml
 {
@@ -90,12 +93,22 @@ sudo systemctl restart docker
 If you do not have admin privileges, you can instead reboot the system.
 
 **Step 4 - Build the cuRobo docker image**
+
 You will first have to export your desired CUDA version for the docker image as an environment variable. PlaceNet supports CUDA v12.0 and higher.
 
 ```bash
+# Example numbers, replace with your specific configuration
+
 cd place_net/docker
 export TARGET_CUDA_VERSION=12.4.0
+export UBUNTU_VERSION=22.04
+
+# If you executed step 3
 DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build
+
+# If you did not execute step 3
+export CUDA_ARCH=7.5 # Note: NOT cuda version, but GPU capability number
+docker compose -f curobo-docker-compose.yaml build
 ```
 
 **Step 5 - Build the main PlaceNet docker image**

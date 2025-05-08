@@ -9,12 +9,7 @@ services:
     build:
       dockerfile: curobo.Dockerfile
       args:
-        # Include proxy settings if working in a proxy-ed environment
-        HTTP_PROXY: $HTTP_PROXY
-        HTTPS_PROXY: $HTTPS_PROXY
-        NO_PROXY: $NO_PROXY
-        http_proxy: $http_proxy
-        https_proxy: $https_proxy
-        no_proxy: $no_proxy
         # Build for CUDA version set by the user
+        PLACE_NET_CUDA_ARCH: $CUDA_ARCH
         CUDA_VERSION: $TARGET_CUDA_VERSION
+        UBUNTU_VERSION: $UBUNTU_VERSION
