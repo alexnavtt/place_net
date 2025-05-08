@@ -24,6 +24,8 @@ services:
     volumes:
       # The main code base
       - ${PWD}/../place_net:/place_net/place_net
+      # place_net_ros - Useful for debugging and development
+      - ${PWD}/../../place_net_ros:/colcon_ws/src/place_net_ros
       # The docker entrypoints
       - ${PWD}/entrypoints:/place_net/docker/entrypoints
       # mount the X11 socket to enable graphics display
@@ -40,6 +42,8 @@ services:
       # Enable the GPU for all purposes (without this line, OpenGL uses CPU rendering with llvmpipe)
       - NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
     network_mode: host
+    ipc: host
+    pid: host
 
   generate_task_poses:
     extends: place_net_runtime
@@ -70,3 +74,7 @@ services:
       - ${PLACE_NET_IRM_FILE:-/dev/null}:/place_net_irm.pt
       - ${PLACE_NET_MODEL_FILE:-/dev/null}:/place_net_model.pt
       - ${PLACE_NET_MODEL_FILE:-/dev/null}/../config.yaml:/config.yaml
+      - ${CYCLONEDDS_URI:-/dev/null}:/cyclonedds.xml
+    environment:
+      - RMW_IMPLEMENTATION
+      - CYCLONEDDS_URI=/cyclonedds.xml

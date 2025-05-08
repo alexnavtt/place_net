@@ -26,13 +26,16 @@ RUN apt update && apt upgrade -y \
     && apt install -y ros-${ROS_DISTRO}-ros-base ros-dev-tools \
     && rosdep init
 
+# Install CycloneDDS so users have the option of ROS middleware
+RUN apt install -y ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
+
 # Install PlaceNet dependencies
 ADD place_net/setup.py /place_net/setup.py
 WORKDIR /place_net
 RUN pip install -e . --no-build-isolation
-RUN apt update && apt install -y libgl1-mesa-glx
+RUN apt update && apt install -y libgl1
 
-FROM place_net AS place_net_nrg
+FROM place_net AS place_net_ros
 SHELL ["/bin/bash", "-l", "-c"]
 
 # Install NRG ros package dependencies
@@ -45,7 +48,7 @@ WORKDIR /colcon_ws
 ADD place_net_ros /colcon_ws/src/place_net_ros
 ADD place_net_msgs /colcon_ws/src/place_net_msgs
 RUN rosdep update && apt update && rosdep install --from-paths /colcon_ws/src -i -y
-RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros --symlink-install
 
 # Set up terminal and bashrc
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \
