@@ -1,4 +1,5 @@
 import os
+import pathlib
 from glob import glob
 from setuptools import setup
 from generate_parameter_library_py.setup_helper import generate_parameter_module
@@ -10,6 +11,13 @@ generate_parameter_module(
 
 package_name = 'place_net_ros'
 
+# Record the source path so we can use it to launch docker containers
+src_path = pathlib.Path(__file__).resolve().parent
+docker_path = src_path.parent.joinpath('place_net', 'docker')
+local_path = os.path.join(src_path, 'source_directory.txt')
+with open(local_path, 'w') as f:
+    f.write(str(docker_path))
+
 setup(
     name=package_name,
     version='2.0.0',
@@ -19,6 +27,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*launch.py')),
         (os.path.join('share', package_name, 'models'), glob('models/*')),
+        (os.path.join('share', package_name), ['source_directory.txt'])
     ],
     install_requires=['setuptools', 'place_net', 'rclpy'],
     zip_safe=True,
@@ -35,6 +44,7 @@ setup(
     entry_points={
         'console_scripts': [
             'place_net_server = place_net_ros.place_net_server:main',
+            'docker_server = place_net_ros.run_docker:main'
         ],
     },
 )

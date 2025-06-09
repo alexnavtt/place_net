@@ -1,4 +1,6 @@
-FROM alexnavtt/place_net_curobo AS place_net
+ARG UBUNTU_VERSION=22.04
+
+FROM alexnavtt/place_net_curobo:${UBUNTU_VERSION} AS place_net
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO=humble

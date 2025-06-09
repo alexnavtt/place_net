@@ -5,7 +5,7 @@ services:
     stdin_open: true
     tty: true
     container_name: place_net_curobo
-    image: alexnavtt/place_net_curobo
+    image: alexnavtt/place_net_curobo:$UBUNTU_VERSION
     build:
       dockerfile: curobo.Dockerfile
       args:
