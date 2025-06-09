@@ -28,7 +28,6 @@ setup(
     maintainer_email='alexnavtt@utexas.edu',
     classifiers=[
         'Intended Audience :: Developers',
-        'License :: BSD 3-Clause License',
         'Programming Language :: Python',
     ],
     description='A ROS2 interface for the place_net package',
