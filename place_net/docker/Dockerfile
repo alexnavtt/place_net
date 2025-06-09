@@ -4,13 +4,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO=humble
 ARG BUILD_TARGET
 
-# This line fixes a bug with base ros cuda image where preintsalled opencv packages cause updates to fail
-RUN if [ "${BUILD_TARGET}" = 'jetson' ]; then \
-        apt update \ 
-        && apt install -y libopencv-dev -o DPkg::options::="--force-overwrite" \
-        && rm -rf /var/lib/apt/lists/* \
-    ;fi
-
 # Install ROS
 ENV LANG=en_US.UTF-8
 RUN apt update && apt upgrade -y \
@@ -32,7 +25,7 @@ RUN apt install -y ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 # Install PlaceNet dependencies
 ADD place_net/setup.py /place_net/setup.py
 WORKDIR /place_net
-RUN pip install -e . --no-build-isolation
+RUN pip install --ignore-installed -e . --no-build-isolation
 RUN apt update && apt install -y libgl1
 
 FROM place_net AS place_net_ros
@@ -48,7 +41,8 @@ WORKDIR /colcon_ws
 ADD place_net_ros /colcon_ws/src/place_net_ros
 ADD place_net_msgs /colcon_ws/src/place_net_msgs
 RUN rosdep update && apt update && rosdep install --from-paths /colcon_ws/src -i -y
-RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros --symlink-install
+RUN pip3 install -U setuptools wheel
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros
 
 # Set up terminal and bashrc
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' "/root/.bashrc" \

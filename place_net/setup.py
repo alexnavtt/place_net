@@ -8,7 +8,6 @@ setup(
     install_requires=[
         'numpy<2.0.0',
         'open3d>=0.18.0',
-        'torch',
         'xacro',
         'urdf_parser_py',
         'click',

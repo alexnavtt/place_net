@@ -13,3 +13,14 @@ services:
         PLACE_NET_CUDA_ARCH: $CUDA_ARCH
         CUDA_VERSION: $TARGET_CUDA_VERSION
         UBUNTU_VERSION: $UBUNTU_VERSION
+
+  jetson_curobo:
+    runtime: nvidia
+    container_name: place_net_curobo_jetson
+    image: alexnavtt/place_net_curobo
+    build:
+      dockerfile: jetson-curobo.Dockerfile
+      args:
+        # Build for CUDA version set by the user
+        CUDA_VERSION: $TARGET_CUDA_VERSION
+        UBUNTU_VERSION: $UBUNTU_VERSION
