@@ -10,7 +10,7 @@ RUN apt update \
     && apt install -y \
         python3 \
         python3-pip \
-    && pip install torch setuptools>=61
+    && pip install torch "numpy<2" "setuptools>=61"
 
 FROM base_workstation AS build
 ARG DEBIAN_FRONTEND=noninteractive
