@@ -27,8 +27,12 @@ RUN apt install -y ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 # Install PlaceNet dependencies
 ADD place_net/setup.py /place_net/setup.py
 WORKDIR /place_net
-RUN pip install --ignore-installed -e . --no-build-isolation
-RUN apt update && apt install -y libgl1
+RUN pip install --ignore-installed . --no-build-isolation
+RUN apt update && apt install -y libgl1 libassimp-dev
+
+# Install PlaceNet
+ADD place_net /place_net
+RUN pip install -e . --no-deps
 
 FROM place_net AS place_net_ros
 SHELL ["/bin/bash", "-l", "-c"]
