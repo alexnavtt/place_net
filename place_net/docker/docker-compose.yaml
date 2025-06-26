@@ -79,3 +79,4 @@ services:
     environment:
       - RMW_IMPLEMENTATION
       - CYCLONEDDS_URI=/cyclonedds.xml
+      - ROS_DOMAIN_ID
