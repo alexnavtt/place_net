@@ -94,7 +94,7 @@ If you do not have admin privileges, you can instead reboot the system.
 
 **Step 4 - Build the cuRobo docker image**
 
-You will first have to export your desired CUDA version for the docker image as an environment variable. PlaceNet supports CUDA v12.0 and higher.
+You will first have to export your desired CUDA version for the docker image as an environment variable. PlaceNet supports CUDA v12.0 and higher. If you are building on a Jetson Orin device, replace `curobo` with `jetson_curobo` 
 
 ```bash
 # Example numbers, replace with your specific configuration
@@ -104,11 +104,11 @@ export TARGET_CUDA_VERSION=12.4.0
 export UBUNTU_VERSION=22.04
 
 # If you executed step 3
-DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build
+DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build curobo
 
 # If you did not execute step 3
 export CUDA_ARCH=7.5 # Note: NOT cuda version, but GPU capability number
-docker compose -f curobo-docker-compose.yaml build
+docker compose -f curobo-docker-compose.yaml build curobo
 ```
 
 **Step 5 - Build the main PlaceNet docker image**
