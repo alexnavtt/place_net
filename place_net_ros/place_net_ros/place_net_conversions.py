@@ -34,7 +34,9 @@ def poses_to_curobo(pose_list: list[RosPose] | PoseArray, device) -> cuRoboPose:
     quaternion_tensor = torch.tensor([[pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z] for pose in pose_list], device=device, dtype=torch.float32)
     return cuRoboPose(position_tensor, quaternion_tensor)
 
-def transform_to_curobo(transform: Transform, device) -> cuRoboPose:
+def transform_to_curobo(transform: Transform | TransformStamped, device) -> cuRoboPose:
+    if isinstance(transform, TransformStamped):
+        transform = transform.transform
     position = torch.tensor([transform.translation.x, transform.translation.y, transform.translation.z], device=device)
     quaternion = torch.tensor([transform.rotation.w, transform.rotation.x, transform.rotation.y, transform.rotation.z], device=device)
     return cuRoboPose(position, quaternion)

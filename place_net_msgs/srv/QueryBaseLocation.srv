@@ -11,6 +11,12 @@ sensor_msgs/PointCloud2 pointcloud
 # Filter std deviation for the pointcloud. If 0, no filtering is done
 float32 filter_std_dev 0.0
 
+# The name of the link whose poses the end_effector_poses array represents
+# For the best results, this should be statically connected to the configured
+# end effector frame from the robot XRDF/curobo config. If blank, it will be 
+# assumed that it is the configured end effector frame
+string pose_link ""
+
 # The name of the link for which the base poses should be returned
 string base_link
 

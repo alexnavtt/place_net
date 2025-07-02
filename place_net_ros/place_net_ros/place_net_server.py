@@ -316,7 +316,7 @@ class PlaceNetServer(Node):
         reachable_mask = valid_poses[valid_batch_indices, y_indices, x_indices, yaw_indices]
         return valid_batch_indices[reachable_mask]
     
-    def pose_array_to_tensor(self, pose_array: PoseArray, target_frame: str) -> Tensor:
+    def pose_array_to_tensor(self, pose_array: PoseArray, target_frame: str, pose_link: str) -> Tensor:
         """
         Transform a pose array to a target frame and encode it into a PyTorch Tensor of shape (n, 7)
         """
@@ -334,6 +334,17 @@ class PlaceNetServer(Node):
             poses = pose_array.poses
 
         pose_curobo = place_net_conversions.poses_to_curobo(poses, self.place_net_config.model.device)
+
+        if (len(pose_link) > 0) and (pose_link != self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link):
+            link_tform_ee = self.tf_buffer.lookup_transform(
+                target_frame=pose_link,
+                source_frame=self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link,
+                time=rclpy.time.Time(0),
+                timeout=rclpy.duration.Duration(seconds=1.0)
+            )
+            link_tform_ee_curobo = place_net_conversions.transform_to_curobo(link_tform_ee, self.place_net_config.model.device)
+            pose_curobo = pose_curobo.multiply(link_tform_ee_curobo.repeat(pose_curobo.batch))
+
         return torch.cat([pose_curobo.position, pose_curobo.quaternion], dim=1)
     
     def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str, filter_std_dev: float = 0.0) -> Tensor:
@@ -375,7 +386,7 @@ class PlaceNetServer(Node):
 
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
-            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
+            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame, pose_link=req.pose_link)
             pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in base location callback: {e}')
