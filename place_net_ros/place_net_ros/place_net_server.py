@@ -16,7 +16,7 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import PoseArray
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 from sensor_msgs.msg import PointCloud2
-from sensor_msgs_py.point_cloud2 import read_points_numpy, create_cloud_xyz32
+from sensor_msgs_py.point_cloud2 import create_cloud_xyz32, read_points, structured_to_unstructured
 
 from curobo.types.math import Pose as cuRoboPose
 from curobo.types.base import TensorDeviceType
@@ -345,7 +345,7 @@ class PlaceNetServer(Node):
         if pointcloud.width == 0:
             return torch.tensor([], device=self.place_net_config.model.device)
 
-        pointcloud_points = read_points_numpy(pointcloud, ['x', 'y', 'z'], skip_nans=True)
+        pointcloud_points = structured_to_unstructured(read_points(pointcloud, ['x', 'y', 'z'], skip_nans=True))
         if filter_std_dev > 0.0:
             pointcloud_open3d = open3d.geometry.PointCloud(points=pointcloud_points)
             pointcloud_open3d = pointcloud_open3d.remove_statistical_outlier(nb_neighbors=10, std_ratio=filter_std_dev)
