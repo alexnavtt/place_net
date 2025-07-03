@@ -32,7 +32,7 @@ What PlaceNet does **not** do is sequential base placement optimization. For wor
 
 ## Native Installation
 
-PlaceNet has been developed and tested in an Ubuntu 22.04 environment. Other Ubuntu and linux distros may provide varying results, and Windows/MacOS are not supported.
+PlaceNet has been developed and tested in an Ubuntu 22.04 environment. Other Ubuntu and linux distros may provide varying results, and Windows/MacOS are not supported. The cuRobo installation can be somewhat invasive when performed outside of a virtual environment, as it upgrades setuptools which can cause minor issues with other build systems such as ROS2. While these issues are non-breaking, it may be better to prefer the [docker installation](#docker-installation) in those cases.
 
 The most significant dependency of PlaceNet is the Nvidia [cuRobo](https://curobo.org/) motion 
 planning library. This is used for parallelizing IK calculations for ground truth solution 
@@ -59,7 +59,7 @@ Optionally, PlaceNet also supports integration with ROS2 for package path resolu
 
 ## Docker Installation
 
-PlaceNet also comes with a docker compose build setup for the simplest installation. There are two separate Dockerfiles due to the docker requirements of cuRobo being somewhat difficult to get around. The first simply creates a cuRobo docker image, which requires that the nvidia contianer runtime be the default setting, and that Docker Buildkit be disabled. If either of those two conditions are not met, cuRobo will not be able to scan your GPU hardware during installation.
+PlaceNet also comes with a docker compose build setup for the simplest installation. There are two separate Dockerfiles due to the docker requirements of cuRobo being somewhat difficult to get around. The first simply creates a cuRobo docker image, which requires that the nvidia container runtime be the default setting, and that Docker Buildkit be disabled. If either of those two conditions are not met, cuRobo will not be able to scan your GPU hardware during installation.
 
 **Step 1 - Install docker**\
 Refer to the [official install guide](https://docs.docker.com/engine/install/) for setup
