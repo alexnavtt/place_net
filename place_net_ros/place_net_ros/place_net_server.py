@@ -316,7 +316,7 @@ class PlaceNetServer(Node):
         reachable_mask = valid_poses[valid_batch_indices, y_indices, x_indices, yaw_indices]
         return valid_batch_indices[reachable_mask]
     
-    def pose_array_to_tensor(self, pose_array: PoseArray, target_frame: str, pose_link: str) -> Tensor:
+    def pose_array_to_tensor(self, pose_array: PoseArray, target_frame: str, pose_link: str = '') -> Tensor:
         """
         Transform a pose array to a target frame and encode it into a PyTorch Tensor of shape (n, 7)
         """
@@ -339,7 +339,7 @@ class PlaceNetServer(Node):
             link_tform_ee = self.tf_buffer.lookup_transform(
                 target_frame=pose_link,
                 source_frame=self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link,
-                time=rclpy.time.Time(0),
+                time=rclpy.time.Time(seconds=0),
                 timeout=rclpy.duration.Duration(seconds=1.0)
             )
             link_tform_ee_curobo = place_net_conversions.transform_to_curobo(link_tform_ee, self.place_net_config.model.device)
@@ -541,7 +541,7 @@ class PlaceNetServer(Node):
             return resp
 
         # Convert the pointcloud to a numpy array
-        pointcloud_points = read_points_numpy(req.pointcloud, ['x', 'y', 'z'], skip_nans=True)
+        pointcloud_points = structured_to_unstructured(read_points(req.pointcloud, ['x', 'y', 'z'], skip_nans=True))
         
         # Transform pointcloud into model base frame
         robot_base_tform_task_mat = np.linalg.inv(place_net_conversions.pose_to_matrix(req.link_pose))
