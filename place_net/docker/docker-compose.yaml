@@ -10,6 +10,7 @@ services:
     container_name: place_net_${BUILD_TARGET}_dev
     image: alexnavtt/place_net:${UBUNTU_VERSION}
     build:
+      network: host
       context: ./../..
       dockerfile: place_net/docker/Dockerfile
       ssh:
