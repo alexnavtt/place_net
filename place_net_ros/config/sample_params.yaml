@@ -11,7 +11,8 @@ place_net_server:
     max_batch_size: 4
     # Maximum number of IK problems to solve in parallel for ground truth queries. Reduce this for devices with limited VRAM
     max_ik_count: 2000
-    # The ROS world static frame ID. Query responses and visualizations will be defined in this frame
+    # The ROS world static frame ID. Query responses and visualizations will be defined in this frame. It is expected
+    # by the model that z=0 in this frame corresponds to the ground plane for the robot
     world_frame: map
     # Whether or not to visualize results. Visualizations are useful for debugging but can take a while to compute
     # and render, and so disabling this option may be desired for deployment scenarios

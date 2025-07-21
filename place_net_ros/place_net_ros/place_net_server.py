@@ -361,7 +361,7 @@ class PlaceNetServer(Node):
             pointcloud_open3d = open3d.geometry.PointCloud(points=pointcloud_points)
             pointcloud_open3d = pointcloud_open3d.remove_statistical_outlier(nb_neighbors=10, std_ratio=filter_std_dev)
             pointcloud_points = np.asarray(pointcloud_open3d.points)
-        pointcloud_tensor = torch.tensor(pointcloud_points, device=self.place_net_config.model.device)
+        pointcloud_tensor = torch.tensor(pointcloud_points.copy(), device=self.place_net_config.model.device)
 
         if target_frame != pointcloud.header.frame_id:
             self.get_logger().info(f'Transforming pointcloud from {pointcloud.header.frame_id} to {target_frame}')
@@ -501,6 +501,7 @@ class PlaceNetServer(Node):
                 model_output_thread = Thread(target=self.place_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
                 model_output_thread.start()
 
+        resp.success = True
         self.get_logger().info('Base placement query completed successfully')
         return resp
     
