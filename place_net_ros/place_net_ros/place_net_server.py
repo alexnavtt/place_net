@@ -473,6 +473,7 @@ class PlaceNetServer(Node):
                 valid_poses             = model_output
             )
             resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
+            self.get_logger().info(f'{len(resp.valid_task_indices)}/{len(req.end_effector_poses.poses)} poses are reachable from the optimal pose')
         else:
             resp.query_time = model_run_time + master_grid_time
             self.get_logger().info("There are no valid poses")
