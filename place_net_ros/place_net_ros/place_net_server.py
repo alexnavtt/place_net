@@ -320,6 +320,8 @@ class PlaceNetServer(Node):
         """
         Transform a pose array to a target frame and encode it into a PyTorch Tensor of shape (n, 7)
         """
+
+        # First we check to see if the poses are in the desired frame, and if not we transform them
         needs_transform = pose_array.header.frame_id != target_frame
         if needs_transform: 
             self.get_logger().info(f'Transforming task frames from {pose_array.header.frame_id} to {target_frame}')
@@ -335,6 +337,8 @@ class PlaceNetServer(Node):
 
         pose_curobo = place_net_conversions.poses_to_curobo(poses, self.place_net_config.model.device)
 
+        # Then we check to see if the link the poses represents is the same as the ee_link. If it is not, then we
+        # determine where the ee_link would be if the reported link is at these poses
         if (len(pose_link) > 0) and (pose_link != self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link):
             link_tform_ee = self.tf_buffer.lookup_transform(
                 target_frame=pose_link,
@@ -492,7 +496,7 @@ class PlaceNetServer(Node):
 
         if self.params.visualize:
             self.get_logger().info(f'Visualizing final scores')
-            self.place_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, self.params.world_frame)
+            self.place_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, task_poses, self.params.world_frame)
             self.get_logger().info(f'Done')
             
             self.place_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)

@@ -13,6 +13,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from curobo.types.math import Pose as cuRoboPose
 
 from place_net_msgs.srv import QueryBaseLocation
+from place_net_ros.place_net_conversions import pose_tensor_to_pose_list
 from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils import geometry
 
@@ -33,6 +34,7 @@ class PlaceNetVisualizer:
         self.response_scores_pub           = ros_node.create_publisher(MarkerArray, '~/response/pose_scores'          , latching_qos)
         self.response_unreachable_task_pub = ros_node.create_publisher(PoseArray  , '~/response/unreachable_tasks'    , latching_qos)
         self.response_reachable_task_pub   = ros_node.create_publisher(PoseArray  , '~/response/reachable_tasks'      , latching_qos)
+        self.ee_pose_task_pub              = ros_node.create_publisher(PoseArray  , '~/response/ee_link_poses'        , latching_qos)
         self.response_aggregate_scores_pub = ros_node.create_publisher(MarkerArray, '~/response/aggregate_pose_scores', latching_qos)
 
         # Ground truth visualizations
@@ -80,7 +82,7 @@ class PlaceNetVisualizer:
 
         return arrow_marker
 
-    def visualize_response(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, frame_id: str) -> None:
+    def visualize_response(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response, final_base_grid: cuRoboPose, scored_grid: torch.Tensor, transformed_tasks: torch.Tensor, frame_id: str) -> None:
         if resp.has_valid_pose:
             self.response_optimal_pub.publish(resp.optimal_base_pose)
         self.response_valid_pub.publish(resp.valid_poses)
@@ -94,6 +96,11 @@ class PlaceNetVisualizer:
         unreachable_task_pose_array.header = req.end_effector_poses.header
         unreachable_task_pose_array.poses = [req.end_effector_poses.poses[idx] for idx in resp.unreachable_task_indices]
         self.response_unreachable_task_pub.publish(unreachable_task_pose_array)
+
+        transformed_poses = PoseArray()
+        transformed_poses.header.frame_id = 'spot_nav/map'
+        transformed_poses.poses = pose_tensor_to_pose_list(transformed_tasks)
+        self.ee_pose_task_pub.publish(transformed_poses)
 
         final_grid_marker = MarkerArray()
 
