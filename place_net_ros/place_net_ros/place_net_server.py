@@ -329,7 +329,7 @@ class PlaceNetServer(Node):
                 self.tf_buffer.transform(
                     PoseStamped(pose=pose, header=pose_array.header),
                     target_frame,
-                    timeout=rclpy.duration.Duration(seconds=1.0)
+                    timeout=rclpy.duration.Duration(seconds=3.0)
                 ).pose for pose in pose_array.poses
             ]
         else:
@@ -344,7 +344,7 @@ class PlaceNetServer(Node):
                 target_frame=pose_link,
                 source_frame=self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link,
                 time=rclpy.time.Time(seconds=0),
-                timeout=rclpy.duration.Duration(seconds=1.0)
+                timeout=rclpy.duration.Duration(seconds=3.0)
             )
             link_tform_ee_curobo = place_net_conversions.transform_to_curobo(link_tform_ee, self.place_net_config.model.device)
             pose_curobo = pose_curobo.multiply(link_tform_ee_curobo.repeat(pose_curobo.batch))
@@ -373,7 +373,7 @@ class PlaceNetServer(Node):
                 target_frame=target_frame, 
                 source_frame=pointcloud.header.frame_id,
                 time=rclpy.time.Time.from_msg(pointcloud.header.stamp),
-                timeout=rclpy.duration.Duration(seconds=1.0)
+                timeout=rclpy.duration.Duration(seconds=3.0)
             ).transform
             world_tform_pointcloud = place_net_conversions.transform_to_curobo(transform, self.place_net_config.model.device)
             pointcloud_tensor = world_tform_pointcloud.transform_points(pointcloud_tensor)
@@ -436,7 +436,7 @@ class PlaceNetServer(Node):
                     target_frame=model_base_link, 
                     source_frame=req.base_link,
                     time=rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=0.25)
+                    timeout=rclpy.duration.Duration(seconds=3.0)
                 ).transform
             except LookupException as e:
                 self.get_logger().warn(f'Unable to transform place_net results to requested link frame "{req.base_link}": {e}')
