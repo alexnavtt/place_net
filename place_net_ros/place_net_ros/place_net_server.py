@@ -13,6 +13,7 @@ import rclpy.duration
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener, LookupException
 from std_msgs.msg import Header
+from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseArray
 from tf2_geometry_msgs.tf2_geometry_msgs import PoseStamped
 from sensor_msgs.msg import PointCloud2
@@ -108,6 +109,12 @@ class PlaceNetServer(Node):
         # Start up the ROS service
         self.base_location_server = self.create_service(QueryBaseLocation, '~/query_base_location', self.base_location_callback)
         self.reachable_pose_server = self.create_service(QueryReachablePoses, '~/query_reachable_poses', self.reachable_poses_callback)
+        self.memory_query_server = self.create_service(Trigger, '~/query_gpu_memory', self.gpu_memory_callback)
+
+    def gpu_memory_callback(self, req: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        resp.message = torch.cuda.memory_summary(device=self.place_net_config.model.device)
+        resp.success = True
+        return resp
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
