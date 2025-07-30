@@ -133,7 +133,7 @@ class PlaceNetServer(Node):
             mini_batch_size = self.params.max_batch_size if self.params.max_batch_size > 0 else batch_size
             for index_start in range(0, batch_size, mini_batch_size):
                 index_end = min(index_start + mini_batch_size, batch_size)
-                pointcloud_slice = pointcloud_list[index_start:index_end]
+                pointcloud_slice = [pointcloud]*mini_batch_size
                 task_slice = task_poses[index_start:index_end]
                 logits = self.place_net_model(pointcloud_slice, task_slice)
                 model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
@@ -178,7 +178,9 @@ class PlaceNetServer(Node):
         elif mode == 'model':
             if self.place_net_model is None:
                 raise RuntimeError('Received place_net model query but no model has been loaded!')
-            return self.run_model(task_poses, pointcloud)
+            result = self.run_model(task_poses, pointcloud)
+            torch.cuda.empty_cache()
+            return result
             
         elif mode == 'irm':
             if self.irm is None:

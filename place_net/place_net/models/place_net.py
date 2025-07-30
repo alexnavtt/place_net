@@ -129,6 +129,7 @@ class PlaceNet(torch.nn.Module):
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.config.device) for pointcloud in pointclouds]
             pointcloud_tensor, padding_mask = self.pointcloud_encoder.preprocess_inputs(pointclouds, world_rot_flattened_task, tasks[:, :3], self.task_geometry)
+            del pointclouds
 
             # Add noise to pointcloud during training
             if self.training and self.config.pointcloud_noise_stddev > 0.0:
