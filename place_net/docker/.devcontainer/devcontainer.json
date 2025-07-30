@@ -1,0 +1,13 @@
+{
+  "name": "PlaceNetDev",
+  "dockerComposeFile": "../docker-compose.yaml",
+  "service": "place_net_runtime",
+  "workspaceFolder": "/place_net",
+  "customizations": {
+    "vscode": {
+        "extensions": [
+            "ms-python.python"
+        ]
+    }
+  }
+}

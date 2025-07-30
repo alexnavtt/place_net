@@ -23,6 +23,7 @@ services:
 
   place_net_runtime:
     extends: place_net
+    container_name: place_net_runtime_dev
     volumes:
       # The main code base
       - ${PWD}/../place_net:/place_net/place_net
