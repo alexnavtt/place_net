@@ -19,6 +19,7 @@ services:
     container_name: place_net_curobo_jetson
     image: alexnavtt/place_net_curobo
     build:
+      network: host
       dockerfile: jetson-curobo.Dockerfile
       args:
         # Build for CUDA version set by the user
