@@ -17,5 +17,5 @@ RUN cd curobo \
     && export TORCH_CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST;${PLACE_NET_CUDA_ARCH}" \
     && export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST%;}" \
     && export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST#;}" \
-    && pip install -e . --no-build-isolation
+    && pip install —index-url https://pypi.jetson-ai-lab.io/jp6/cu126 -e . --no-build-isolation
 
