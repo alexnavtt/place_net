@@ -104,7 +104,7 @@ export TARGET_CUDA_VERSION=12.4.0
 export UBUNTU_VERSION=22.04
 
 # If you executed step 3
-DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build curobo
+DOCKER_BUILDKIT=0 docker compose -f curobo-docker-compose.yaml build curobo # or jetson_curobo if on a Jetson Orin
 
 # If you did not execute step 3
 export CUDA_ARCH=7.5 # Note: NOT cuda version, but GPU capability number
