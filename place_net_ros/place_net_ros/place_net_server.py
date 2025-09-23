@@ -118,7 +118,6 @@ class PlaceNetServer(Node):
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
-        pointcloud_list = [pointcloud]*batch_size
 
         model_output = torch.zeros(
             batch_size, 
@@ -133,7 +132,8 @@ class PlaceNetServer(Node):
             mini_batch_size = self.params.max_batch_size if self.params.max_batch_size > 0 else batch_size
             for index_start in range(0, batch_size, mini_batch_size):
                 index_end = min(index_start + mini_batch_size, batch_size)
-                pointcloud_slice = [pointcloud]*mini_batch_size
+                size = index_end - index_start
+                pointcloud_slice = [pointcloud]*size
                 task_slice = task_poses[index_start:index_end]
                 logits = self.place_net_model(pointcloud_slice, task_slice)
                 model_output[index_start:index_end] = torch.sigmoid(logits) >= 0.5
