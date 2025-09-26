@@ -13,6 +13,8 @@ ENV PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://pypi.org/simple"
 RUN pip3 install pybind11 scikit_build_core
 
 ARG PLACE_NET_CUDA_ARCH
+ENV PIP_TRUSTED_HOST="https://pypi.ngc.nvidia.com"
+ENV PIP_INDEX_URL="https://pypi.ngc.nvidia.com"
 RUN cd curobo \
     && export TORCH_CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST;${PLACE_NET_CUDA_ARCH}" \
     && export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST%;}" \
