@@ -17,7 +17,7 @@ services:
   jetson_curobo:
     runtime: nvidia
     container_name: place_net_curobo_jetson
-    image: alexnavtt/place_net_curobo
+    image: alexnavtt/place_net_curobo:$UBUNTU_VERSION
     build:
       network: host
       dockerfile: jetson-curobo.Dockerfile

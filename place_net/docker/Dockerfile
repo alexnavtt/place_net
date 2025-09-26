@@ -4,7 +4,6 @@ FROM alexnavtt/place_net_curobo:${UBUNTU_VERSION} AS place_net
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROS_DISTRO=humble
-ARG BUILD_TARGET
 
 # Install ROS
 ENV LANG=en_US.UTF-8

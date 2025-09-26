@@ -4,8 +4,9 @@
 
 Contents:
  - [Overview](#overview)
- - [Native Installation](#native-installation)
- - [Docker Installation](#docker-installation)
+ - [Installation](#installation)
+   - [Native](#native)
+   - [Docker](#docker)
  - [Running](#usage)
    - [Native](#usage)
    - [Docker](#running-with-docker)
@@ -30,7 +31,9 @@ The PlaceNet model comprises four main parts:
 
 What PlaceNet does **not** do is sequential base placement optimization. For work involving multiple base placements in series, see related work such as [BaSeNet](https://arxiv.org/abs/2406.08653) which handles such scenarios.
 
-## Native Installation
+## Installation
+
+### Native
 
 PlaceNet has been developed and tested in an Ubuntu 22.04 environment. Other Ubuntu and linux distros may provide varying results, and Windows/MacOS are not supported. The cuRobo installation can be somewhat invasive when performed outside of a virtual environment, as it upgrades setuptools which can cause minor issues with other build systems such as ROS2. While these issues are non-breaking, it may be better to prefer the [docker installation](#docker-installation) in those cases.
 
@@ -57,7 +60,7 @@ And that's it! Make sure to set up your favorite virtual environment manager if 
 
 Optionally, PlaceNet also supports integration with ROS2 for package path resolution. See the [ROS2 installation guide](https://docs.ros.org/en/humble/Installation.html) for setup details. PlaceNet has been tested with ROS2 humble, but more recent versions will also likely work. 
 
-## Docker Installation
+### Docker
 
 PlaceNet also comes with a docker compose build setup for the simplest installation. There are two separate Dockerfiles due to the docker requirements of cuRobo being somewhat difficult to get around. The first simply creates a cuRobo docker image, which requires that the nvidia container runtime be the default setting, and that Docker Buildkit be disabled. If either of those two conditions are not met, cuRobo will not be able to scan your GPU hardware during installation.
 
@@ -80,7 +83,7 @@ Edit your `/etc/docker/daemon.json` file to include the line `"default-runtime":
             "path": "nvidia-container-runtime"
         }
     },
-    "default-runtime": "nvidia"
+    "default-runtime": "nvidia" # Add this line
 }
 ```
 
@@ -113,8 +116,9 @@ docker compose -f curobo-docker-compose.yaml build curobo
 
 **Step 5 - Build the main PlaceNet docker image**
 ```bash
-export BUILD_TARGET=workstation # or jetson
-export TARGET_ROS_VERSION=humble # other distros have not yet been tested
+export UBUNTU_VERSION=22.04 # or whatever else you're building for
+export TARGET_ROS_DISTRO=humble # other distros have not yet been tested
+export GUEST_PACKAGES="guest_package1;guest_package2" # Where each guest package is a git URL with optional branch statements (eg. -b devel)
 docker compose build
 ```
 

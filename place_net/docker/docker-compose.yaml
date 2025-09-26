@@ -7,7 +7,7 @@ services:
     # enable stdin and tty to allow the user to run bash interactively
     stdin_open: true
     tty: true
-    container_name: place_net_${BUILD_TARGET}_dev
+    container_name: place_net_dev
     image: alexnavtt/place_net:${UBUNTU_VERSION}
     build:
       network: host
@@ -17,7 +17,6 @@ services:
         - default
       args:
         ROS_DISTRO: $TARGET_ROS_DISTRO
-        BUILD_TARGET: $BUILD_TARGET
         GUEST_PACKAGES: $GUEST_PACKAGES
         UBUNTU_VERSION: $UBUNTU_VERSION
 
