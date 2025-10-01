@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        'numpy<2.0.0',
+        'numpy',
         'open3d>=0.18.0',
         'xacro',
         'urdf_parser_py',

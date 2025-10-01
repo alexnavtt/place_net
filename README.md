@@ -37,6 +37,8 @@ What PlaceNet does **not** do is sequential base placement optimization. For wor
 
 PlaceNet has been developed and tested in an Ubuntu 22.04 environment. Other Ubuntu and linux distros may provide varying results, and Windows/MacOS are not supported. The cuRobo installation can be somewhat invasive when performed outside of a virtual environment, as it upgrades setuptools which can cause minor issues with other build systems such as ROS2. While these issues are non-breaking, it may be better to prefer the [docker installation](#docker-installation) in those cases.
 
+For those running on an Nvidia Jetson, make sure NOT to install PyTorch via the default pip but to instead go through the specially compiled Jetson versions designed for optimal performance on the Jetson GPU. Skipping this step will make your Torch install unable to access the GPU which will throw errors later on. The best way to achieve this is through the Jetson AI lab pip index: `pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 torch triton`. Make sure to update the url for your specific Jetpack (`jpx`) and CUDA (`cuxxx`) version. Triton is only required for model compilation.
+
 The most significant dependency of PlaceNet is the Nvidia [cuRobo](https://curobo.org/) motion 
 planning library. This is used for parallelizing IK calculations for ground truth solution 
 calculations, as well as for tensorized frame transformation calculations. As a side effect of

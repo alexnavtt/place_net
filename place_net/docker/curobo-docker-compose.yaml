@@ -23,5 +23,6 @@ services:
       dockerfile: jetson-curobo.Dockerfile
       args:
         # Build for CUDA version set by the user
+        PLACE_NET_CUDA_ARCH: $CUDA_ARCH
         CUDA_VERSION: $TARGET_CUDA_VERSION
         UBUNTU_VERSION: $UBUNTU_VERSION

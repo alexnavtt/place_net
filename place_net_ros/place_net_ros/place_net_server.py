@@ -76,6 +76,11 @@ class PlaceNetServer(Node):
             if self.params.max_ik_count > 0:
                 self.place_net_config.max_ik_count = self.params.max_ik_count
             self.place_net_model = PlaceNet(self.place_net_config)
+            if self.params.compile:
+                torch.set_float32_matmul_precision('high')
+                self.place_net_model.compile()
+                self.populate_master_score_grid = torch.compile(self.populate_master_score_grid)
+                self.get_reachable_pose_indices = torch.compile(self.get_reachable_pose_indices)
         else:
             self.place_net_model = None
 
@@ -114,6 +119,7 @@ class PlaceNetServer(Node):
     def gpu_memory_callback(self, req: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         resp.message = torch.cuda.memory_summary(device=self.place_net_config.model.device)
         resp.success = True
+        self.get_logger().info(resp.message)
         return resp
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:

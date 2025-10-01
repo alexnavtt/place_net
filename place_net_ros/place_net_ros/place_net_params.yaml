@@ -44,3 +44,9 @@ place_net_ros_params:
     read_only: True
     default_value: True
     description: Whether or not to publish visualization topics, which can take some time to process
+
+  compile:
+    type: bool
+    read_only: True
+    default_value: True
+    description: Whether or not to compile the PyTorch model. This speeds up inference time significantly but has a high startup runtime cost
