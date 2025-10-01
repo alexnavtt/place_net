@@ -354,7 +354,7 @@ class PlaceNetServer(Node):
 
         # Then we check to see if the link the poses represents is the same as the ee_link. If it is not, then we
         # determine where the ee_link would be if the reported link is at these poses
-        if (len(pose_link) > 0) and (pose_link != self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link):
+        if (pose_link) and (pose_link != self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link):
             link_tform_ee = self.tf_buffer.lookup_transform(
                 target_frame=pose_link,
                 source_frame=self.place_net_config.robot_config.robot.kinematics.kinematics_config.ee_link,
@@ -682,7 +682,7 @@ class PlaceNetServer(Node):
             
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
-            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame)
+            task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame, pose_link=req.pose_link)
             pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in reachability callback: {e}')
