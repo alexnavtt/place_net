@@ -706,6 +706,11 @@ class PlaceNetServer(Node):
         resp.valid_task_indices = reachable_pose_indices.flatten().cpu().numpy().tolist()
 
         self.get_logger().info(f'We can reach {len(resp.valid_task_indices)}/{len(req.end_effector_poses.poses)} task poses')
+    
+        if self.params.visualize:
+            self.get_logger().info(f'Visualizing final scores')
+            self.place_net_viz.visualize_reachability_response(req, resp, task_poses, self.params.world_frame)
+    
         return resp
 
 def main():

@@ -12,7 +12,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from curobo.types.math import Pose as cuRoboPose
 
-from place_net_msgs.srv import QueryBaseLocation
+from place_net_msgs.srv import QueryBaseLocation, QueryReachablePoses
 from place_net_ros.place_net_conversions import pose_tensor_to_pose_list
 from place_net.utils.place_net_config import PlaceNetConfig
 from place_net.utils import geometry
@@ -98,7 +98,7 @@ class PlaceNetVisualizer:
         self.response_unreachable_task_pub.publish(unreachable_task_pose_array)
 
         transformed_poses = PoseArray()
-        transformed_poses.header.frame_id = 'spot_nav/map'
+        transformed_poses.header.frame_id = frame_id
         transformed_poses.poses = pose_tensor_to_pose_list(transformed_tasks)
         self.ee_pose_task_pub.publish(transformed_poses)
 
@@ -113,6 +113,17 @@ class PlaceNetVisualizer:
 
         final_grid_marker.markers.append(copy.deepcopy(arrow_marker))
         self.response_aggregate_scores_pub.publish(final_grid_marker)
+
+    def visualize_reachability_response(self, req: QueryReachablePoses.Request, resp: QueryReachablePoses.Response, transformed_tasks: torch.Tensor, frame_id: str) -> None:
+        valid_task_pose_array = PoseArray()
+        valid_task_pose_array.header = req.end_effector_poses.header
+        valid_task_pose_array.poses = [req.end_effector_poses.poses[idx] for idx in resp.valid_task_indices]
+        self.response_reachable_task_pub.publish(valid_task_pose_array)
+
+        transformed_poses = PoseArray()
+        transformed_poses.header.frame_id = frame_id
+        transformed_poses.poses = pose_tensor_to_pose_list(transformed_tasks)
+        self.ee_pose_task_pub.publish(transformed_poses)
 
     def visualize_model_output(self, tasks: torch.Tensor, model_output: torch.Tensor, base_pose_array: cuRoboPose, frame_id: str):
         markers = MarkerArray()
