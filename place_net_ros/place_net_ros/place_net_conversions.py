@@ -52,7 +52,8 @@ def transform_to_matrix(tform: Transform | TransformStamped) -> np.ndarray:
 
     rot = tform.rotation
     tran = tform.translation
-    transform_mat = quat2mat([rot.w, rot.x, rot.y, rot.z])
+    transform_mat = np.eye(4)
+    transform_mat[:3, :3] = quat2mat([rot.w, rot.x, rot.y, rot.z])
     transform_mat[:3, 3] = np.array([tran.x, tran.y, tran.z])
     return transform_mat
 
@@ -62,6 +63,7 @@ def pose_to_matrix(pose: RosPose | RosPoseStamped) -> np.ndarray:
         
     quat = pose.orientation
     pos = pose.position
-    transform_mat = quat2mat([quat.w, quat.x, quat.y, quat.z])
+    transform_mat = np.eye(4)
+    transform_mat[:3, :3] = quat2mat([quat.w, quat.x, quat.y, quat.z])
     transform_mat[:3, 3] = np.array([pos.x, pos.y, pos.z])
     return transform_mat
