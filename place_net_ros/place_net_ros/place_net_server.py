@@ -655,7 +655,7 @@ class PlaceNetServer(Node):
         world_frame: str = self.params.world_frame
         ref_frame:   str = req.link_pose.header.frame_id
         robot_link:  str = req.link_frame
-        model_base:  str = self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
+        model_base:  str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
         try:
             world_tform_ref_stamped = self.tf_buffer.lookup_transform(
                 world_frame,
