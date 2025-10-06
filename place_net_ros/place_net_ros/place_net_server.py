@@ -612,6 +612,7 @@ class PlaceNetServer(Node):
         valid_pose_mask = distances <= self.place_net_config.task_geometry.max_radial_reach
         valid_pose_indices = torch.arange(end=distances.numel()).to(self.place_net_config.model.device)[valid_pose_mask]
         valid_poses = task_poses[valid_pose_indices, :]
+        self.get_logger().info(f'Performing inference on {valid_poses.size(0)}/{len(req.end_effector_poses.poses)} poses inside the reachability sphere')
 
         # Get the output from the model
         t1 = time.perf_counter()
