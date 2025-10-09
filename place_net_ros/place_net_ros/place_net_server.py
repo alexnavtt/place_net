@@ -525,9 +525,13 @@ class PlaceNetServer(Node):
         self.get_logger().info('Base placement query completed successfully')
         return resp
     
-    def get_reachable_indices_gt(self, req: QueryReachablePoses.Request, pointcloud_tensor_in_world: Tensor, task_poses_in_world: Tensor) -> Tensor:
+    def get_reachable_indices_gt(self, req: QueryReachablePoses.Request, pointcloud_tensor_in_world: Tensor, task_poses_in_world: Tensor, robot_base_in_world: cuRoboPose) -> Tensor:
+        # Transform task and points to the model base frame
+        robot_base_tform_world = robot_base_in_world.inverse()
+        
         # Generate the environment model
-        pointcloud_points = pointcloud_tensor_in_world.cpu().numpy()
+        pointcloud_tensor_in_robot_base = robot_base_tform_world.transform_points(pointcloud_tensor_in_world)
+        pointcloud_points = pointcloud_tensor_in_robot_base.cpu().numpy()
         if len(pointcloud_points) > 0:
             world_mesh = Mesh.from_pointcloud(pointcloud=pointcloud_points, pitch=0.01)
             world_config = WorldConfig(mesh=[world_mesh])
@@ -535,6 +539,9 @@ class PlaceNetServer(Node):
             world_config = None
 
         # Generate an IK solver for this problem
+        req.check_self_collision = False
+        world_config = None
+        req.num_seeds = 50
         ik_solver_config = IKSolverConfig.load_from_robot_config(
             self.place_net_config.robot_config.robot,
             world_config,
@@ -550,8 +557,9 @@ class PlaceNetServer(Node):
 
         # Solve the IK problem
         task_poses_in_world = cuRoboPose(position=task_poses_in_world[:, :3], quaternion=task_poses_in_world[:, 3:])
+        task_poses_in_robot_base = robot_base_tform_world.repeat(task_poses_in_world.batch).multiply(task_poses_in_world)
         self.get_logger().info(f'Solving IK problem for {task_poses_in_world.batch} poses')
-        success, joint_states = solve_batched_ik(ik_solver, self.place_net_config.max_ik_count, task_poses_in_world)
+        success, joint_states = solve_batched_ik(ik_solver, self.place_net_config.max_ik_count, task_poses_in_robot_base)
         self.get_logger().info(f'IK solving complete. There were {torch.sum(success, dtype=int)} reachable poses')
         
         return torch.arange(end=task_poses_in_world.batch)[success]
@@ -573,7 +581,7 @@ class PlaceNetServer(Node):
         world_frame: str = self.params.world_frame
         ref_frame:   str = req.link_pose.header.frame_id
         robot_link:  str = req.link_frame
-        model_base:  str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
+        model_base:  str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link if req.mode != 'ground_truth' else self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
         try:
             world_tform_ref_stamped = self.tf_buffer.lookup_transform(
                 world_frame,
@@ -617,7 +625,7 @@ class PlaceNetServer(Node):
         # Get the output from the model
         t1 = time.perf_counter()
         if req.mode == "ground_truth":
-            reachable_pose_indices = self.get_reachable_indices_gt(req, pointcloud_tensor, valid_poses)
+            reachable_pose_indices = self.get_reachable_indices_gt(req, pointcloud_tensor, valid_poses, model_base_in_world)
         else:
             try:
                 model_output = self.get_solution_tensor(valid_poses, pointcloud_tensor, req.mode)
