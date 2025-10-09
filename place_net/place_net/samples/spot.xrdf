@@ -54,7 +54,6 @@ collision:
     arm0_elbow_roll: 0.025
     arm0_wrist_pitch: 0.005
     arm0_wrist_roll: 0.005
-    velodyne: 0.05
     body: 0.10 # Body has larger requirements due to BD collision avoidance
 
 self_collision:
@@ -66,7 +65,7 @@ self_collision:
     "arm0_elbow_pitch"   : ["arm0_elbow_roll"]
     "arm0_elbow_roll"    : ["arm0_wrist_pitch", "arm0_wrist_roll"]
     "arm0_wrist_pitch"   : ["arm0_wrist_roll"]
-    "body"               : ["velodyne", "arm0_base_link", "arm0_shoulder_yaw"]
+    "body"               : ["arm0_base_link", "arm0_shoulder_yaw"]
   buffer_distance:
     arm0_shoulder_yaw: 0.004
     arm0_shoulder_pitch: 0.004
@@ -124,5 +123,4 @@ geometry:
         - {center: [-0.30, -0.10, -0.38], radius: 0.2}
         - {center: [-0.46, -0.18, -0.21], radius: 0.1}
         - {center: [-0.46,  0.18, -0.21], radius: 0.1}
-      velodyne:
-        - {center: [0, 0, 0], radius: 0.1}
+        - {center: [-0.15,  0.00,  0.20], radius: 0.1}
