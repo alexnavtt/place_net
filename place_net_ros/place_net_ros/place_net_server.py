@@ -539,9 +539,6 @@ class PlaceNetServer(Node):
             world_config = None
 
         # Generate an IK solver for this problem
-        req.check_self_collision = False
-        world_config = None
-        req.num_seeds = 50
         ik_solver_config = IKSolverConfig.load_from_robot_config(
             self.place_net_config.robot_config.robot,
             world_config,
