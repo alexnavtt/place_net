@@ -60,6 +60,7 @@ RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
 # Clone and build any guest packages
 WORKDIR /guest_ws/src
 ARG GUEST_PACKAGES
+ARG DYNAMIC_RELOAD=0
 RUN --mount=type=ssh \
     if [ ! -z "${GUEST_PACKAGES}" ]; then \
         IFS=';' read -ra items <<< "$GUEST_PACKAGES" &&  \   
