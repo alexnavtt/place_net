@@ -11,7 +11,7 @@ import rclpy
 import rclpy.time
 import rclpy.duration
 from rclpy.node import Node
-from tf2_ros import Buffer, TransformListener, LookupException
+from tf2_ros import Buffer, TransformListener, TransformException
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseArray
@@ -453,7 +453,7 @@ class PlaceNetServer(Node):
                     time=rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=3.0)
                 ).transform
-            except LookupException as e:
+            except TransformException as e:
                 self.get_logger().warn(f'Unable to transform place_net results to requested link frame "{req.base_link}": {e}')
                 resp.has_valid_pose = False
                 return resp
@@ -592,7 +592,7 @@ class PlaceNetServer(Node):
                 rclpy.time.Time(seconds=0),
                 rclpy.duration.Duration(seconds=0.5)
             )
-        except LookupException as e:
+        except TransformException as e:
             self.get_logger().error(f'Cannot complete ReachablePoses query as one of the necessary transforms cannot be found: {e}')
             resp.success = False
             return resp
