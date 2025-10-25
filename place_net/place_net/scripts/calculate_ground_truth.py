@@ -83,16 +83,17 @@ def load_ik_solver(model_config: PlaceNetConfig, pointcloud: Tensor | None = Non
 
     return IKSolver(ik_config)
 
-def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose, valid_base_indices: Tensor | None = None):
+def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud, base_poses: cuRoboPose, model_config: PlaceNetConfig, valid_base_indices: Tensor | None = None):
     """
     Use the Open3D visualizer to draw the task pose, environment geometry, and the sample 
     base poses that we are solving for. All input must be defined in the world frame
     """
+    grid_size = (1, model_config.inverse_reachability.solution_resolution['y'], model_config.inverse_reachability.solution_resolution['x'], model_config.inverse_reachability.solution_resolution['yaw'])
     scorer = PoseScorer(max_angular_window=torch.pi/2)
-    original_scores = scorer.score_pose_array(valid_base_indices.view(1, 20, 20, 20)).flatten()
+    original_scores = scorer.score_pose_array(valid_base_indices.view(*grid_size)).flatten()
 
     best_pose_scores = torch.zeros_like(valid_base_indices)
-    _, best_pose = scorer.select_best_pose(valid_base_indices.view(1, 20, 20, 20))
+    _, best_pose = scorer.select_best_pose(valid_base_indices.view(*grid_size))
     best_pose_scores[best_pose] = True
 
     geometries = [pointcloud] if pointcloud is not None else []
@@ -117,12 +118,13 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
 
     # Render their scores
     scorer = PoseScorer(max_angular_window=torch.pi/2)
-    solution_scores = scorer.score_pose_array(solution_success.view(1, 20, 20, 20)).flatten()
+    grid_size = (1, model_config.inverse_reachability.solution_resolution['y'], model_config.inverse_reachability.solution_resolution['x'], model_config.inverse_reachability.solution_resolution['yaw'])
+    solution_scores = scorer.score_pose_array(solution_success.view(*grid_size)).flatten()
     geometries += task_visualization.get_base_arrows(goal_poses, solution_scores, prefix='scores_')
 
     # Render the best one
     best_pose_scores = torch.zeros_like(solution_success)
-    _, best_pose = scorer.select_best_pose(solution_success.view(1, 20, 20, 20))
+    _, best_pose = scorer.select_best_pose(solution_success.view(*grid_size))
     best_pose_scores[best_pose] = True
     geometries += task_visualization.get_base_arrows(goal_poses, best_pose_scores, prefix='final_scores_')
 
@@ -234,7 +236,7 @@ def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometr
         num_valid_poses = torch.sum(valid_pose_indices)
 
         if model_config.debug:
-            visualize_task(task_pose_in_world, None, base_poses_in_world, valid_pose_indices)
+            visualize_task(task_pose_in_world, None, base_poses_in_world, model_config, valid_pose_indices)
 
         if num_valid_poses == 0:
             solution_success = valid_pose_indices
