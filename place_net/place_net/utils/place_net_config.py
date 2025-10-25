@@ -36,6 +36,7 @@ class PlaceNetRobotConfig:
     inverted_robot: RobotConfig
     urdf: Robot
     inverted_urdf: Robot
+    tool_axis: str
 
 @dataclass
 class PlaceNetModelConfig:
@@ -637,7 +638,8 @@ class PlaceNetConfig:
             robot=forward_config,
             inverted_robot=inverted_config,
             urdf=forward_robot_urdf,
-            inverted_urdf=inverted_robot_urdf
+            inverted_urdf=inverted_robot_urdf,
+            tool_axis=yaml_config.get('tool_axis', 'x')
         )
 
         

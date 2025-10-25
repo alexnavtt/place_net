@@ -239,7 +239,14 @@ def sample_surface_poses(name: str, regions: PointcloudRegion, model_config: Pla
 
             # Calculate the cross product to get the z-axis and create the rotation matrix
             pose_z_axis = np.cross(pose_x_axis, pose_y_axis)
-            rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
+
+            # Correct for the robot tool axis
+            if model_config.robot_config.tool_axis == 'x':
+                rot_mat = np.vstack([pose_x_axis, pose_y_axis, pose_z_axis]).T
+            elif model_config.robot_config.tool_axis == 'y':
+                rot_mat = np.vstack([pose_z_axis, pose_x_axis, pose_y_axis]).T
+            elif model_config.robot_config.tool_axis == 'z':
+                rot_mat = np.vstack([pose_y_axis, pose_z_axis, pose_x_axis]).T
 
             # Check for collisions with the environment
             if are_spheres_in_collision(
