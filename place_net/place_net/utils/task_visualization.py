@@ -42,6 +42,28 @@ def get_task_arrows(task_poses: cuRoboPose | torch.Tensor, suffix: str = '') -> 
 
     return [{'name': f'task_arrows{suffix}', 'geometry': arrows, 'group': 'task_arrows'}]
 
+def get_pose_axis(task_poses: cuRoboPose | torch.Tensor, suffix: str = ''):
+    if isinstance(task_poses, cuRoboPose):
+        task_poses = torch.concatenate([task_poses.position, task_poses.quaternion], dim=1)
+    
+    if len(task_poses.size()) == 1:
+        task_poses = task_poses.unsqueeze(0)
+
+    axes = open3d.geometry.TriangleMesh() 
+    for task_pose in task_poses:
+        task_axis = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        task_pos, task_ori = torch.split(task_pose, [3, 4])
+
+        # rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
+        rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_ori.cpu().numpy(), scalar_first=True)
+        # task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
+        task_axis.rotate(rotation.as_matrix(), center=[0, 0, 0])
+        task_axis.translate(task_pos.cpu().numpy())
+        # task_axis.paint_uniform_color([0, 0, 1])
+        axes += task_axis.compute_triangle_normals()
+
+    return [{'name': f'task_poses{suffix}', 'geometry': axes, 'group': 'task_poses'}]
+    
 def get_base_arrows(pose: cuRoboPose, success: torch.Tensor | None = None, prefix: str = '') -> list[open3d.geometry.TriangleMesh]:
     if success is None:
         success = torch.zeros(pose.batch)

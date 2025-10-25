@@ -96,7 +96,7 @@ def visualize_task(task_pose: cuRoboPose, pointcloud: open3d.geometry.PointCloud
     best_pose_scores[best_pose] = True
 
     geometries = [pointcloud] if pointcloud is not None else []
-    geometries = geometries + task_visualization.get_task_arrows(task_pose)
+    geometries = geometries + task_visualization.get_pose_axis(task_pose)
     geometries = geometries + task_visualization.get_base_arrows(base_poses, valid_base_indices)
     geometries = geometries + task_visualization.get_base_arrows(base_poses, original_scores, prefix='scores_')
     geometries = geometries + task_visualization.get_base_arrows(base_poses, best_pose_scores, prefix='final_')
@@ -137,7 +137,7 @@ def visualize_solution(solution_success: Tensor, solution_states: Tensor, goal_p
         geometries = geometries + robot_spheres
 
     # Render the task arrow
-    geometries += task_visualization.get_task_arrows(task_poses=cuRoboPose(torch.zeros(3).to(model_config.model.device), torch.Tensor([1, 0, 0, 0]).to(model_config.model.device)))
+    geometries += task_visualization.get_pose_axis(task_poses=cuRoboPose(torch.zeros(3).to(model_config.model.device), torch.Tensor([1, 0, 0, 0]).to(model_config.model.device)))
 
     open3d.visualization.draw(geometries)
 
