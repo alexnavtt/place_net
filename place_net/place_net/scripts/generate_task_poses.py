@@ -271,10 +271,14 @@ def main():
         print(f'Generating poses for {pointcloud_name}:')
         regions = model_config.task_generation.regions[pointcloud_name]
 
-        sampled_poses_list = [sample_surface_poses(pointcloud_name, regions, model_config)]
+        sampled_poses_list = [sample_surface_poses(pointcloud_name, regions, model_config)] if model_config.task_generation.surface_point_density else []
         for offset_sample_config in task_config.offset_points:
             sampled_poses_list += [sample_distant_poses(pointcloud_name, regions, model_config, offset_sample_config)]
 
+        if not sampled_poses_list:
+            print(f'No sample poses generated for {pointcloud_name}')
+            continue
+        
         sample_poses: Tensor = torch.concatenate(sampled_poses_list, dim=0)
         total_samples += sample_poses.size(0)
 

@@ -276,7 +276,7 @@ class TaskGenerationConfig:
     #  - offset_bounds: The minimum and maximum distance from any obstacle to surface
     #  - density: The number of samples to take per cubic meter for uniform sampling
     #             across differently sized pointcloud environments
-    offset_points: list[dict] | None = None
+    offset_points: list[dict] = field(default_factory=list)
 
     # The regions in which to sample poses
     regions: dict[str, PointcloudRegion] = field(default_factory=dict)
@@ -293,7 +293,8 @@ class TaskGenerationConfig:
             surface_point_clearance = config['surface_points'].get('min_clearance', 0.0)
             surface_point_density = config['surface_points']['density']
         else:
-            surface_point_offset = surface_point_clearance = surface_point_density = None
+            surface_point_offset = surface_point_clearance = None
+            surface_point_density = 0
 
         pointcloud_regions = {pointcloud_name: PointcloudRegion(pointcloud) for pointcloud_name, pointcloud in pointclouds.items()}
         for pointcloud_name, region in pointcloud_regions.items():
@@ -321,7 +322,7 @@ class TaskGenerationConfig:
             surface_point_offset=surface_point_offset,
             surface_point_clearance=surface_point_clearance,
             surface_point_density=surface_point_density,
-            offset_points=config.get('offset_points', None),
+            offset_points=config.get('offset_points', []),
             regions=pointcloud_regions
         )
     
