@@ -588,7 +588,7 @@ class PlaceNetConfig:
                 yaml.dump(inverted_robot_config, f)
                 inverted_robot_config = '/tmp/inverted_robot_xrdf.xrdf'
 
-        elif curobo_config_extension == '.yaml':
+        elif curobo_config_extension in ['.yaml', '.yml']:
             forward_robot_config = copy.deepcopy(inverted_robot_config)
             ee_link = inverted_robot_config['robot_cfg']['kinematics']['ee_link']
             base_link = inverted_robot_config['robot_cfg']['kinematics']['base_link']
