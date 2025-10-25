@@ -253,7 +253,7 @@ def get_robot_geometry_at_joint_state(
             for visual_idx, visual in enumerate(robot_urdf.link_map[attached_link].visuals):
                 try:
                     visual_mesh, material = get_urdf_visual_geometry(visual)
-                except Exception:
+                except:
                     # The function will print an error message and we simply don't render this link
                     continue
                 visual_mesh.transform(link_pose @ link_transform @ urdf_pose_to_matrix(visual.origin))
