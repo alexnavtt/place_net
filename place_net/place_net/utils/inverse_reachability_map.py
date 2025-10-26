@@ -8,7 +8,7 @@ from curobo.types.math import Pose as cuRoboPose
 from curobo.wrap.reacher.ik_solver import IKSolver, IKSolverConfig, IKResult
 
 import place_net.utils.geometry as geometry
-from place_net.utils import task_visualization
+from place_net.scripts.calculate_ground_truth import visualize_solution
 
 def solve_batched_ik(ik_solver: IKSolver, num_poses: int, batch_size: int, poses: cuRoboPose) -> tuple[Tensor, Tensor]:
     if batch_size is None:
@@ -84,7 +84,7 @@ class InverseReachabilityMap:
         z_grid, pitch_grid, roll_grid = torch.meshgrid(z_range, pitch_range, roll_range, indexing='ij')
         self.task_grid = torch.stack([z_grid, pitch_grid, roll_grid]).reshape(3, -1).T
     
-    def solve(self, robot: RobotConfig, base_link_elevation: float, batch_size: int | None = None):
+    def solve(self, robot: RobotConfig, base_link_elevation: float, batch_size: int | None = None, visualize: bool = False, model_config = None):
         device = robot.tensor_args.device
         num_base_poses = self.base_poses.batch
 
@@ -121,9 +121,11 @@ class InverseReachabilityMap:
 
             # Filter out poses which the robot cannot reach even without obstacles
             t1 = time.perf_counter()
-            valid_pose_indices, _ = solve_batched_ik(ik_solver, num_base_poses, batch_size, base_poses_in_task)
+            valid_pose_indices, solution_states = solve_batched_ik(ik_solver, num_base_poses, batch_size, base_poses_in_task)
             t2 = time.perf_counter()
             print(f'Task {task_idx:3d} {[f"{x:+4.2f}" for x in self.task_grid[task_idx].cpu().numpy().tolist()]} : {torch.sum(valid_pose_indices):5d}/{num_base_poses} ({t2-t1:4.2f} seconds)')
+            if visualize:
+                visualize_solution(valid_pose_indices, solution_states, base_poses_in_task, model_config)
             self.solutions[task_idx] = valid_pose_indices.view(self.num_x, self.num_y, self.num_yaw)
 
         self.solved = True

@@ -29,7 +29,7 @@ def main():
         device=model_config.model.device
     )
 
-    inverse_reachability_map.solve(model_config.robot_config.inverted_robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count)
+    inverse_reachability_map.solve(model_config.robot_config.inverted_robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count, model_config.debug, model_config)
     inverse_reachability_map.save(os.path.join(model_config.solution_path, 'place_net_irm.pt'))
 
 if __name__ == "__main__":
