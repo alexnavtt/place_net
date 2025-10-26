@@ -54,12 +54,9 @@ def get_pose_axis(task_poses: cuRoboPose | torch.Tensor, suffix: str = ''):
         task_axis = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
         task_pos, task_ori = torch.split(task_pose, [3, 4])
 
-        # rotation_to_x = scipy.spatial.transform.Rotation.from_euler("zyx", [0, 90, 0], degrees=True).as_matrix()
         rotation = scipy.spatial.transform.Rotation.from_quat(quat=task_ori.cpu().numpy(), scalar_first=True)
-        # task_arrow.rotate(rotation_to_x, center=[0, 0, 0])
         task_axis.rotate(rotation.as_matrix(), center=[0, 0, 0])
         task_axis.translate(task_pos.cpu().numpy())
-        # task_axis.paint_uniform_color([0, 0, 1])
         axes += task_axis.compute_triangle_normals()
 
     return [{'name': f'task_poses{suffix}', 'geometry': axes, 'group': 'task_poses'}]
@@ -372,6 +369,6 @@ def visualize_task(
     """
 
     geometries = [pointcloud] if pointcloud is not None else []
-    geometries = geometries + get_task_arrows(task_pose)
+    geometries = geometries + get_pose_axis(task_pose)
     geometries = geometries + get_base_arrows(base_poses, valid_base_indices)
     open3d.visualization.draw(geometry=geometries)

@@ -219,7 +219,7 @@ def get_ground_truth_tensor(task_pose_tensor: Tensor, pointcloud: open3d.geometr
         task_pose_in_world = cuRoboPose(position, quaternion)
 
         # Transform the base poses from the flattened task frame to the task frame
-        flattened_task_pose = geometry.flatten_task(task_pose_in_world)
+        flattened_task_pose = geometry.flatten_task(task_pose_in_world, model_config.robot_config.tool_axis)
 
         # Assign transform names for clarity of calculations
         world_tform_flattened_task = flattened_task_pose

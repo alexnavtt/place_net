@@ -138,7 +138,7 @@ class PlaceNetVisualizer:
 
         for idx, (output_layer, task) in wrapper(enumerate(zip(model_output, tasks)), total=tasks.size(0)):
             task_pose = cuRoboPose(position=task[:3], quaternion=task[3:])
-            world_tform_flattened_task = geometry.flatten_task(task_pose)
+            world_tform_flattened_task = geometry.flatten_task(task_pose, self.place_net_config.robot_config.tool_axis)
             base_pose_in_world: cuRoboPose = world_tform_flattened_task.repeat(base_pose_array.batch).multiply(base_pose_array)
 
             new_arrows = self.pose_array_to_marker(base_pose_in_world, output_layer, frame_id)

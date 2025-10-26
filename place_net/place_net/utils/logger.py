@@ -136,7 +136,7 @@ class Logger:
 
         # Of the cases that were failures, what are their characteristics
         batch_failure = torch.logical_not(batch_success)
-        encoded_tasks = geometry.encode_tasks(input_poses)
+        encoded_tasks = geometry.encode_tasks(input_poses, self._model_config.robot_config.tool_axis)
         failed_elevations = encoded_tasks[batch_failure][:, 0]
         failed_pitches = encoded_tasks[batch_failure][:, 1]
         failed_rolls = encoded_tasks[batch_failure][:, 2]
@@ -221,7 +221,7 @@ class Logger:
         )
 
         task_pose = task_pose.to(device)
-        world_tform_flattened_task = geometry.flatten_task(cuRoboPose(position=task_pose[:3].unsqueeze(0), quaternion=task_pose[3:].unsqueeze(0)))
+        world_tform_flattened_task = geometry.flatten_task(cuRoboPose(position=task_pose[:3].unsqueeze(0), quaternion=task_pose[3:].unsqueeze(0)), self._model_config.robot_config.tool_axis)
         base_poses_in_world = world_tform_flattened_task.repeat(base_poses_in_flattened_task_frame.batch).multiply(base_poses_in_flattened_task_frame)
         base_poses_in_world.position[:, 2] = self._model_config.task_geometry.base_link_elevation
 

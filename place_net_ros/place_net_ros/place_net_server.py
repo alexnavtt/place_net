@@ -233,7 +233,7 @@ class PlaceNetServer(Node):
         for task_pose, yaw_angle, layer_scores in zip(task_poses, yaw_angles, pose_scores):
             # Transform the results grid to this tasks base pose
             task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
-            world_tform_flattened_task = geometry.flatten_task(task_pose_curobo)
+            world_tform_flattened_task = geometry.flatten_task(task_pose_curobo, self.place_net_config.robot_config.tool_axis)
             base_poses_in_world: cuRoboPose = world_tform_flattened_task.repeat(self.base_poses_in_flattened_task_frame.batch).multiply(self.base_poses_in_flattened_task_frame)
 
             # We only need to update entries that have reachable poses
@@ -297,7 +297,7 @@ class PlaceNetServer(Node):
         device = task_poses_in_world.device
         
         world_tform_task = cuRoboPose(position=task_poses_in_world[:, :3], quaternion=task_poses_in_world[:, 3:])
-        world_tform_flattened_task = geometry.flatten_task(world_tform_task)
+        world_tform_flattened_task = geometry.flatten_task(world_tform_task, self.place_net_config.robot_config.tool_axis)
         task_tform_world: cuRoboPose = world_tform_flattened_task.inverse()
 
         optimal_pose_in_tasks: cuRoboPose = task_tform_world.multiply(optimal_pose_in_world.repeat(task_tform_world.batch))

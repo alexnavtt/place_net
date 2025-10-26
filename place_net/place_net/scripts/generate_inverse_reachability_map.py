@@ -25,6 +25,8 @@ def main():
         reach_radius=model_config.task_geometry.max_radial_reach,
         xyz_resolution=(irm_config.solution_resolution['x'], irm_config.solution_resolution['y'], irm_config.task_resolution['z']),
         roll_pitch_yaw_resolution=(irm_config.task_resolution['roll'], irm_config.task_resolution['pitch'], irm_config.solution_resolution['yaw']),
+        tool_axis=model_config.robot_config.tool_axis,
+        device=model_config.model.device
     )
 
     inverse_reachability_map.solve(model_config.robot_config.inverted_robot, model_config.task_geometry.base_link_elevation, model_config.max_ik_count)

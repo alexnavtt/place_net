@@ -15,6 +15,7 @@ class PoseValidityChecker(torch.nn.Module):
         self.pose_encoder = PoseEncoder(feature_size=self.feature_size)
         self.pointcloud_encoder = PointNetEncoder(feature_size=self.feature_size, use_normals=False)
         self.task_geometry = copy.deepcopy(config.task_geometry)
+        self.tool_axis = config.robot_config.tool_axis
 
         self.classification_seq = torch.nn.Sequential(
             torch.nn.Linear(2*self.feature_size, self.feature_size),
@@ -40,7 +41,7 @@ class PoseValidityChecker(torch.nn.Module):
         with torch.no_grad():
             # Embed the task poses and get the transforms needed for the pointclouds
             tasks = tasks.to(self.device)
-            task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
+            task_rotation, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation, self.task_geometry.max_task_elevation, self.tool_axis)
 
             # Preprocess the pointclouds to filter out irrelevant points and adjust the frame to be aligned with the task pose
             pointclouds = [pointcloud.to(self.device) for pointcloud in pointclouds]

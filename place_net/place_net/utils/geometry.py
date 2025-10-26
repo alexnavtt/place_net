@@ -105,16 +105,16 @@ def encode_quaternions(quats: Tensor) -> Tensor:
     
     return torch.concatenate([pitch, roll], dim=1)
 
-def encode_tasks(tasks: Tensor) -> Tensor:
+def encode_tasks(tasks: Tensor, tool_axis: str) -> Tensor:
     if len(tasks.shape) == 1:
         tasks = tasks.unsqueeze(0)
 
     pos, quats = tasks.split([3, 4], dim=1)
-    encoded_quats = encode_quaternions(quats)
+    encoded_quats = encode_quaternions(from_axis(quats, tool_axis))
     encoded_pos = pos[:, 2].view(-1, 1)
     return torch.concatenate([encoded_pos, encoded_quats], dim=1)
 
-def decode_tasks(tasks: Tensor):
+def decode_tasks(tasks: Tensor, tool_axis: str):
     if len(tasks.shape) == 1:
         tasks = tasks.unsqueeze(0)
 
@@ -128,14 +128,43 @@ def decode_tasks(tasks: Tensor):
     quaternions = torch.tensor(
         scipy.spatial.transform.Rotation.from_euler("xyz", rpy.cpu().numpy(), degrees=False).as_quat(scalar_first=True), device=tasks.device
     )
+    quaternions = to_axis(quaternions, tool_axis)
 
     return torch.concatenate([positions, quaternions], dim=1).float()
 
-def flatten_task(task: cuRoboPose) -> cuRoboPose:
+def to_axis(orientation: Tensor, tool_axis: str) -> Tensor:
+    # This is the default interpretation, so we do nothing
+    if tool_axis == 'x': 
+        return orientation
+
+    if tool_axis == 'y':
+        # Rotate about x -90 degrees and then about z -90 degrees
+        rotation = torch.tensor([-0.5, 0.5, 0.5, 0.5], device=orientation.device).expand(orientation.size(0), 4)
+    elif tool_axis == 'z':
+        # Rotate about x 90 degrees and then about y 90 degrees
+        rotation = torch.tensor([0.5, 0.5, 0.5, 0.5], device=orientation.device).expand(orientation.size(0), 4)
+                                
+    return quaternion_multiply(orientation, rotation) 
+
+def from_axis(orientation: Tensor, tool_axis: str) -> Tensor:
+    # This is the default interpretation, so we do nothing
+    if tool_axis == 'x': 
+        return orientation
+
+    if tool_axis == 'y':
+        # Rotate about z 90 degrees and then about x 90 degrees
+        rotation = torch.tensor([0.5, 0.5, 0.5, -0.5], device=orientation.device).expand(orientation.size(0), 4)
+    elif tool_axis == 'z':
+        # Rotate about y -90 degrees and then about x -90 degrees
+        rotation = torch.tensor([-0.5, 0.5, 0.5, 0.5], device=orientation.device).expand(orientation.size(0), 4)
+                                
+    return quaternion_multiply(orientation, rotation) 
+
+def flatten_task(task: cuRoboPose, tool_axis: str) -> cuRoboPose:
     """
     Given a pose in 3D space, return a pose at the same position with roll and 
     pitch components of the orientation removed
     """
     flattened_task = task.clone()
-    flattened_task.quaternion = remove_roll_and_pitch_from_quaternions(task.quaternion)
+    flattened_task.quaternion = remove_roll_and_pitch_from_quaternions(from_axis(task.quaternion, tool_axis))
     return flattened_task

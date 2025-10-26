@@ -46,13 +46,15 @@ class InverseReachabilityMap:
             max_elevation: np.ndarray,
             reach_radius: float, 
             xyz_resolution: Iterable,
-            roll_pitch_yaw_resolution: Iterable, 
+            roll_pitch_yaw_resolution: Iterable,
+            tool_axis: str,
             device: str | torch.device = 'cuda:0'):
         self.num_x, self.num_y, self.num_z = xyz_resolution
         self.num_roll, self.num_pitch, self.num_yaw = roll_pitch_yaw_resolution
         self.reach_radius = reach_radius
         self.min_z = min_elevation
         self.max_z = max_elevation
+        self.tool_axis = tool_axis
         self.device = device
 
         self.task_grid = None
@@ -72,7 +74,7 @@ class InverseReachabilityMap:
         except IndexError:
             raise StopIteration()
         self._iter_idx += 1
-        return geometry.decode_tasks(encoded_pose).squeeze(0)        
+        return geometry.decode_tasks(encoded_pose, self.tool_axis).squeeze(0)
     
     def _load_task_grid(self):
         z_range = torch.linspace(self.min_z, self.max_z, self.num_z, device=self.device)
@@ -105,7 +107,7 @@ class InverseReachabilityMap:
             task_pose_in_world = cuRoboPose(position, quaternion)
 
             # Transform the base poses from the flattened task frame to the task frame
-            flattened_task_pose = geometry.flatten_task(task_pose_in_world)
+            flattened_task_pose = geometry.flatten_task(task_pose_in_world, self.tool_axis)
 
             # Assign transform names for clarity of calculations
             world_tform_flattened_task = flattened_task_pose
@@ -200,5 +202,5 @@ class InverseReachabilityMap:
         return torch.where(valid_mask.view(-1, 1, 1, 1), self.solutions[flat_idx], false)
 
     def query_pose(self, task_poses: Tensor) -> Tensor:
-        encoded_poses = geometry.encode_tasks(task_poses)
+        encoded_poses = geometry.encode_tasks(task_poses, self.tool_axis)
         return self.query_encoded_pose(encoded_poses)

@@ -13,6 +13,7 @@ class PlaceNet(torch.nn.Module):
         super(PlaceNet, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
+        self.tool_axis: str = config.robot_config.tool_axis
 
         # These will parse the inputs, and embed them into feature vectors of length 1024
         self.feature_size = self.config.feature_size
@@ -120,7 +121,7 @@ class PlaceNet(torch.nn.Module):
         with torch.no_grad():
             # Embed the task poses and get the transforms needed for the pointclouds
             tasks = tasks.to(self.config.device)
-            world_rot_flattened_task, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation ,self.task_geometry.max_task_elevation)
+            world_rot_flattened_task, _, task_encoding = self.pose_encoder.encode(tasks, self.task_geometry.min_task_elevation, self.task_geometry.max_task_elevation, self.tool_axis)
 
             # Downsample the pointclouds during training
             if self.training and self.config.downsample_fraction > 0.0:
@@ -161,6 +162,7 @@ class PlaceNetLite(torch.nn.Module):
         super(PlaceNetLite, self).__init__()
         self.config = copy.deepcopy(config.model)
         self.task_geometry = copy.deepcopy(config.task_geometry)
+        self.tool_axis = config.robot_config.tool_axis
 
         self._pose_encoder = PoseEncoder()
         self._pointcloud_encoder = self.config.encoder_type(feature_size=256)
@@ -186,7 +188,7 @@ class PlaceNetLite(torch.nn.Module):
         with torch.no_grad():
             # Encode the pose and get its adjusted representation
             tasks = tasks.to(self.config.device)
-            task_rotation, adjusted_task_pose, task_encoding = self._pose_encoder.encode(tasks, self.task_geometry.min_task_elevation, self.task_geometry.max_task_elevation)
+            task_rotation, adjusted_task_pose, task_encoding = self._pose_encoder.encode(tasks, self.task_geometry.min_task_elevation, self.task_geometry.max_task_elevation, self.tool_axis)
 
             # Retrieve only those poses which are valid without obstacles
             # Note that the IRM operates exclusively on the CPU for memory reasons
