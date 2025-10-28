@@ -11,6 +11,7 @@ import rclpy
 import rclpy.time
 import rclpy.duration
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from tf2_ros import Buffer, TransformListener, TransformException
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
@@ -63,7 +64,7 @@ class PlaceNetServer(Node):
     def __init__(self):
         super().__init__(node_name='place_net_server')
         self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # Load the model from the checkpoint path
         param_listener = place_net_ros_params.ParamListener(self)
@@ -649,8 +650,10 @@ class PlaceNetServer(Node):
 def main():
     rclpy.init()
     place_net_server = PlaceNetServer()
+    exec = MultiThreadedExecutor(num_threads=2)
     place_net_server.get_logger().info(f'PlaceNet server online, using cuda device {place_net_server.params.device}')
-    rclpy.spin(place_net_server)
+    exec.add_node(place_net_server)
+    exec.spin()
 
 if __name__ == '__main__':
     main()
