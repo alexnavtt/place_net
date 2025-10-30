@@ -38,7 +38,6 @@ services:
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
       - ${HOME}/.cache/torch:/torch_cache
     environment:
-      - SPOT_URDF_EXTRAS
       - PLACE_NET_CONFIG
       # pass the display variable to the container
       - DISPLAY=${DISPLAY}
