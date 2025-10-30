@@ -47,7 +47,7 @@ class InverseReachabilityMap:
             reach_radius: float, 
             xyz_resolution: Iterable,
             roll_pitch_yaw_resolution: Iterable,
-            tool_axis: str,
+            tool_axis: str = 'x',
             device: str | torch.device = 'cuda:0'):
         self.num_x, self.num_y, self.num_z = xyz_resolution
         self.num_roll, self.num_pitch, self.num_yaw = roll_pitch_yaw_resolution
