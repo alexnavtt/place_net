@@ -574,6 +574,11 @@ class PlaceNetServer(Node):
             self.get_logger().error(f'Invalid mode "{req.mode}" for reachability query. Options are ["model", "irm", "ground_truth"]')
             resp.success = False
             return resp
+        
+        if not req.end_effector_poses.poses:
+            self.get_logger().warn("Received empty pose array")
+            resp.success = True
+            return resp
 
         # Get the required transforms for the pointcloud and for the task poses
         world_frame: str = self.params.world_frame
