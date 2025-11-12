@@ -12,7 +12,9 @@ def main():
         subprocess.run(['docker', 'container', 'stop', 'place_net_server_process'])
     atexit.register(shutdown_callback)
     
-    subprocess.run(['docker', 'compose', 'run', '--name', 'place_net_server_process', '--rm', 'ros_server'], cwd=docker_path)
+    env = os.environ.copy()
+    env['PWD'] = docker_path
+    subprocess.run(['docker', 'compose', 'run', '--name', 'place_net_server_process', '--rm', 'ros_server'], cwd=docker_path, env=env)
 
 if __name__ == '__main__':
     main()
