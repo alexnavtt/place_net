@@ -521,7 +521,7 @@ class PlaceNetConfig:
         return solutions
     
     @staticmethod
-    def load_robot_config(yaml_config: dict, device: torch.device) -> tuple[RobotConfig, RobotConfig]:
+    def load_robot_config(yaml_config: dict, device: torch.device) -> PlaceNetRobotConfig:
         """
         Load the cuRobo config from the config yaml/XRDF file and the urdf specified in the config.
         This function inverts the loaded URDF such that the end effector becomes the base link 
