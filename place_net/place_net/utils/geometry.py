@@ -153,7 +153,7 @@ def from_axis(orientation: Tensor, tool_axis: str) -> Tensor:
 
     if tool_axis == 'y':
         # Rotate about z 90 degrees and then about x 90 degrees
-        rotation = torch.tensor([0.5, 0.5, 0.5, -0.5], device=orientation.device).expand(orientation.size(0), 4)
+        rotation = torch.tensor([0.5, 0.5, 0.5, 0.5], device=orientation.device).expand(orientation.size(0), 4)
     elif tool_axis == 'z':
         # Rotate about y -90 degrees and then about x -90 degrees
         rotation = torch.tensor([-0.5, 0.5, 0.5, 0.5], device=orientation.device).expand(orientation.size(0), 4)
