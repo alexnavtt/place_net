@@ -128,7 +128,7 @@ def sample_distant_poses(name: str, regions: PointcloudRegion, model_config: Pla
         if not regions.contains(point):
             continue
 
-        # Randomly sample an orientation with the Shoemaker's Algorithm (https://en.wikipedia.org/wiki/3D_rotation_group#Uniform_random_sampling)
+        # Randomly sample an orientation with the Shoemake's Algorithm (https://en.wikipedia.org/wiki/3D_rotation_group#Uniform_random_sampling)
         u1, u2, u3 = np.random.rand(3)
 
         c1 = math.sqrt(1 - u1)
