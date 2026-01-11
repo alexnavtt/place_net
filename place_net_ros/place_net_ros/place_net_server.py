@@ -417,7 +417,7 @@ class PlaceNetServer(Node):
         t1 = time.perf_counter()
         try:
             model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
-            pose_scores = self.pose_scorer.score_pose_array(model_output)
+            pose_scores = self.pose_scorer.score_pose_array(model_output) if req.use_scores else model_output
         except RuntimeError as e:
             self.get_logger().error(f'Caught error calculating solution: {e}')
             resp.success = False

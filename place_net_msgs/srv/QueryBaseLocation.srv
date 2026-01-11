@@ -26,6 +26,11 @@ string base_link
 # POSE to complete, and is mainly intended for testing and debugging
 string mode "model"
 
+# Whether or not to use the pose scoring algorithm for base pose selection
+# If this is false, then the model will return the first base pose that reaches
+# the maximum number of task poses, regardless of quality
+bool use_scores true
+
 ---
 
 ## Response
