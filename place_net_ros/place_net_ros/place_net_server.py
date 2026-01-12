@@ -367,7 +367,7 @@ class PlaceNetServer(Node):
 
         return torch.cat([pose_curobo.position, pose_curobo.quaternion], dim=1)
     
-    def pointcloud_to_tensor(self, pointcloud: PointCloud2, target_frame: str, filter_std_dev: float = 0.0) -> Tensor:
+    def pointcloud_to_tensor(self, pointcloud: PointCloud2, end_effector_poses: Tensor, target_frame: str, filter_std_dev: float = 0.0) -> Tensor:
         """
         Encode the xyz fields of a pointcloud into a PyTorch Tensor and transform to a given frame
         """
@@ -376,9 +376,11 @@ class PlaceNetServer(Node):
         if pointcloud.width == 0:
             return torch.tensor([], device=self.place_net_config.model.device)
 
+        t1 = time.perf_counter()
+
         pointcloud_points = structured_to_unstructured(read_points(pointcloud, ['x', 'y', 'z'], skip_nans=True))
         if filter_std_dev > 0.0:
-            pointcloud_open3d = open3d.geometry.PointCloud(points=pointcloud_points)
+            pointcloud_open3d = open3d.geometry.PointCloud(points=open3d.utility.Vector3dVector(pointcloud_points))
             pointcloud_open3d = pointcloud_open3d.remove_statistical_outlier(nb_neighbors=10, std_ratio=filter_std_dev)
             pointcloud_points = np.asarray(pointcloud_open3d.points)
         pointcloud_tensor = torch.tensor(pointcloud_points.copy(), device=self.place_net_config.model.device)
@@ -394,6 +396,18 @@ class PlaceNetServer(Node):
             world_tform_pointcloud = place_net_conversions.transform_to_curobo(transform, self.place_net_config.model.device)
             pointcloud_tensor = world_tform_pointcloud.transform_points(pointcloud_tensor)
 
+        # Remove all points too far away from any task poses to matter or outside the working area
+        task_positions = end_effector_poses[:, 0:3]
+        task_bbox_min = task_positions.min(dim=0).values - self.place_net_config.task_geometry._max_pointcloud_radius
+        task_bbox_max = task_positions.max(dim=0).values + self.place_net_config.task_geometry._max_pointcloud_radius
+        points_above_min = pointcloud_tensor[:, 2] > self.place_net_config.task_geometry.min_pointcloud_elevation
+        points_below_max = pointcloud_tensor[:, 2] < self.place_net_config.task_geometry.max_pointcloud_elevation
+        points_in_bbox = (pointcloud_tensor >= task_bbox_min) & (pointcloud_tensor <= task_bbox_max)
+        pointcloud_tensor = pointcloud_tensor[points_in_bbox.all(dim=1) & points_above_min & points_below_max]
+
+        t2 = time.perf_counter()
+        self.get_logger().info(f'Processed pointcloud in {1000*(t2-t1)} ms')
+
         return pointcloud_tensor
 
     def base_location_callback(self, req: QueryBaseLocation.Request, resp: QueryBaseLocation.Response):
@@ -406,14 +420,17 @@ class PlaceNetServer(Node):
 
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
+            self.get_logger().info("Transforming poses")
             task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame, pose_link=req.pose_link)
-            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
+            self.get_logger().info("Transforming pointcloud")
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, task_poses, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in base location callback: {e}')
             resp.success = False
             return resp
 
         # Get the output from the model
+        self.get_logger().info(f"Running query using {req.mode}")
         t1 = time.perf_counter()
         try:
             model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
