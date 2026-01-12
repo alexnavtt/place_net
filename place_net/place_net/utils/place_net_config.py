@@ -568,19 +568,21 @@ class PlaceNetConfig:
             # Otherwise collision bodies above (parents or children of parents of) the new base frame 
             # in the robot tree will cause an error loading the robot and the program will crash
             forward_robot_config = copy.deepcopy(inverted_robot_config)
-            for idx, config_item in enumerate(forward_robot_config['modifiers']):
-                if 'set_base_frame' in config_item:
-                    print(f'NOTE: The modifier setting the robot base frame to {config_item["set_base_frame"]} has been removed from the forward robot model. This model is for debugging and does not affect normal operations')
-                    del(forward_robot_config['modifiers'][idx])
-                    break
+            if 'modifiers' in forward_robot_config:
+                for idx, config_item in enumerate(forward_robot_config['modifiers']):
+                    if 'set_base_frame' in config_item:
+                        print(f'NOTE: The modifier setting the robot base frame to {config_item["set_base_frame"]} has been removed from the forward robot model. This model is for debugging and does not affect normal operations')
+                        del(forward_robot_config['modifiers'][idx])
+                        break
 
             ee_link = inverted_robot_config['tool_frames'][0]
-            for config_item in inverted_robot_config['modifiers']:
-                if 'set_base_frame' in config_item:
-                    base_link = config_item['set_base_frame']
-                    config_item['set_base_frame'] = ee_link
-                    inverted_robot_config['tool_frames'][0] = base_link
-                    break
+            if 'modifiers' in forward_robot_config:
+                for config_item in inverted_robot_config['modifiers']:
+                    if 'set_base_frame' in config_item:
+                        base_link = config_item['set_base_frame']
+                        config_item['set_base_frame'] = ee_link
+                        inverted_robot_config['tool_frames'][0] = base_link
+                        break
 
             # Temporary workaround because cuRobo doesn't properly process an XRDF dict
             with open('/tmp/forward_robot_xrdf.xrdf', 'w') as f:
