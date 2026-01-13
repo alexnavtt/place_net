@@ -26,6 +26,8 @@ urdf_file:
   path: urdf/spot.urdf.xacro
   xacro_args: 'has_rl_kit:=True has_arm:=True'
 
+manipulator_base_link: arm0_base_link
+
 unused_joint_defaults:
   front_left_hip_x  : -0.0058014001697301865
   front_left_hip_y  :  0.7929132580757141

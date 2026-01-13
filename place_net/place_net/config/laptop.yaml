@@ -11,9 +11,9 @@ pointclouds:
   hallways: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
   apartment: {filter_statistical_outliers: True, filter_std_dev: 1.1, filter_num_neighbors: 30}
 
-pointcloud_data_path: "base_net/data/pointclouds/"
-task_data_path: "base_net/data/tasks/"
-solution_data_path: "base_net/data/solutions/"
+pointcloud_data_path: "place_net/data/pointclouds/"
+task_data_path: "place_net/data/tasks/"
+solution_data_path: "place_net/data/solutions/"
 fake_solutions: False
 max_ik_count: 500
 debug: False
@@ -26,6 +26,8 @@ urdf_file:
   ros_package: spot_description
   path: urdf/spot.urdf.xacro
   xacro_args: 'has_rl_kit:=True has_arm:=True'
+
+manipulator_base_link: arm0_base_link
 
 unused_joint_defaults:
   front_left_hip_x  : -0.0058014001697301865

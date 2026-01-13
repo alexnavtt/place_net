@@ -629,7 +629,7 @@ class PlaceNetConfig:
         inverted_config = RobotConfig(
             kinematics=CudaRobotModelConfig.from_robot_yaml_file(
                 file_path=inverted_robot_config,
-                ee_link=base_link,
+                ee_link=yaml_config.get('manipulator_base_link', forward_robot_urdf.get_root()),
                 urdf_path=inverse_file_path,
                 tensor_args=TensorDeviceType(device=device)
             )
