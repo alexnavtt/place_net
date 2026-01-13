@@ -629,7 +629,7 @@ class PlaceNetServer(Node):
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
             task_poses = self.pose_array_to_tensor(req.end_effector_poses, target_frame=self.params.world_frame, pose_link=req.pose_link)
-            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
+            pointcloud_tensor = self.pointcloud_to_tensor(req.pointcloud, task_poses, target_frame=self.params.world_frame, filter_std_dev=req.filter_std_dev)
         except Exception as e:
             self.get_logger().error(f'Caught error in reachability callback: {e}')
             resp.success = False
