@@ -644,7 +644,9 @@ class PlaceNetServer(Node):
 
         # Get the output from the model
         t1 = time.perf_counter()
-        if req.mode == "ground_truth":
+        if not valid_poses.size(0):
+            reachable_pose_indices = torch.tensor([], dtype=int)
+        elif req.mode == "ground_truth":
             reachable_pose_indices = self.get_reachable_indices_gt(req, pointcloud_tensor, valid_poses, model_base_in_world)
         else:
             try:
