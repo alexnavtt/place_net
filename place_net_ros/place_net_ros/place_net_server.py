@@ -612,10 +612,11 @@ class PlaceNetServer(Node):
             return resp
 
         # Get the required transforms for the pointcloud and for the task poses
-        world_frame: str = self.params.world_frame
-        ref_frame:   str = req.link_pose.header.frame_id
-        robot_link:  str = req.link_frame
-        model_base:  str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link if req.mode != 'ground_truth' else self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
+        world_frame:      str = self.params.world_frame
+        ref_frame:        str = req.link_pose.header.frame_id
+        robot_link:       str = req.link_frame
+        manipulator_base: str = self.place_net_config.robot_config.inverted_robot.kinematics.kinematics_config.ee_link
+        model_base:       str = manipulator_base if req.mode != 'ground_truth' else self.place_net_config.robot_config.robot.kinematics.kinematics_config.base_link
         try:
             world_tform_ref_stamped = self.tf_buffer.lookup_transform(
                 world_frame,
@@ -629,6 +630,12 @@ class PlaceNetServer(Node):
                 rclpy.time.Time(seconds=0),
                 rclpy.duration.Duration(seconds=0.5)
             )
+            robot_link_tform_manipulator_base_stamped = self.tf_buffer.lookup_transform(
+                robot_link,
+                manipulator_base,
+                rclpy.time.Time(seconds=0),
+                rclpy.duration.Duration(seconds=0.5)
+            )
         except TransformException as e:
             self.get_logger().error(f'Cannot complete ReachablePoses query as one of the necessary transforms cannot be found: {e}')
             resp.success = False
@@ -638,7 +645,9 @@ class PlaceNetServer(Node):
         world_tform_ref = place_net_conversions.transform_to_curobo(world_tform_ref_stamped.transform, self.place_net_config.model.device)
         ref_tform_robot_link = place_net_conversions.pose_to_curobo(req.link_pose.pose, self.place_net_config.model.device)
         robot_link_tform_model_base = place_net_conversions.transform_to_curobo(robot_link_tform_model_base_stamped.transform, self.place_net_config.model.device)
+        robot_link_tform_manipulator_base = place_net_conversions.transform_to_curobo(robot_link_tform_manipulator_base_stamped, self.place_net_config.model.device)
         model_base_in_world = world_tform_ref.multiply(ref_tform_robot_link).multiply(robot_link_tform_model_base)
+        manipulator_base_in_world = world_tform_ref.multiply(ref_tform_robot_link).multiply(robot_link_tform_manipulator_base)
             
         # Make sure the task poses and pointclouds are represented in the same frame
         try:
@@ -650,10 +659,10 @@ class PlaceNetServer(Node):
             return resp
         
         # Filter out task poses that are too far away to matter
-        distances = (model_base_in_world.position.expand(task_poses.size(0), -1) - task_poses[:, :3]).norm(dim=1).squeeze()
+        distances = (manipulator_base_in_world.position.expand(task_poses.size(0), -1) - task_poses[:, :3]).norm(dim=1).squeeze()
         valid_pose_mask = distances <= self.place_net_config.task_geometry.max_radial_reach
-        valid_pose_indices = torch.arange(end=distances.numel()).to(self.place_net_config.model.device)[valid_pose_mask]
-        valid_poses = task_poses[valid_pose_indices, :]
+        valid_poses = task_poses[valid_pose_mask, :]
+        valid_pose_indices = valid_pose_mask.nonzero(as_tuple=True)[0]
         self.get_logger().info(f'Performing inference on {valid_poses.size(0)}/{len(req.end_effector_poses.poses)} poses inside the reachability sphere')
 
         # Get the output from the model
@@ -677,11 +686,11 @@ class PlaceNetServer(Node):
 
         resp.valid_task_indices = valid_pose_indices[reachable_pose_indices].flatten().cpu().numpy().tolist()
         resp.success = True
-        self.get_logger().info(f'We can reach {len(resp.valid_task_indices)}/{len(req.end_effector_poses.poses)} task poses')
+        self.get_logger().info(f'We can reach {reachable_pose_indices.numel()}/{task_poses.size(0)} task poses')
     
         if self.params.visualize:
             self.get_logger().info(f'Visualizing final scores')
-            self.place_net_viz.visualize_reachability_response(req, resp, task_poses, self.params.world_frame)
+            self.place_net_viz.visualize_reachability_response(req, resp, valid_poses, self.params.world_frame)
     
         return resp
 
