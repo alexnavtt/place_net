@@ -447,7 +447,7 @@ class PlaceNetServer(Node):
         t1 = time.perf_counter()
         try:
             model_output = self.get_solution_tensor(task_poses, pointcloud_tensor, req.mode)
-            pose_scores = self.pose_scorer.score_pose_array(model_output) if req.use_scores else model_output
+            pose_scores = self.pose_scorer.score_pose_array(model_output) if req.use_scores else model_output.float()
         except RuntimeError as e:
             self.get_logger().error(f'Caught error calculating solution: {e}')
             resp.success = False
@@ -463,6 +463,7 @@ class PlaceNetServer(Node):
         master_grid.translate((task_pose_max + task_pose_min)/2)
 
         # Place all solutions into a master grid
+        self.get_logger().info('Populating score grid')
         t3 = time.perf_counter()
         self.populate_master_score_grid(master_grid, task_poses, pose_scores)
         relative_scores = master_grid.scores / master_grid.scores.max()
@@ -502,7 +503,7 @@ class PlaceNetServer(Node):
             self.get_logger().info("There is a valid pose")
 
             t5 = time.perf_counter()
-            _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid.scores.unsqueeze(0), already_scored=True)
+            _, best_pose_idx = self.pose_scorer.select_best_pose(master_grid.scores.unsqueeze(0), already_scored=True, use_scores=req.use_scores)
             t6 = time.perf_counter()
             best_pose_time = t6 - t5
             resp.query_time = model_run_time + master_grid_time + best_pose_time

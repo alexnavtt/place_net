@@ -101,7 +101,7 @@ class PoseScorer:
 
         return scores / (index_offset_max + 1)
     
-    def select_best_pose(self, pose_array: Tensor, already_scored: bool = False) -> tuple[Tensor, Tensor]:
+    def select_best_pose(self, pose_array: Tensor, already_scored: bool = False, use_scores: bool = True) -> tuple[Tensor, Tensor]:
         pose_scores = pose_array if already_scored else self.score_pose_array(pose_array) 
         
         index_tensor = -1*torch.ones(pose_array.size(0), dtype=int, device=pose_array.device)
@@ -109,12 +109,13 @@ class PoseScorer:
             if not torch.any(layer_pose_scores):
                 continue
             
-            layer_pose_scores = (layer_pose_scores/torch.max(layer_pose_scores) >= 0.99).float()
+            score_threshold = 0.99 if use_scores else 1.0
+            layer_pose_scores = (layer_pose_scores/torch.max(layer_pose_scores) >= score_threshold).float()
 
             iteration_diff = torch.ones_like(layer_pose_scores, dtype=torch.float32)
             while torch.any(iteration_diff > 1e-2):
                 new_scores = self.score_pose_array(layer_pose_scores.unsqueeze(0)).squeeze(0)
-                new_scores = (new_scores/torch.max(new_scores) >= 0.99).float()
+                new_scores = (new_scores/torch.max(new_scores) >= score_threshold).float()
 
                 iteration_diff = torch.abs(new_scores - layer_pose_scores)
                 layer_pose_scores = new_scores
