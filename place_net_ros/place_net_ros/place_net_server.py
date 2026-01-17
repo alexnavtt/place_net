@@ -220,69 +220,84 @@ class PlaceNetServer(Node):
         
         Args:
             master_grid:    The object containing geometric and score information for the final grid of poses in the world frame. 
-                            The scores will be populated after this function call
-            task_poses:     The poses of the tasks in the world frame. Shape (B, 7)
-            pose_scores:    The score associated with each (y, x, yaw) tuple in results for each task pose. Shape (B, ny, nx, ntheta)
+                            The scores will be populated after this function call. Master score grid has shape (ny, nx, ntheta)
+            task_poses:     The poses of the N tasks in the world frame. Shape (N, 7)
+            pose_scores:    The score associated with each (y, x, yaw) tuple in results for each task pose. Shape (N, ny, nx, ntheta)
 
         Returns:
             None
         """
 
-        yaw_res: int = master_grid.yaw_res
-        yaw_angles = geometry.extract_yaw_from_quaternions(task_poses[:, 3:])
+        # Size definitions
+        batch_size, ny, nx, ntheta = pose_scores.shape
+        num_base_poses = nx * ny * ntheta
 
-        for task_pose, yaw_angle, layer_scores in zip(task_poses, yaw_angles, pose_scores):
-            # Transform the results grid to this tasks base pose
-            task_pose_curobo = cuRoboPose(position=task_pose[:3], quaternion=task_pose[3:])
-            world_tform_flattened_task = geometry.flatten_task(task_pose_curobo, self.place_net_config.robot_config.tool_axis)
-            base_poses_in_world: cuRoboPose = world_tform_flattened_task.repeat(self.base_poses_in_flattened_task_frame.batch).multiply(self.base_poses_in_flattened_task_frame)
+        # Transform the task poses and their grid poses to the world frame, in which the master grid is defined
+        task_poses_curobo = cuRoboPose(position=task_poses[..., :3], quaternion=task_poses[..., 3:])
+        world_tform_flattened_task = geometry.flatten_task(task_poses_curobo, self.place_net_config.robot_config.tool_axis) # (N, 3|4)
+        world_tform_flattened_task = cuRoboPose(
+            position=world_tform_flattened_task.position.repeat_interleave(num_base_poses, dim=0),
+            quaternion=world_tform_flattened_task.quaternion.repeat_interleave(num_base_poses, dim=0)
+        )
+        base_poses_in_world: cuRoboPose = world_tform_flattened_task.multiply(self.base_poses_in_flattened_task_frame.repeat(batch_size))
 
-            # We only need to update entries that have reachable poses
-            valid_model_indices = layer_scores.view(-1, yaw_res).sum(dim=1, dtype=bool)
+        # Get the indices for the task grid poses into the master grid in the range [0, 1]
+        yaw_values = geometry.extract_yaw_from_quaternions(base_poses_in_world.quaternion) # yaw ranges from -pi to pi
+        yaw_indices = ((yaw_values + torch.pi) / torch.pi + 1) / 2
+        x_indices = (base_poses_in_world.position[..., 0] - master_grid.lower_bound[0]) / master_grid.extent[0]
+        y_indices = (base_poses_in_world.position[..., 1] - master_grid.lower_bound[1]) / master_grid.extent[1]
+        pose_indices = torch.stack([y_indices, x_indices, yaw_indices], dim=1).view(batch_size, nx*ny*ntheta, 3)
 
-            # Calculate the indices into the yaw angles
-            yaw_index_offset: int = round(yaw_angle.item() / (2*math.pi / yaw_res))
-            yaw_indices = torch.arange(yaw_res, device=self.place_net_config.model.device) + yaw_index_offset
-            yaw_indices = torch.remainder(yaw_indices, yaw_res)
-            yaw_indices = yaw_indices.long()
+        # Avoid indexing out of range
+        valid_x = (pose_indices[..., 1] >= 0) & (pose_indices[..., 1] < 1)
+        valid_y = (pose_indices[..., 0] >= 0) & (pose_indices[..., 0] < 1)
+        pose_indices = pose_indices[valid_x & valid_y]
+        pose_scores = pose_scores.view(batch_size, num_base_poses)[valid_x & valid_y]
 
-            # Calculate the indices into the positions
-            xy_positions = base_poses_in_world.position[:, :2][::yaw_res]
-            offsets = ((xy_positions - master_grid.lower_bound)) / master_grid.extent
-            float_grid_indices = offsets * master_grid.grid_size
-            grid_indices = torch.floor(float_grid_indices)
+        # Yaw wraps
+        pose_indices[..., 2] %= 1.0
 
-            # Calculate the offsets from the nearest grid cells
-            fractional_offsets = torch.frac(float_grid_indices)
-            for grid_offset in torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], device=self.place_net_config.model.device):
-                # Get the indices for this particular corner of the grid cell
-                offset_grid_indices = grid_indices + grid_offset
-                valid_indices = ((offset_grid_indices >= 0) & (offset_grid_indices < master_grid.grid_size)).prod(dim=1, dtype=bool)
-                valid_indices = valid_indices & valid_model_indices
-                offset_grid_indices = offset_grid_indices[valid_indices]
-                offset_grid_indices = offset_grid_indices[:, [1, 0]] # grid is arranged (y, x, yaw)
-                offset_grid_indices = offset_grid_indices.long()
+        # Get the full coordinates for each pose into the grid
+        pose_coordinates = pose_indices * torch.tensor([ny-1, nx-1, ntheta-1], device=pose_indices.device, dtype=float)
 
-                # Weight using bilinear interpolation
-                weight_components = torch.abs(fractional_offsets - grid_offset)
-                weights = torch.prod(1 - weight_components, dim=-1)
-                weights = weights[valid_indices]
-                weights = weights.repeat_interleave(yaw_res)
+        # Get the sandwiching values for these grid poses
+        lower_indices = pose_coordinates.floor()
+        upper_indices = lower_indices + 1
+
+        # Handle grid edge and angle wraparound
+        upper_indices[..., 0].clamp_(0, ny - 1)
+        upper_indices[..., 1].clamp_(0, nx - 1)
+        lower_indices[..., 2] %= ntheta
+        upper_indices[..., 2] %= ntheta
+
+        # Calculate the offsets from the lower grid cells
+        fractional_offsets = pose_coordinates - lower_indices
+
+        # Flatten everything to simplify indexing
+        pose_scores_flat = pose_scores.flatten()
+        lower_indices_flat = lower_indices.view(-1, 3)
+        upper_indices_flat = upper_indices.view(-1, 3)
+        fractional_offsets_flat = fractional_offsets.view(-1, 3)
+
+        # Get the indices into the cubic neighbors
+        cubic_neighbor_offsets = torch.tensor([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [1, 1, 1]], device=task_poses.device)
+        for neighbor_direction in cubic_neighbor_offsets:
+            # Perform trilinear interpolation
+            weight = torch.ones_like(pose_scores_flat)
+            for dim in range(3):
+                if neighbor_direction[dim]:
+                    weight *= fractional_offsets_flat[:, dim]
+                else:
+                    weight *= 1.0 - fractional_offsets_flat[:, dim]
+
+            # Input the values into the master grid
+            neighbor_indices = torch.where(neighbor_direction.bool(), upper_indices_flat, lower_indices_flat).long()
+            y_idx, x_idx, theta_idx = neighbor_indices[:, 0], neighbor_indices[:, 1], neighbor_indices[:, 2]
+            master_grid.scores.index_put_((y_idx, x_idx, theta_idx), pose_scores_flat * weight, accumulate=True)
+
+        if master_grid.scores.any():
+            master_grid.scores /= master_grid.scores.max()
                 
-                # Interleave the position and yaw indices
-                yaw_indices_interleaved = yaw_indices.view(1, -1, 1).expand(offset_grid_indices.size(0), -1, 1)
-                grid_indices_interleaved = offset_grid_indices.unsqueeze(1).expand(-1, yaw_res, 2)
-                layer_indices = torch.concatenate([grid_indices_interleaved, yaw_indices_interleaved], dim=-1)
-                layer_indices = layer_indices.view(-1, 3)
-
-                # Assign to the score tensor
-                y_indices = layer_indices[:, 0]
-                x_indices = layer_indices[:, 1]
-                t_indices = layer_indices[:, 2]
-                
-                valid_layer_scores = layer_scores.view(-1, yaw_res)[valid_indices, :].flatten()
-                master_grid.scores[y_indices, x_indices, t_indices] += weights * valid_layer_scores
-
     def get_reachable_pose_indices(self, optimal_pose_in_world: cuRoboPose, task_poses_in_world: Tensor, reference_poses_in_task: cuRoboPose, valid_poses: Tensor) -> Tensor:
         """ Given the optimal pose, determine which task poses can be reached by the robot
         
