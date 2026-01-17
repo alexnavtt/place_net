@@ -144,6 +144,7 @@ class PlaceNetVisualizer:
             new_arrows = self.pose_array_to_marker(base_pose_in_world, output_layer, frame_id)
             new_arrows.id = idx
             new_arrows.ns = str(idx)
+            new_arrows.colors = [ColorRGBA(a=1.0, b=c.g, r=c.r) for c in new_arrows.colors]
             markers.markers.append(new_arrows)
 
         self.model_output_pub.publish(markers)

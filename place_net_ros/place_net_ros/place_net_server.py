@@ -45,12 +45,10 @@ class PoseGrid:
 
         self.poses = geometry.load_base_pose_array(x_range/2, y_range/2, x_res, y_res, yaw_res, device=device)
         self.poses.position[:, 2] = z_elevation
-        min_grid_x, min_grid_y = torch.amin(self.poses.position[:, :2], dim=0)
-        max_grid_x, max_grid_y = torch.amax(self.poses.position[:, :2], dim=0)
         
-        self.lower_bound = torch.tensor([min_grid_x, min_grid_y], device=device)
-        self.upper_bound = torch.tensor([max_grid_x, max_grid_y], device=device)
-        self.extent = torch.tensor([max_grid_x-min_grid_x, max_grid_y-min_grid_y], device=device)
+        self.lower_bound = torch.tensor([-x_range/2, -y_range/2], device=device)
+        self.upper_bound = torch.tensor([x_range/2, y_range/2], device=device)
+        self.extent = torch.tensor([x_range, y_range], device=device)
         self.grid_size = torch.tensor([x_res, y_res], device=device)
 
         self.scores = torch.zeros((y_res, x_res, yaw_res), dtype=torch.float, device=device)
@@ -258,15 +256,15 @@ class PlaceNetServer(Node):
         pose_indices[..., 2] %= 1.0
 
         # Get the full coordinates for each pose into the grid
-        pose_coordinates = pose_indices * torch.tensor([ny-1, nx-1, ntheta-1], device=pose_indices.device, dtype=float)
+        pose_coordinates = pose_indices * torch.tensor([master_grid.y_res-1, master_grid.x_res-1, ntheta-1], device=pose_indices.device, dtype=float)
 
         # Get the sandwiching values for these grid poses
         lower_indices = pose_coordinates.floor()
         upper_indices = lower_indices + 1
 
         # Handle grid edge and angle wraparound
-        upper_indices[..., 0].clamp_(0, ny - 1)
-        upper_indices[..., 1].clamp_(0, nx - 1)
+        upper_indices[..., 0].clamp_(0, master_grid.y_res - 1)
+        upper_indices[..., 1].clamp_(0, master_grid.x_res - 1)
         lower_indices[..., 2] %= ntheta
         upper_indices[..., 2] %= ntheta
 
