@@ -45,7 +45,11 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
       - TORCHINDUCTOR_CACHE_DIR=/torch_cache/torchinductor
       - TORCHINDUCTOR_FX_GRAPH_CACHE=/torch_cache/fx_graph_cache
-      - TORCHDYNAMO_CACHE_DIR:/torch_cache/dynamo
+      - TORCHDYNAMO_CACHE_DIR=/torch_cache/dynamo
+      - CUDA_HOME=/usr/local/cuda
+      - CUDA_PATH=/usr/local/cuda
+      - CPATH=/usr/local/cuda/include
+      - TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
     network_mode: host
     ipc: host
     pid: host
