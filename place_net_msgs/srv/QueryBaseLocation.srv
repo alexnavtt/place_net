@@ -66,3 +66,12 @@ float32[] valid_pose_scores
 
 # The time taken for the query to complete
 float64 query_time
+
+# The time taken for the model or ground truth calculations to run
+float64 model_time
+
+# Time time taken for the master grid to be created and populated
+float64 master_grid_time
+
+# The time taken for the optimal pose to be chosen from the master grid
+float64 optimal_pose_time

@@ -507,6 +507,9 @@ class PlaceNetServer(Node):
             t6 = time.perf_counter()
             best_pose_time = t6 - t5
             resp.query_time = model_run_time + master_grid_time + best_pose_time
+            resp.model_time = model_run_time
+            resp.master_grid_time = master_grid_time
+            resp.optimal_pose_time = best_pose_time
             resp.optimal_base_pose_index = best_pose_idx.item()
 
             best_pose = base_link_poses[best_pose_idx]

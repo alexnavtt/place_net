@@ -33,6 +33,9 @@ RUN apt update && apt install -y libgl1 libassimp-dev
 ADD place_net /place_net
 RUN pip install -e . --no-deps
 
+# Ensure that we're running numpy < 2, which can affect open3d operations
+RUN pip install 'numpy<2'
+
 FROM place_net AS place_net_ros
 SHELL ["/bin/bash", "-l", "-c"]
 
