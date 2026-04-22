@@ -20,6 +20,7 @@ RUN apt update \
     && apt install -y git-lfs \
     && git clone https://github.com/NVlabs/curobo.git \
     && cd curobo \
+    && git checkout v0.7.8 \
     && git-lfs pull * && git-lfs pull .
 
 # RUN pip install --upgrade setuptools setuptools_scm
