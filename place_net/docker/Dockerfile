@@ -63,18 +63,25 @@ RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.profile \
 # Clone and build any guest packages
 WORKDIR /guest_ws/src
 ARG GUEST_PACKAGES
+ARG GUEST_PACKAGE_NAMES
 ARG DYNAMIC_RELOAD=0
+ARG ROS_DISTRO=humble
+
 RUN --mount=type=ssh \
     if [ ! -z "${GUEST_PACKAGES}" ]; then \
         IFS=';' read -ra items <<< "$GUEST_PACKAGES" &&  \   
         for item in "${items[@]}"; do \
             git clone $item; \
-        done && \
-        rosdep install --from-paths . -i -y; \
-        echo "source /guest_ws/install/setup.bash" >> ~/.profile; \
+        done; \
     fi;
-    
+
+RUN read -ra items <<< "$GUEST_PACKAGE_NAMES" &&  \
+    for item in "${items[@]}"; do \
+        rosdep install --from-paths $(colcon info $item | grep "path:" | cut -d: -f2) -i -y --rosdistro ${ROS_DISTRO}; \
+    done && \
+    echo "source /guest_ws/install/setup.bash" >> ~/.profile;
+        
 WORKDIR /guest_ws
-RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-up-to ${GUEST_PACKAGE_NAMES}
 
 WORKDIR /place_net

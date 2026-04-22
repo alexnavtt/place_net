@@ -120,7 +120,8 @@ docker compose -f curobo-docker-compose.yaml build curobo
 ```bash
 export UBUNTU_VERSION=22.04 # or whatever else you're building for
 export TARGET_ROS_DISTRO=humble # other distros have not yet been tested
-export GUEST_PACKAGES="guest_package1;guest_package2" # Where each guest package is a git URL with optional branch statements (eg. -b devel)
+export GUEST_PACKAGES="guest_package1;guest_package2 -b my_feature" # Where each guest package is a git URL with optional branch statements (eg. -b devel)
+export GUEST_PACKAGE_NAMES="my_package_1 my_package_msgs my_package_parameters" # Name of each top-level package to build. Dependencies are automatically built (required)
 docker compose build
 ```
 

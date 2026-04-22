@@ -18,6 +18,7 @@ services:
       args:
         ROS_DISTRO: $TARGET_ROS_DISTRO
         GUEST_PACKAGES: $GUEST_PACKAGES
+        GUEST_PACKAGE_NAMES: $GUEST_PACKAGE_NAMES
         UBUNTU_VERSION: $UBUNTU_VERSION
 
   place_net_runtime:
