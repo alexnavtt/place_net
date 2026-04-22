@@ -5,6 +5,10 @@
 # The full set of poses for the robot end effector
 geometry_msgs/PoseArray end_effector_poses
 
+# The relative importance of reaching each task pose
+# Higher weight gives more importance
+float32[] pose_weights
+
 # The pointcloud representation of the collision environment. 
 sensor_msgs/PointCloud2 pointcloud
 

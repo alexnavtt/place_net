@@ -293,6 +293,7 @@ class PlaceNetServer(Node):
             y_idx, x_idx, theta_idx = neighbor_indices[:, 0], neighbor_indices[:, 1], neighbor_indices[:, 2]
             master_grid.scores.index_put_((y_idx, x_idx, theta_idx), pose_scores_flat * weight, accumulate=True)
 
+        # Normalize to range [0, 1]
         if master_grid.scores.any():
             master_grid.scores /= master_grid.scores.max()
                 
@@ -456,6 +457,10 @@ class PlaceNetServer(Node):
         model_run_time = t2 - t1
         self.get_logger().info(f'Request using {req.mode} took {model_run_time:.3f} seconds')
 
+        # Assign weights to the scores if they have been provided
+        if req.pose_weights:
+            pose_scores *= torch.tensor(req.pose_weights, device=pose_scores.device, dtype=pose_scores.dtype).view(-1, 1, 1, 1)
+
         # Create a score tensor which covers all poses
         master_grid = self.create_master_score_grid(task_poses)
         task_pose_max = task_poses[:, :2].max(dim=0)[0]
@@ -466,8 +471,6 @@ class PlaceNetServer(Node):
         self.get_logger().info('Populating score grid')
         t3 = time.perf_counter()
         self.populate_master_score_grid(master_grid, task_poses, pose_scores)
-        relative_scores = master_grid.scores / master_grid.scores.max()
-        master_grid.scores /= task_poses.size(0)
         t4 = time.perf_counter()
         master_grid_time = t4 - t3
         self.get_logger().info(f'Score grid population took {master_grid_time:.3f} seconds')
@@ -546,7 +549,7 @@ class PlaceNetServer(Node):
 
         if self.params.visualize:
             self.get_logger().info(f'Visualizing final scores')
-            self.place_net_viz.visualize_response(req, resp, base_link_poses, relative_scores, task_poses, self.params.world_frame)
+            self.place_net_viz.visualize_response(req, resp, base_link_poses, master_grid.scores, task_poses, self.params.world_frame)
             self.get_logger().info(f'Done')
             
             self.place_net_viz.visualize_task_pointclouds(task_poses, pointcloud_tensor, self.params.world_frame)
