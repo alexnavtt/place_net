@@ -4,13 +4,16 @@ ARG UBUNTU_VERSION=22.04
 # === Regular Desktop Workstation Install === #
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS base_workstation
 ARG DEBIAN_FRONTEND=noninteractive
+ARG CUDA_VERSION
 
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN apt update \
     && apt install -y \
         python3 \
         python3-pip \
-    && pip install torch "numpy<2" "setuptools>=61"
+    && pip install "numpy<2" "setuptools>=61" \
+    && cuda_ver="$(echo "$CUDA_VERSION" | awk -F. '{print $1 $2}')" \
+    && pip install torch --index-url="https://download.pytorch.org/whl/cu${cuda_ver}"
 
 FROM base_workstation AS build
 ARG DEBIAN_FRONTEND=noninteractive
