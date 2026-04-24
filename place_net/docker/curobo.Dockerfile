@@ -11,7 +11,7 @@ RUN apt update \
     && apt install -y \
         python3 \
         python3-pip \
-    && pip install "numpy<2" "setuptools>=61" \
+    && pip install "numpy<2" "setuptools==61" \
     && cuda_ver="$(echo "$CUDA_VERSION" | awk -F. '{print $1 $2}')" \
     && pip install torch --index-url="https://download.pytorch.org/whl/cu${cuda_ver}"
 

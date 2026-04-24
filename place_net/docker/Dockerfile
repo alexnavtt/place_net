@@ -23,6 +23,9 @@ RUN apt update && apt upgrade -y \
 # Install CycloneDDS so users have the option of ROS middleware
 RUN apt install -y ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 
+# Fix setuptools, which can be auto-updated during curobo install
+RUN python3 -m pip uninstall -y "setuptools>61"
+
 # Install PlaceNet dependencies
 ADD place_net/setup.py /place_net/setup.py
 WORKDIR /place_net
@@ -48,7 +51,7 @@ WORKDIR /colcon_ws
 
 ADD place_net_ros /colcon_ws/src/place_net_ros
 ADD place_net_msgs /colcon_ws/src/place_net_msgs
-RUN rosdep update && apt update && rosdep install --from-paths /colcon_ws/src -i -y
+RUN rosdep update && apt update && rosdep install --from-paths /colcon_ws/src -i -y --rosdistro ${ROS_DISTRO}
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --packages-up-to place_net_ros
 RUN rm -rf /colcon_ws/install/place_net_ros/lib/python3.10/site-packages/place_net_ros \
     && ln -s /colcon_ws/src/place_net_ros/place_net_ros /colcon_ws/install/place_net_ros/lib/python3.10/site-packages/place_net_ros
