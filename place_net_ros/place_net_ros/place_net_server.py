@@ -1,4 +1,5 @@
 import os
+import gc
 import time
 import math
 import torch
@@ -120,6 +121,12 @@ class PlaceNetServer(Node):
         resp.success = True
         self.get_logger().info(resp.message)
         return resp
+    
+    def cleanup_gpu_memory(self) -> None:
+        torch.cuda.synchronize(device=self.place_net_model.config.device)
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
 
     def run_model(self, task_poses: Tensor, pointcloud: Tensor) -> Tensor:
         batch_size = task_poses.size(0)
@@ -441,6 +448,7 @@ class PlaceNetServer(Node):
         except Exception as e:
             self.get_logger().error(f'Caught error in base location callback: {e}')
             resp.success = False
+            self.cleanup_gpu_memory()
             return resp
 
         # Get the output from the model
@@ -452,6 +460,8 @@ class PlaceNetServer(Node):
         except RuntimeError as e:
             self.get_logger().error(f'Caught error calculating solution: {e}')
             resp.success = False
+            del (task_poses, pointcloud_tensor)
+            self.cleanup_gpu_memory()
             return resp
         t2 = time.perf_counter()
         model_run_time = t2 - t1
@@ -491,6 +501,8 @@ class PlaceNetServer(Node):
             except TransformException as e:
                 self.get_logger().warn(f'Unable to transform place_net results to requested link frame "{req.base_link}": {e}')
                 resp.has_valid_pose = False
+                del (task_poses, pointcloud_tensor, model_output, pose_scores, master_grid)
+                self.cleanup_gpu_memory()
                 return resp
 
             manipulation_tform_base_link_ros = place_net_conversions.transform_to_curobo(manipulation_tform_base_link_ros, self.place_net_config.model.device)
@@ -556,11 +568,13 @@ class PlaceNetServer(Node):
 
             if self.place_net_viz.model_output_pub.get_subscription_count() > 0:
                 self.get_logger().info(f'Visualizing model output')
-                model_output_thread = Thread(target=self.place_net_viz.visualize_model_output, args=(task_poses, model_output, self.base_poses_in_flattened_task_frame, self.params.world_frame))
+                model_output_thread = Thread(target=self.place_net_viz.visualize_model_output, args=(task_poses.cpu(), model_output.cpu(), self.base_poses_in_flattened_task_frame, self.params.world_frame))
                 model_output_thread.start()
 
         resp.success = True
         self.get_logger().info('Base placement query completed successfully')
+        del (task_poses, pointcloud_tensor, model_output, pose_scores, master_grid)
+        self.cleanup_gpu_memory()
         return resp
     
     def get_reachable_indices_gt(self, req: QueryReachablePoses.Request, pointcloud_tensor_in_world: Tensor, task_poses_in_world: Tensor, robot_base_in_world: cuRoboPose) -> Tensor:
