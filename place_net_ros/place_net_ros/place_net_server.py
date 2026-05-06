@@ -529,7 +529,6 @@ class PlaceNetServer(Node):
 
             best_pose = base_link_poses[best_pose_idx]
             resp.optimal_base_pose.header.frame_id = self.params.world_frame
-            resp.optimal_base_pose.header.stamp = self.get_clock().now().to_msg()
             resp.optimal_base_pose.pose = place_net_conversions.curobo_pose_to_pose_list(best_pose)[0]
 
             resp.optimal_score = master_grid.scores.flatten()[best_pose_idx].double().item()
