@@ -35,6 +35,10 @@ string mode "model"
 # the maximum number of task poses, regardless of quality
 bool use_scores true
 
+# If this is true, then the returned valid poses and scores will be sorted
+# from best to worst. Does not affect returned task indices
+bool sort_base_poses false
+
 ---
 
 ## Response

@@ -553,8 +553,16 @@ class PlaceNetServer(Node):
 
         valid_pose_mask = master_grid.scores.bool()
         resp.valid_poses.header.frame_id = self.params.world_frame
-        resp.valid_poses.poses = place_net_conversions.curobo_pose_to_pose_list(base_link_poses[valid_pose_mask.flatten()])
-        resp.valid_pose_scores = master_grid.scores[valid_pose_mask].flatten().cpu().double().numpy().tolist()
+        valid_poses = base_link_poses[valid_pose_mask.flatten()]
+        valid_scores = master_grid.scores[valid_pose_mask]
+        if req.sort_base_poses:
+            sorted_scores, sorted_indices = torch.sort(valid_scores, descending=True)
+            sorted_poses = valid_poses[sorted_indices]
+            resp.valid_poses.poses = place_net_conversions.curobo_pose_to_pose_list(sorted_poses)
+            resp.valid_pose_scores = sorted_scores.flatten().cpu().double().numpy().tolist()
+        else:
+            resp.valid_poses.poses = place_net_conversions.curobo_pose_to_pose_list(valid_poses)
+            resp.valid_pose_scores = valid_scores.flatten().cpu().double().numpy().tolist()
 
         # === Visualize the output === #
 
